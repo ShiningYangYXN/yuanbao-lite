@@ -30,7 +30,7 @@ import { CommandSystem } from "../commands/registry.js";
 import { getVersion } from "../version.js";
 import type { ChatMessage, BotState } from "../types.js";
 import { RichHistory } from "./rich-history.js";
-import { highlightLine, highlightChatText } from "./syntax-highlight.js";
+import { highlightChatText, highlightLine } from "./syntax-highlight.js";
 import { getCompletions, type CompletionContext } from "./auto-complete.js";
 import {
   detectSticker,
@@ -80,6 +80,7 @@ import type { AccountEntry } from "../business/multi-account.js";
 import { SearchEngine } from "../business/search.js";
 import { createLog, setLogLevel } from "../logger.js";
 import { ConfigStore, getGlobalConfigStore, normalizeDir } from "./config.js";
+import { generateColoredHelp, generatePlainHelp } from "../commands/help-text.js";
 import { buildProgram } from "./non-interactive.js";
 
 // ─── Types ───
@@ -117,146 +118,6 @@ type GroupSession = {
 // ─── Constants ───
 
 const DEFAULT_PROMPT = "yuanbao> ";
-
-const HELP_TEXT = `
-╔══════════════════════════════════════════════════════════════════════════╗
-║                    Yuanbao Lite 交互式客户端 v10.6                       ║
-╠══════════════════════════════════════════════════════════════════════════╣
-║                                                                          ║
-║  通用标志:                                                                ║
-║    --all / -a            取消输出截断，显示全部结果（适用于标记▲的命令）      ║
-║                                                                          ║
-║  聊天命令:                                                                ║
-║    /dm <用户ID或别名> <消息>       发送私聊消息（支持别名解析）              ║
-║    /group <群号> <消息>            发送群聊消息                             ║
-║    /chat <用户ID> <消息>           向指定用户发送消息                       ║
-║    /chat group <群号> <消息>       向指定群聊发送消息                       ║
-║    /reply <消息ID或#尾号> <内容>   引用回复指定消息                         ║
-║    /mention <目标> <消息>          发送含@提及的消息                        ║
-║      消息中可用 @[昵称](id), @[](id), @[昵称]() 语法                      ║
-║    /sticker <贴纸ID>              发送贴纸（emoji_编号格式）               ║
-║                                                                          ║
-║  媒体与文件:                                                              ║
-║    /upload <文件路径>              上传文件到媒体服务器                      ║
-║    /download <URL> [文件名]        下载媒体文件到本地                       ║
-║    /img <图片路径> [目标ID]        发送图片消息（目标默认当前会话）          ║
-║    /file <文件路径> [目标ID]       发送文件消息（目标默认当前会话）          ║
-║    /tempfile <路径> [描述]         上传到临时平台并发送链接(默认gofile)      ║
-║    /tempfile gofile <路径>         GoFile (10天不活跃删除)                  ║
-║    /tempfile tmpfiles <路径>       tmpfiles.org (1小时后删除)               ║
-║    /tempfile uguu <路径>           uguu.se (24小时后删除)                   ║
-║    /tempfile litterbox <路径> [过期]  litterbox (可设1h/12h/24h/72h)       ║
-║                                                                          ║
-║  联系人管理:                                                              ║
-║    /contacts                       查看联系人列表                          ║
-║    /contacts add <ID> <名称> [标签] 添加联系人                             ║
-║    /contacts rm <名称|ID>          删除联系人                              ║
-║    /contacts rename <名称|ID> <新名称>  重命名联系人                       ║
-║    /contacts note <名称|ID> <备注> 添加联系人备注                          ║
-║    /contacts tag <名称|ID> <标签>  设置标签                               ║
-║    /contacts fav <名称|ID>         切换收藏状态                            ║
-║    /contacts dm <名称|ID>          进入私聊模式                            ║
-║    /contacts search <关键词>       搜索联系人                              ║
-║                                                                          ║
-║  群聊管理:                                                                ║
-║    /groups [--all]                 ▲ 列出群聊(默认20条,--all显示全部)       ║
-║    /groups add <群号> [名称] [标签] 添加群聊到收藏                         ║
-║    /groups rm <群号>               从收藏移除群聊                          ║
-║    /groups rename <群号> <名称>    重命名群聊备注                          ║
-║    /groups note <群号> <备注>      添加群聊备注                            ║
-║    /groups tag <群号> <标签>       设置群聊标签                            ║
-║    /groups fav <群号>              切换收藏状态                            ║
-║    /groups join <群号>             加入群聊会话                            ║
-║    /groups search <关键词>         搜索群聊                               ║
-║    /join <群号>                    加入群聊会话                            ║
-║    /info [群号]                    查看群信息（群聊中可省略群号）            ║
-║    /members [--all] [群号]         ▲ 查看群成员(默认50人,--all显示全部)     ║
-║    /switch [--all] [编号]          ▲ 活跃会话列表(默认20条,--all显示全部)   ║
-║    /search groups <关键词>         搜索群组                               ║
-║    /search members <关键词> <群号> 搜索群成员                             ║
-║                                                                          ║
-║  别名系统:                                                                ║
-║    /alias add <ID> <别名> [昵称]   添加别名                               ║
-║    /alias remove <别名|ID>         删除别名                               ║
-║    /alias list                     列出所有别名                            ║
-║    /alias save                     保存别名到磁盘                          ║
-║    /alias load                     从磁盘加载别名                          ║
-║    /alias resolve <别名|ID>        解析别名                               ║
-║                                                                          ║
-║  消息历史:                                                                ║
-║    /history search [--all] <关键词> ▲ 搜索历史(默认20条,--all显示全部)     ║
-║    /history recent [数量]          查看最近消息                            ║
-║    /history stats                  查看消息统计                            ║
-║    /history user <用户ID> [数量]   查看用户消息                            ║
-║    /history group <群号> [数量]    查看群消息                              ║
-║    /hsearch [--all] <关键词>       ▲ 搜索历史(默认15条+截断,--all全部+全文) ║
-║    /hclear                         清除消息历史(不可恢复)                   ║
-║                                                                          ║
-║  贴纸浏览:                                                                ║
-║    /stickers [--all]               ▲ 查看内置表情(默认30条,--all显示全部)   ║
-║    /stickers search [--all] <关键词> ▲ 搜索贴纸(默认20条,--all显示全部)    ║
-║    /stickers emojis [--all]        ▲ 列出内置表情(默认30条,--all显示全部)   ║
-║    /stickers load <目录>           加载贴纸包                              ║
-║                                                                          ║
-║  批量发送:                                                                ║
-║    /batch text <目标> <数量> <间隔ms> <模板>  批量发送文本                 ║
-║    /batch stop                     取消批量任务                            ║
-║    /batch status                   查看批量任务状态                        ║
-║    模板支持 \${i}(索引) \${n}(序号) \${total}(总数) \${timestamp}(时间戳)      ║
-║    使用 \${...} 转义插值                                                  ║
-║                                                                          ║
-║  系统命令:                                                                ║
-║    /shell [--all] <命令>           ▲ 运行系统命令(默认截断2000字符)         ║
-║      --all放在命令前 = 取消截断; 放在命令后 = 原样传入shell命令            ║
-║      例: /shell --all ls -la /tmp  (不截断输出)                           ║
-║          /shell ls --all           (--all作为ls参数传入)                   ║
-║    /log <debug|info|warn|error>    切换日志级别(持久化保存)                 ║
-║                                                                          ║
-║  多账号管理:                                                              ║
-║    /account add <ID> <appKey> <appSecret> [名称]  添加账号                ║
-║    /account remove <ID>            移除账号                               ║
-║    /account list                   列出所有账号                            ║
-║    /account switch <ID>            切换活跃账号                            ║
-║    /account start <ID>             启动指定账号                            ║
-║    /account stop <ID>              停止指定账号                            ║
-║                                                                          ║
-║  LLM 接管:                                                               ║
-║    /llm on                         开启 LLM 自动回复                      ║
-║    /llm off                        关闭 LLM 自动回复                      ║
-║    /llm status                     查看 LLM 状态                          ║
-║    /llm chat <消息>                直接与 LLM 对话                        ║
-║    /llm prompt <提示词>            设置系统提示词                          ║
-║    /llm model <模型名>             设置模型                               ║
-║    /llm temp <0-2>                 设置温度                               ║
-║    /llm history                    查看对话历史                            ║
-║    /llm clear [对话ID]             清除对话历史(不指定则清除全部)            ║
-║    /llm raw                        切换为Markdown原始模式                   ║
-║    /llm im                         切换为IM格式化模式                      ║
-║    /llm provider <供应商>          切换模型供应商(z-ai|openai|anthropic|    ║
-║                                    deepseek|custom)                       ║
-║    /llm apikey <密钥>              设置API密钥                             ║
-║    /llm baseurl <URL>              设置API基础URL                          ║
-║    /llm group <on|off|mention>     群聊响应设置                            ║
-║    /llm merge <毫秒>               设置消息合并窗口(0=立即响应)             ║
-║    /llm cooldown <毫秒>            设置响应冷却时间(0=无冷却)              ║
-║    /llm iterate <轮数>             设置最大迭代轮数(0=无限)                ║
-║                                                                          ║
-║  信息与控制:                                                              ║
-║    /status                         查看连接状态和账号信息                   ║
-║    /version /v                     查看版本信息                             ║
-║    /uptime                         查看运行时间                             ║
-║    /ping                           测试响应延迟                             ║
-║    /unsafe [on|off|status] [分钟]  临时允许群聊使用受限命令(默认5分钟)      ║
-║    /help [命令名]                  显示帮助/查看指定命令详细用法              ║
-║    /exit                           退出聊天模式/退出程序                     ║
-║                                                                          ║
-║  ▲ = 支持 --all/-a 取消截断                                              ║
-║  在聊天模式下，直接输入文字即可发送消息。                                   ║
-║  支持 @[昵称](id) @提及语法，\@转义。                                     ║
-║  行末 \\ 续行，Tab 补全，↑↓ 历史记录。                                     ║
-║  按 Ctrl+C 或输入 /exit 退出。                                           ║
-╚══════════════════════════════════════════════════════════════════════════╝
-`.trim();
 
 // ─── Interactive Client ───
 
@@ -569,7 +430,7 @@ export class InteractiveCli {
     // Echo the command with syntax highlighting (only for commands)
     if (trimmed.startsWith("/")) {
       const highlighted = highlightLine(trimmed);
-      process.stdout.write(`\r${chalk.dim("→")} ${highlighted}\n`);
+      console.log(chalk.dim("→") + " " + highlighted);
     }
 
     // If in chat mode and not a command, send as message
@@ -586,12 +447,43 @@ export class InteractiveCli {
 
     try {
       switch (cmd) {
-        // ─── Help (CLI shows local HELP_TEXT) ───
+        // ─── Help (CLI shows categorized command list) ───
         case "/help":
         case "/h":
-        case "/?":
-          console.log(HELP_TEXT);
+        case "/?": {
+          if (args.length === 0) {
+            // Brief help: categorized command list from CommandSystem
+            // Print a newline before help to separate from echoed command
+            process.stdout.write("\n");
+            const visible = this.commands.getVisibleCommands();
+            if (visible.length === 0) {
+              this.printSystem("暂无可用命令");
+            } else {
+              console.log(generateColoredHelp(visible, {
+                prefix: this.commands["config"]?.prefix ?? "/",
+                footer: this.commands["config"]?.helpFooter,
+              }));
+              // Put prompt on a new line after help output
+              this.rl?.prompt();
+            }
+          } else {
+            // Detailed help: delegate to CommandSystem dispatch
+            const detailInput = `/${args.join(" ")}`;
+            const chatMsg: ChatMessage = {
+              id: "cli",
+              fromUserId: "cli",
+              chatType: "direct",
+              text: detailInput,
+              timestamp: Date.now(),
+            };
+            const cliReply = async (text: string) => {
+              console.log(`\n${text}\n`);
+            };
+            await this.commands.dispatch(this.bot, chatMsg, cliReply);
+            this.rl?.prompt();
+          }
           break;
+        }
 
         // ─── Chat mode (CLI-specific: manages REPL prompt) ───
         case "/chat": {
@@ -649,7 +541,7 @@ export class InteractiveCli {
           };
           await this.commands.dispatch(this.bot, chatMsg, cliReply);
           this.printSystem(`加入群聊: ${joinCode} (直接输入文字发送)`);
-          this.refreshPrompt();
+          this.rl?.prompt();
           break;
         }
 
@@ -698,6 +590,7 @@ export class InteractiveCli {
           if (!result.handled) {
             this.printSystem(`未知命令: ${cmd}。输入 /help 查看帮助`);
           }
+          this.rl?.prompt();
           break;
         }
       }
@@ -738,9 +631,9 @@ export class InteractiveCli {
     // Sort by last active time (most recent first)
     groups.sort((a, b) => (b.lastActiveAt || 0) - (a.lastActiveAt || 0));
 
-    console.log("\n📋 群组列表:");
-    console.log("  编号  群号               名称/备注           未读  收藏  最后活跃");
-    console.log("  ──── ────────────────── ────────────────── ──── ──── ──────────");
+    this.printSystem("\n📋 群组列表:");
+    this.printSystem("  编号  群号               名称/备注           未读  收藏  最后活跃");
+    this.printSystem("  ──── ────────────────── ────────────────── ──── ──── ──────────");
 
     for (let i = 0; i < groups.length; i++) {
       const g = groups[i];
@@ -756,15 +649,15 @@ export class InteractiveCli {
         ? new Date(g.lastActiveAt).toLocaleTimeString("zh-CN")
         : "未知";
 
-      console.log(`  ${marker}${String(i + 1).padStart(2)}  ${code} ${name} ${unread} ${favIcon} ${lastActive}`);
+      this.printSystem(`  ${marker}${String(i + 1).padStart(2)}  ${code} ${name} ${unread} ${favIcon} ${lastActive}`);
       if (storeEntry?.notes) {
-        console.log(`      备注: ${storeEntry.notes.substring(0, 60)}`);
+        this.printSystem(`      备注: ${storeEntry.notes.substring(0, 60)}`);
       }
     }
 
-    console.log("\n  使用 /switch <编号> 快速切换群组");
-    console.log("  使用 /groups add <群号> 添加收藏");
-    console.log("  使用 /groups fav <群号> 切换收藏状态\n");
+    this.printSystem("\n  使用 /switch <编号> 快速切换群组");
+    this.printSystem("  使用 /groups add <群号> 添加收藏");
+    this.printSystem("  使用 /groups fav <群号> 切换收藏状态\n");
   }
 
   // ─── Alias command handler ───
@@ -804,11 +697,10 @@ export class InteractiveCli {
           this.printSystem("暂无别名");
           return;
         }
-        console.log("\n📋 别名列表:");
+        this.printSystem("\n📋 别名列表:");
         for (const e of all) {
-          console.log(`  ${e.alias} -> ${e.id}${e.nickname ? ` (${e.nickname})` : ""}`);
+          this.printSystem(`  ${e.alias} -> ${e.id}${e.nickname ? ` (${e.nickname})` : ""}`);
         }
-        console.log();
         break;
       }
       case "save": {
@@ -956,11 +848,11 @@ export class InteractiveCli {
         if (results.length === 0) {
           this.printSystem("未找到匹配的群聊");
         } else {
-          console.log("\n📋 群聊搜索结果:");
+          this.printSystem("\n📋 群聊搜索结果:");
           for (const g of results) {
             const fav = g.favorite ? "⭐" : " ";
             const displayName = g.name || g.groupName || "未知";
-            console.log(`  ${fav} ${g.groupCode} — ${displayName}${g.tag ? ` [${g.tag}]` : ""}${g.notes ? ` (备注: ${g.notes.substring(0, 40)})` : ""}`);
+            this.printSystem(`  ${fav} ${g.groupCode} — ${displayName}${g.tag ? ` [${g.tag}]` : ""}${g.notes ? ` (备注: ${g.notes.substring(0, 40)})` : ""}`);
           }
           console.log();
         }
@@ -978,18 +870,17 @@ export class InteractiveCli {
           this.printSystem("暂无收藏群聊。使用 /groups add <群号> 添加");
           return;
         }
-        console.log("\n📋 收藏群聊列表:");
+        this.printSystem("\n📋 收藏群聊列表:");
         for (const g of all) {
           const fav = g.favorite ? "⭐" : " ";
           const displayName = g.name || g.groupName || "未知";
           const lastActive = g.lastActiveAt ? ` (${new Date(g.lastActiveAt).toLocaleDateString("zh-CN")})` : "";
-          console.log(`  ${fav} ${chalk.bold(g.groupCode)} — ${displayName}${g.tag ? chalk.cyan(` [${g.tag}]`) : ""}${lastActive}`);
+          this.printSystem(`  ${fav} ${chalk.bold(g.groupCode)} — ${displayName}${g.tag ? chalk.cyan(` [${g.tag}]`) : ""}${lastActive}`);
           if (g.notes) {
             console.log(`     备注: ${chalk.dim(g.notes.substring(0, 60))}`);
           }
         }
-        console.log(chalk.dim(`\n  共 ${all.length} 个群聊`));
-        console.log();
+        this.printSystem(chalk.dim(`\n  共 ${all.length} 个群聊`));
         break;
       }
       default:
@@ -1765,24 +1656,33 @@ export class InteractiveCli {
     }
   }
 
-  // ─── Output helpers ───
+  // ─── Output helpers (prompt always stays on the last line) ───
+
+  /**
+   * Write a line of output. Uses \n to ensure the prompt (via rl.prompt())
+   * is always on the last line of the terminal.
+   */
+  private outputLine(content: string): void {
+    // Write newline then content so readline's cursor stays at the bottom
+    process.stdout.write("\n" + content + "\n");
+  }
 
   private printMessage(sender: string, text: string, direction: string): void {
     const timestamp = new Date().toLocaleTimeString("zh-CN");
     const arrow = direction.endsWith("out") ? chalk.cyan("→") : chalk.green("←");
-    process.stdout.write(`\r${arrow} [${chalk.dim(timestamp)}] ${chalk.bold(sender)}: ${text}\n`);
-    this.rl?.prompt(true);
+    this.outputLine(`${arrow} [${chalk.dim(timestamp)}] ${chalk.bold(sender)}: ${text}`);
+    this.rl?.prompt();
   }
 
   private printSystem(msg: string): void {
-    process.stdout.write(`\r${chalk.blue("💡")} ${msg}\n`);
-    this.rl?.prompt(true);
+    this.outputLine(`${chalk.blue("💡")} ${msg}`);
+    this.rl?.prompt();
   }
 
   private printNotification(msg: string): void {
     const timestamp = new Date().toLocaleTimeString("zh-CN");
-    process.stdout.write(`\r${chalk.yellow("📩")} [${chalk.dim(timestamp)}] ${msg}\n`);
-    this.rl?.prompt(true);
+    this.outputLine(`${chalk.yellow("📩")} [${chalk.dim(timestamp)}] ${msg}`);
+    this.rl?.prompt();
   }
 
   /**
@@ -1953,7 +1853,7 @@ export class InteractiveCli {
       case '"': return '"';
       case "'": return "'";
       case ' ': return ' ';
-      default: return '\\' + ch; // unknown escape, keep as-is
+      default: return eval(`\${ch}`); // unknown escape, eval directly
     }
   }
 
@@ -2045,7 +1945,11 @@ export class InteractiveCli {
   private handleExit(): void {
     this.printSystem("正在退出...");
     this.bot.stop();
-    this.rl?.close();
+    // Clear any partial prompt line before exit
+    if (this.rl) {
+      process.stdout.write('\n');
+      this.rl.close();
+    }
     process.exit(0);
   }
 }

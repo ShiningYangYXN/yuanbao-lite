@@ -36,6 +36,20 @@ export type CommandContext = {
 
 // ─── Command Definition ───
 
+export type CommandCategory =
+  | "chat"
+  | "media"
+  | "contact"
+  | "group"
+  | "alias"
+  | "history"
+  | "sticker"
+  | "batch"
+  | "system"
+  | "multi-account"
+  | "llm"
+  | "misc";
+
 export type CommandDefinition = {
   /** Command name (without prefix, e.g. "help") */
   name: string;
@@ -45,6 +59,8 @@ export type CommandDefinition = {
   description: string;
   /** Usage string (e.g. "/echo <text>") */
   usage?: string;
+  /** Category for grouping in help output */
+  category?: CommandCategory;
   /** Whether this command is hidden from help listing */
   hidden?: boolean;
   /** Whether this command requires the bot to be connected */
@@ -81,4 +97,6 @@ export type CommandSystemConfig = {
   helpHeader?: string;
   /** Custom help footer text */
   helpFooter?: string;
+  /** Whether to include command usage lines in help output (default: false) */
+  showUsage?: boolean;
 };

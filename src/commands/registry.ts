@@ -17,7 +17,10 @@ import type {
   CommandDefinition,
   CommandResult,
   CommandSystemConfig,
-} from "./types.js";
+  CommandCategory,
+}
+  from "./types.js";
+import { generateColoredHelp, generatePlainHelp } from "./help-text.js";
 import {
   searchStickers,
   getStickerPacks,
@@ -58,6 +61,7 @@ export class CommandSystem {
       requireMentionInGroup: config?.requireMentionInGroup ?? true,
       helpHeader: config?.helpHeader ?? DEFAULT_HELP_HEADER,
       helpFooter: config?.helpFooter ?? DEFAULT_HELP_FOOTER,
+      showUsage: config?.showUsage ?? true,
     };
     this.log = createLog("commands");
 
@@ -144,10 +148,17 @@ export class CommandSystem {
   }
 
   /**
-   * Get all registered commands.
+   * Get all registered commands (including hidden ones).
    */
   getAll(): CommandDefinition[] {
     return [...this.commands.values()];
+  }
+
+  /**
+   * Get all visible commands (excludes hidden commands).
+   */
+  getVisibleCommands(): CommandDefinition[] {
+    return this.getAll().filter(c => !c.hidden);
   }
 
   /**
@@ -446,6 +457,7 @@ export class CommandSystem {
       aliases: ["h", "?", "帮助"],
       description: "显示命令帮助信息",
       usage: "/help [命令名]   (查看指定命令详细用法)",
+      category: "misc" as CommandCategory,
       handler: async (ctx) => {
         if (ctx.args.length > 0) {
           // Show help for specific command
@@ -465,21 +477,19 @@ export class CommandSystem {
           return;
         }
 
-        // Show all commands
+        // Show all commands — auto-generated colored help
         const visible = this.getAll().filter(c => !c.hidden);
         if (visible.length === 0) {
           await ctx.reply("暂无可用命令");
           return;
         }
 
-        const lines = [this.config.helpHeader, ""];
-        for (const cmd of visible) {
-          const aliasStr = cmd.aliases?.length ? ` (${cmd.aliases.join(", ")})` : "";
-          lines.push(`  ${this.config.prefix}${cmd.name}${aliasStr} — ${cmd.description}`);
-        }
-        lines.push("");
-        lines.push(this.config.helpFooter);
-        await ctx.reply(lines.join("\n"));
+        // Generate colored help from command definitions
+        const helpText = generateColoredHelp(visible, {
+          prefix: this.config.prefix,
+          footer: this.config.helpFooter,
+        });
+        await ctx.reply(helpText);
       },
     });
 
@@ -489,6 +499,7 @@ export class CommandSystem {
       aliases: ["state", "状态"],
       description: "查看机器人连接状态和账号信息",
       usage: "/status   (显示连接状态、Bot ID、名称等)",
+      category: "misc" as CommandCategory,
       requireConnected: false,
       handler: async (ctx) => {
         const state = ctx.bot.getState();
@@ -515,6 +526,7 @@ export class CommandSystem {
       aliases: ["say", "重复"],
       description: "回显消息文本",
       usage: "/echo <文本内容>   (原样返回输入文本)",
+      category: "misc" as CommandCategory,
       handler: async (ctx) => {
         if (ctx.args.length === 0) {
           await ctx.reply("用法: /echo <文本内容>");
@@ -530,6 +542,7 @@ export class CommandSystem {
       aliases: ["pong"],
       description: "测试机器人响应延迟",
       usage: "/ping   (返回pong和延迟时间)",
+      category: "misc" as CommandCategory,
       handler: async (ctx) => {
         const start = Date.now();
         await ctx.reply("🏓 pong!");
@@ -544,6 +557,7 @@ export class CommandSystem {
       aliases: ["危险模式"],
       description: "临时允许群聊使用受限命令（私聊发送，全局生效）",
       usage: "/unsafe [on|off|status] [分钟数]   (默认5分钟)",
+      category: "system" as CommandCategory,
       dmOnly: true, // Must be sent from DM to activate
       handler: async (ctx) => {
         const subCmd = ctx.args[0]?.toLowerCase();
@@ -582,6 +596,7 @@ export class CommandSystem {
       aliases: ["v", "ver", "版本"],
       description: "查看版本信息",
       usage: "/version   (显示当前版本号)",
+      category: "misc" as CommandCategory,
       handler: async (ctx) => {
         const { getVersion } = await import("../version.js");
         await ctx.reply(
@@ -595,7 +610,8 @@ export class CommandSystem {
       name: "uptime",
       aliases: ["运行时间"],
       description: "查看机器人运行时间",
-      usage: "/uptime   (显示自上次连接以来的运行时长)",
+      usage: "/uptime   (显示已运行时长)",
+      category: "misc" as CommandCategory,
       requireConnected: true,
       handler: async (ctx) => {
         const state = ctx.bot.getState();
@@ -617,6 +633,7 @@ export class CommandSystem {
       aliases: ["gi", "info", "群信息"],
       description: "查询群组信息（群名、群主、成员数）",
       usage: "/groupinfo [群号]   (在群聊中可省略群号)",
+      category: "group" as CommandCategory,
       requireConnected: true,
       handler: async (ctx) => {
         const groupCode = ctx.args[0] || ctx.groupCode;
@@ -645,8 +662,9 @@ export class CommandSystem {
     this.register({
       name: "members",
       aliases: ["成员", "群成员", "member"],
-      description: "查询群成员列表（默认最多50人，--all显示全部）",
+      description: "查看群成员（支持模糊搜索，默认50人，--all显示全部）",
       usage: "/members [--all] [群号]   (--all/-a 显示全部成员)",
+      category: "group" as CommandCategory,
       requireConnected: true,
       handler: async (ctx) => {
         const groupCode = ctx.args[0] || ctx.groupCode;
@@ -680,6 +698,7 @@ export class CommandSystem {
       aliases: ["别名"],
       description: "管理ID别名映射（为用户ID设置快捷名称）",
       usage: "/alias <add|remove|list|save|load|resolve> [参数]",
+      category: "alias" as CommandCategory,
       dmOnly: true,
       handler: async (ctx) => {
         const subCmd = ctx.args[0]?.toLowerCase();
@@ -751,6 +770,7 @@ export class CommandSystem {
       aliases: ["hist", "历史"],
       description: "查看和搜索消息历史（search子命令默认20条，--all显示全部）",
       usage: "/history [search|stats|recent|user|group] [--all] [参数]   (search+--all/-a 显示全部)",
+      category: "history" as CommandCategory,
       handler: async (ctx) => {
         const subCmd = ctx.args[0]?.toLowerCase();
         const store = ctx.bot.getHistoryStore();
@@ -846,6 +866,7 @@ export class CommandSystem {
       aliases: ["搜索", "查找"],
       description: "搜索群组和群成员（模糊匹配）",
       usage: "/search <groups|members> <关键词> [群号]",
+      category: "group" as CommandCategory,
       requireConnected: true,
       handler: async (ctx) => {
         const subCmd = ctx.args[0]?.toLowerCase();
@@ -912,6 +933,7 @@ export class CommandSystem {
       aliases: ["批量"],
       description: "批量发送消息（支持JS插值模板）",
       usage: "/batch text <目标> <数量> <间隔ms> \"模板${i}\"",
+      category: "batch" as CommandCategory,
       requireConnected: true,
       dmOnly: true,
       handler: async (ctx) => {
@@ -970,10 +992,10 @@ export class CommandSystem {
               cleanupBatch("cli-batch");
               ctx.reply(
                 `✅ 批量发送完成: 成功${result.sent}条, 失败${result.failed}条, 耗时${result.durationMs}ms`,
-              ).catch(() => {});
+              ).catch(() => { });
             }).catch((err) => {
               cleanupBatch("cli-batch");
-              ctx.reply(`❌ 批量发送失败: ${(err as Error).message}`).catch(() => {});
+              ctx.reply(`❌ 批量发送失败: ${(err as Error).message}`).catch(() => { });
             });
 
             break;
@@ -1015,6 +1037,7 @@ export class CommandSystem {
       aliases: ["私聊"],
       description: "发送私聊消息（支持别名解析）",
       usage: "/dm <用户ID或别名> <消息>",
+      category: "chat" as CommandCategory,
       requireConnected: true,
       dmOnly: true,
       handler: async (ctx) => {
@@ -1041,6 +1064,7 @@ export class CommandSystem {
       aliases: ["群发"],
       description: "发送群聊消息",
       usage: "/group <群号> <消息>",
+      category: "chat" as CommandCategory,
       requireConnected: true,
       dmOnly: true,
       handler: async (ctx) => {
@@ -1065,6 +1089,7 @@ export class CommandSystem {
       aliases: ["贴纸"],
       description: "发送贴纸（使用 emoji_编号 格式）",
       usage: "/sticker <贴纸ID>   (用 /stickers 查看可用贴纸)",
+      category: "sticker" as CommandCategory,
       requireConnected: true,
       handler: async (ctx) => {
         if (ctx.args.length === 0) {
@@ -1091,6 +1116,7 @@ export class CommandSystem {
       aliases: ["at", "提及"],
       description: "发送含@提及的消息（支持 @[昵称](id) 内联语法）",
       usage: "/mention <目标> <消息>   消息中可用 @[昵称](id), @[](id), @[昵称]()",
+      category: "chat" as CommandCategory,
       requireConnected: true,
       handler: async (ctx) => {
         if (ctx.args.length < 2) {
@@ -1112,11 +1138,11 @@ export class CommandSystem {
           const { parseMentions } = await import("../business/mention.js");
           const nicknameResolver = (ctx.isGroup && target)
             ? async (nickname: string) => {
-                const { SearchEngine } = await import("../business/search.js");
-                const searchEngine = new SearchEngine(ctx.bot);
-                const results = await searchEngine.searchGroupMembers(String(target), nickname);
-                return results.filter(r => r.score >= 0.8).map(r => ({ userId: r.userId, nickname: r.nickName }));
-              }
+              const { SearchEngine } = await import("../business/search.js");
+              const searchEngine = new SearchEngine(ctx.bot);
+              const results = await searchEngine.searchGroupMembers(String(target), nickname);
+              return results.filter(r => r.score >= 0.8).map(r => ({ userId: r.userId, nickname: r.nickName }));
+            }
             : undefined;
           const parsed = await parseMentions(text, ctx.bot.getAliasStore(), nicknameResolver);
           if (parsed.mentions.length > 0) {
@@ -1137,6 +1163,7 @@ export class CommandSystem {
       aliases: ["图片", "发送图片"],
       description: "发送图片消息",
       usage: "/img <图片路径> [目标ID]   (目标默认为当前会话)",
+      category: "media" as CommandCategory,
       requireConnected: true,
       dmOnly: true,
       handler: async (ctx) => {
@@ -1169,6 +1196,7 @@ export class CommandSystem {
       aliases: ["文件", "发送文件"],
       description: "发送文件消息",
       usage: "/file <文件路径> [目标ID]   (目标默认为当前会话)",
+      category: "media" as CommandCategory,
       requireConnected: true,
       dmOnly: true,
       handler: async (ctx) => {
@@ -1201,6 +1229,7 @@ export class CommandSystem {
       aliases: ["上传"],
       description: "上传文件到媒体服务器",
       usage: "/upload <文件路径>   (返回 uuid 和 url)",
+      category: "media" as CommandCategory,
       requireConnected: true,
       dmOnly: true,
       handler: async (ctx) => {
@@ -1224,6 +1253,7 @@ export class CommandSystem {
       aliases: ["下载"],
       description: "下载媒体文件到本地",
       usage: "/download <URL> [文件名]",
+      category: "media" as CommandCategory,
       dmOnly: true,
       handler: async (ctx) => {
         if (ctx.args.length === 0) {
@@ -1247,6 +1277,7 @@ export class CommandSystem {
       aliases: ["联系人"],
       description: "联系人管理（增删改查、备注、标签、收藏）",
       usage: "/contacts <list|add|rm|rename|note|tag|fav|dm|search> [参数]",
+      category: "contact" as CommandCategory,
       dmOnly: true,
       handler: async (ctx) => {
         const subCmd = ctx.args[0]?.toLowerCase();
@@ -1380,6 +1411,7 @@ export class CommandSystem {
       aliases: ["glist"],
       description: "群聊管理（列表默认20条，--all显示全部）",
       usage: "/groups [--all] <list|add|rm|rename|note|tag|fav|join|search> [参数]   (--all/-a 显示全部)",
+      category: "group" as CommandCategory,
       dmOnly: true,
       handler: async (ctx) => {
         const subCmd = ctx.args[0]?.toLowerCase();
@@ -1537,6 +1569,7 @@ export class CommandSystem {
       aliases: ["ai"],
       description: "LLM 接管控制（开启/关闭AI自动回复，配置模型参数）",
       usage: "/llm <on|off|status|chat|prompt|model|temp|history|clear|provider|apikey|baseurl|raw|im|group|merge|cooldown|iterate> [参数]",
+      category: "llm" as CommandCategory,
       dmOnly: true,
       handler: async (ctx) => {
         const engine = ctx.bot.getLlmEngine();
@@ -1813,6 +1846,7 @@ export class CommandSystem {
       aliases: ["日志"],
       description: "切换日志级别（持久化保存）",
       usage: "/log <debug|info|warn|error>",
+      category: "system" as CommandCategory,
       dmOnly: true,
       handler: async (ctx) => {
         if (ctx.args.length === 0) {
@@ -1856,6 +1890,7 @@ export class CommandSystem {
       aliases: ["引用回复"],
       description: "引用回复指定消息（支持消息ID或尾号）",
       usage: "/reply <消息ID或#尾号> <回复内容>",
+      category: "chat" as CommandCategory,
       requireConnected: true,
       handler: async (ctx) => {
         if (ctx.args.length < 2) {
@@ -1939,6 +1974,7 @@ export class CommandSystem {
       aliases: ["sh"],
       description: "运行系统命令（仅私聊，默认截断2000字符输出）",
       usage: "/shell [--all] <命令>   (--all/-a 放在命令前取消截断，命令中的 --all/-a 会原样传入)",
+      category: "system" as CommandCategory,
       dmOnly: true,
       handler: async (ctx) => {
         if (ctx.args.length === 0) {
@@ -1986,6 +2022,7 @@ export class CommandSystem {
       aliases: ["聊天"],
       description: "向指定目标发送消息（私聊或群聊）",
       usage: "/chat <用户ID|group 群号> <消息>",
+      category: "chat" as CommandCategory,
       requireConnected: true,
       dmOnly: true,
       handler: async (ctx) => {
@@ -2023,6 +2060,7 @@ export class CommandSystem {
       aliases: ["加入"],
       description: "加入群聊会话并跟踪活动",
       usage: "/join <群号>",
+      category: "group" as CommandCategory,
       requireConnected: true,
       dmOnly: true,
       handler: async (ctx) => {
@@ -2053,6 +2091,7 @@ export class CommandSystem {
       aliases: ["切换", "sw"],
       description: "查看活跃会话列表（默认20条，--all显示全部）",
       usage: "/switch [--all] [编号]   (--all/-a 显示全部会话)",
+      category: "group" as CommandCategory,
       dmOnly: true,
       handler: async (ctx) => {
         const store = ctx.bot.getGroupStore();
@@ -2093,6 +2132,7 @@ export class CommandSystem {
       aliases: ["贴纸列表", "stickerlist"],
       description: "浏览和搜索贴纸（支持模糊搜索，默认30条，--all显示全部）",
       usage: "/stickers [--all] [search <关键词>|emojis|load <目录>]   (--all/-a 显示全部)",
+      category: "sticker" as CommandCategory,
       handler: async (ctx) => {
         const subCmd = ctx.args[0]?.toLowerCase();
         const subArgs = ctx.args.slice(1);
@@ -2149,6 +2189,7 @@ export class CommandSystem {
       aliases: ["临时文件", "tmpfile"],
       description: "上传文件到临时平台并发送链接（默认gofile，10天有效）",
       usage: "/tempfile <文件路径> [描述]\n/tempfile <gofile|tmpfiles|uguu|litterbox> <路径> [选项]",
+      category: "media" as CommandCategory,
       dmOnly: true,
       handler: async (ctx) => {
         if (ctx.args.length === 0) {
@@ -2225,6 +2266,7 @@ export class CommandSystem {
       aliases: ["搜索历史", "histsearch"],
       description: "搜索消息历史（默认15条结果+截断文本，--all显示全部+完整文本）",
       usage: "/hsearch [--all] <关键词>   (--all/-a 显示全部结果及完整文本)",
+      category: "history" as CommandCategory,
       handler: async (ctx) => {
         if (ctx.args.length === 0) {
           await ctx.reply("用法: /hsearch <关键词>");
@@ -2256,6 +2298,7 @@ export class CommandSystem {
       aliases: ["清除历史"],
       description: "清除消息历史（不可恢复）",
       usage: "/hclear",
+      category: "history" as CommandCategory,
       dmOnly: true,
       handler: async (ctx) => {
         const store = ctx.bot.getHistoryStore();
@@ -2270,6 +2313,7 @@ export class CommandSystem {
       aliases: ["账号", "acc"],
       description: "多账号管理（添加、切换、启停多个机器人账号）",
       usage: "/account <add|remove|list|switch|start|stop> [参数]",
+      category: "multi-account" as CommandCategory,
       dmOnly: true,
       handler: async (ctx) => {
         const subCmd = ctx.args[0]?.toLowerCase();
