@@ -1,0 +1,50 @@
+{
+  "name": "yuanbao-lite",
+  "version": "10.22.0",
+  "type": "module",
+  "description": "Lightweight standalone Yuanbao bot client — chat, commands, media, stickers, LLM takeover, interactive CLI",
+  "license": "MIT",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "yb-cli": "./dist/cli/index.js",
+    "yuanbao-lite-cli": "./dist/cli/index.js"
+  },
+  "files": [
+    "src",
+    "dist",
+    "tsconfig.json",
+    "README.md"
+  ],
+  "keywords": [
+    "yuanbao",
+    "tencent-im",
+    "chatbot",
+    "standalone",
+    "sticker",
+    "media-upload",
+    "llm",
+    "ai-takeover",
+    "cli"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/cli/index.js",
+    "cli": "node dist/cli/index.js",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "chalk": "^5.6.2",
+    "commander": "^15.0.0",
+    "marked": "^18.0.5",
+    "protobufjs": "^7.5.4",
+    "ws": "^8.20.0",
+    "z-ai-web-dev-sdk": "^0.0.18"
+  },
+  "devDependencies": {
+    "@types/marked": "^5.0.2",
+    "@types/node": "^24.12.2",
+    "@types/ws": "^8.18.1",
+    "typescript": "^5.7.0"
+  }
+}
