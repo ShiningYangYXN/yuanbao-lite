@@ -3,13 +3,11 @@
  *
  * Creates bot instances from profiles and provides a `withBot` wrapper
  * that handles connect → run → disconnect with a timeout.
- *
- * Reuses YuanbaoBot from src/index.ts (same as old CLI).
  */
 
-import type { YuanbaoBot } from "../../index.js";
-import type { CliProfile } from "../../cli/config.js";
-import { setLogLevel } from "../../logger.js";
+import { YuanbaoBot } from "../index.js";
+import type { CliProfile } from "./config-loader.js";
+import { setLogLevel } from "../logger.js";
 
 export type BotOptions = {
   logLevel?: string;
@@ -17,19 +15,11 @@ export type BotOptions = {
   stickerDir?: string;
 };
 
-/**
- * Create a bot instance from a profile and optional global config.
- */
 export function createBotFromProfile(
   profile: CliProfile,
   options?: BotOptions,
 ): YuanbaoBot {
-  const logLevel =
-    (profile.logLevel || options?.logLevel || "info") as
-    | "debug"
-    | "info"
-    | "warn"
-    | "error";
+  const logLevel = (profile.logLevel || options?.logLevel || "info") as "debug" | "info" | "warn" | "error";
   setLogLevel(logLevel);
 
   const config: Record<string, unknown> = {
@@ -44,9 +34,6 @@ export function createBotFromProfile(
   return new YuanbaoBot(config);
 }
 
-/**
- * Connect bot → run function → disconnect, with timeout.
- */
 export async function withBot<T>(
   profile: CliProfile,
   options: BotOptions | undefined,

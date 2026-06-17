@@ -1,31 +1,52 @@
 /**
  * Non-interactive CLI — commander-based subcommands.
  *
- * Shares business logic with src/commands/registry.ts (CommandSystem).
- * This file only defines CLI argument parsing and output formatting.
+ * Reuses YuanbaoBot from src/index.ts.
+ * No command handler logic duplicated.
  */
 
 import { Command } from "commander";
 import { resolve, join } from "node:path";
 import { existsSync } from "node:fs";
+import { homedir } from "node:os";
 import chalk from "chalk";
 import Table from "table";
-import { YuanbaoBot } from "../../index.js";
-import { getVersion } from "../../version.js";
-import { interpolate } from "../../business/interpolate.js";
+import { getVersion } from "../version.js";
+import { interpolate } from "../business/interpolate.js";
+import { loadConfig } from "./config-loader.js";
+import { withBot } from "./bot-helper.js";
 import {
-  loadConfig,
-  initConfig,
-  createBotFromProfile,
-  withBot,
-  printStatus,
-  printResult,
-  printError,
-  printSection,
-  printBlock,
-  printWelcome,
-} from "../core/index.js";
-import type { CliProfile } from "../../cli/config.js";
+  getProfileNames,
+  getProfile,
+  getActiveProfileName,
+  switchProfile,
+  createProfile,
+  deleteProfile,
+  setConfigKey,
+  type CliProfile,
+} from "./config-loader.js";
+
+function renderTable(headers: string[], rows: string[][], colWidths?: number[]): string {
+  const config: Record<string, unknown> = {
+    columns: {},
+    border: Table.getBorderCharacters("none"),
+    drawHorizontal: () => false,
+    drawVertical: () => false,
+  };
+  if (colWidths) {
+    colWidths.forEach((w, i) => {
+      config[`column_${i}`] = { width: w };
+    });
+  }
+  return Table.table([headers, ...rows], config);
+}
+
+async function withProfile<T>(
+  fn: (pr: CliProfile, gc: Record<string, unknown>) => Promise<T>,
+): Promise<T> {
+  const { profile, globalConfig } = loadConfig({});
+  return fn(profile, globalConfig);
+}
 
 export function buildProgram(): Command {
   const program = new Command();
@@ -37,7 +58,7 @@ export function buildProgram(): Command {
     .option("--profile <name>", "使用指定配置档案", "default")
     .option("--config <path>", "配置文件所在目录");
 
-  // ─── send command ───
+  // ─── send ───
 
   program
     .command("send")
@@ -47,10 +68,10 @@ export function buildProgram(): Command {
         .description("发送私聊消息")
         .argument("<userId>", "目标用户 ID")
         .argument("<message>", "消息内容 (支持 ${} 插值)")
-        .action(async (userId: string, message: string, opts: Record<string, unknown>) => {
+        .action(async (userId: string, message: string) => {
           await withProfile(async (profile, globalConfig) => {
             const processed = interpolate(message);
-            await withBot(profile, globalConfig, async (bot) => {
+            await withBot(profile, undefined, async (bot) => {
               await bot.sendDirectMessage(userId, processed);
               console.log(chalk.green(`✅ 已发送私聊消息给 ${userId}`));
             });
@@ -62,10 +83,10 @@ export function buildProgram(): Command {
         .description("发送群聊消息")
         .argument("<groupCode>", "目标群号")
         .argument("<message>", "消息内容 (支持 ${} 插值)")
-        .action(async (groupCode: string, message: string, opts: Record<string, unknown>) => {
+        .action(async (groupCode: string, message: string) => {
           await withProfile(async (profile, globalConfig) => {
             const processed = interpolate(message);
-            await withBot(profile, globalConfig, async (bot) => {
+            await withBot(profile, undefined, async (bot) => {
               await bot.sendGroupMessage(groupCode, processed);
               console.log(chalk.green(`✅ 已发送群聊消息到 ${groupCode}`));
             });
@@ -73,38 +94,31 @@ export function buildProgram(): Command {
         }),
     );
 
-  // ─── status command ───
+  // ─── status ───
 
   program
     .command("status")
     .description("查看连接状态")
     .action(async () => {
       await withProfile(async (profile, globalConfig) => {
-        await withBot(profile, globalConfig, async (bot) => {
+        await withBot(profile, undefined, async (bot) => {
           const state = bot.getState();
           const account = bot.getAccount();
 
           const headers = ["属性", "值"];
-          const rows = [
-            [
-              chalk.cyan("连接"),
-              state.connected
-                ? chalk.green("✅")
-                : chalk.red("❌"),
-            ],
+          const rows: string[][] = [
+            [chalk.cyan("连接"), state.connected ? chalk.green("✅") : chalk.red("❌")],
             ["状态", state.status],
             ["Bot ID", state.botId || "(无)"],
             ["API域名", account.apiDomain || "(未设置)"],
             ["配置完整", account.configured ? chalk.green("✅") : chalk.red("❌")],
           ];
-
-          const table = renderTable(headers, rows, { colWidths: [14, 60] });
-          console.log(table);
+          console.log(renderTable(headers, rows, [14, 60]));
         });
       });
     });
 
-  // ─── upload command ───
+  // ─── upload ───
 
   program
     .command("upload")
@@ -118,8 +132,8 @@ export function buildProgram(): Command {
           console.log(chalk.red(`❌ 文件不存在: ${resolved}`));
           process.exit(1);
         }
-        await withBot(profile, globalConfig, async (bot) => {
-          const result = await bot.uploadMedia(resolved, opts.type as string | undefined);
+        await withBot(profile, undefined, async (bot) => {
+          const result = await bot.uploadMedia(resolved, opts.type as "image" | "file" | "video" | "audio" | undefined);
           console.log(chalk.green("✅ 上传成功:"));
           console.log(`  UUID: ${result.uuid}`);
           console.log(`  URL:  ${result.url || "(pending)"}`);
@@ -128,39 +142,27 @@ export function buildProgram(): Command {
       });
     });
 
-  // ─── config command ───
+  // ─── config ───
 
   program
     .command("config")
     .description("配置管理")
     .addCommand(
-      new Command("init")
-        .description("初始化配置 (交互式)")
-        .action(async () => {
-          await initConfig();
-        }),
-    )
-    .addCommand(
       new Command("show")
         .description("显示当前配置")
         .action(() => {
-          const store = require("../../cli/config.js").getGlobalConfigStore();
-          const profile = store.getActiveProfile();
-          const global = store.getData().global ?? {};
+          // Use self-contained config loader
+          const names = getProfileNames();
+          const active = getActiveProfileName();
+          const p = getProfile(active)!;
 
-          const headers = ["属性", "值"];
-          const rows = [
-            ["档案", profile.name],
-            ["App Key", profile.appKey ? "****" + profile.appKey.slice(-4) : "(未设置)"],
-            ["App Secret", profile.appSecret ? "****" + profile.appSecret.slice(-4) : "(未设置)"],
-            ["API域名", profile.apiDomain || "(默认)"],
-            ["日志级别", profile.logLevel || "(默认)"],
-            ["LLM 供应商", profile.llmProvider || "(未设置)"],
-            ["下载目录", profile.downloadDir || global.downloadDir || "(默认)"],
-          ];
-
-          const table = renderTable(headers, rows, { colWidths: [14, 60] });
-          console.log(table);
+          console.log(chalk.cyan.bold("\n📋 当前配置:"));
+          console.log(`  档案:    ${chalk.yellow(active)}`);
+          console.log(`  App Key: ${p.appKey ? chalk.dim("***" + p.appKey.slice(-4)) : chalk.red("(未设置)")}`);
+          console.log(`  App Secret: ${p.appSecret ? chalk.dim("***" + p.appSecret.slice(-4)) : chalk.red("(未设置)")}`);
+          console.log(`  API域名: ${p.apiDomain || "(默认)"}`);
+          console.log(`  日志级别: ${p.logLevel || "(默认)"}`);
+          console.log(`  LLM供应商: ${p.llmProvider || "(未设置)"}`);
         }),
     )
     .addCommand(
@@ -169,8 +171,7 @@ export function buildProgram(): Command {
         .argument("<key>", "配置键名")
         .argument("<value>", "配置值")
         .action(async (key: string, value: string) => {
-          const store = require("../../cli/config.js").getGlobalConfigStore();
-          store.set(key as never, value);
+          setConfigKey(key, value);
           console.log(chalk.green(`✅ 已设置 ${key}`));
         }),
     )
@@ -181,26 +182,22 @@ export function buildProgram(): Command {
           new Command("list")
             .description("列出所有配置档案")
             .action(() => {
-              const store = require("../../cli/config.js").getGlobalConfigStore();
-              const names = store.getProfileNames();
-              const active = store.getActiveProfileName();
+              const names = getProfileNames();
+              const active = getActiveProfileName();
 
-              const headers = ["标识", "名称", "凭证"];
-              const rows = names.map((name: string) => {
-                const profile = store.getProfile(name)!;
+              const headers = ["", "名称", "凭证"];
+              const rows: string[][] = names.map((name: string) => {
+                const p = getProfile(name)!;
                 const marker = name === active ? "→" : " ";
-                const hasCreds =
-                  (profile.appKey && profile.appSecret) || profile.token;
-                const status = hasCreds ? chalk.green("✅") : chalk.red("❌");
+                const hasCreds = (p.appKey && p.appSecret) || p.token;
                 return [
-                  chalk.cyan(marker),
+                  chalk.rgb(100, 200, 255)(marker),
                   chalk.bold(name),
-                  status,
+                  hasCreds ? chalk.green("✅") : chalk.red("❌"),
                 ];
               });
 
-              const table = renderTable(headers, rows, { colWidths: [4, 20, 6] });
-              console.log(table);
+              console.log(renderTable(headers, rows, [4, 20, 6]));
             }),
         )
         .addCommand(
@@ -208,8 +205,7 @@ export function buildProgram(): Command {
             .description("切换活跃配置档案")
             .argument("<name>", "档案名称")
             .action((name: string) => {
-              const store = require("../../cli/config.js").getGlobalConfigStore();
-              if (store.switchProfile(name)) {
+              if (switchProfile(name)) {
                 console.log(chalk.green(`✅ 已切换到档案: ${name}`));
               } else {
                 console.log(chalk.red(`❌ 档案不存在: ${name}`));
@@ -225,8 +221,7 @@ export function buildProgram(): Command {
             .option("--app-secret <secret>", "App Secret")
             .option("--token <token>", "Token")
             .action((name: string, opts: Record<string, string>) => {
-              const store = require("../../cli/config.js").getGlobalConfigStore();
-              store.createProfile(name, {
+              createProfile(name, {
                 appKey: opts.appKey,
                 appSecret: opts.appSecret,
                 token: opts.token,
@@ -239,8 +234,7 @@ export function buildProgram(): Command {
             .description("删除配置档案")
             .argument("<name>", "档案名称")
             .action((name: string) => {
-              const store = require("../../cli/config.js").getGlobalConfigStore();
-              if (store.deleteProfile(name)) {
+              if (deleteProfile(name)) {
                 console.log(chalk.green(`✅ 已删除档案: ${name}`));
               } else {
                 console.log(chalk.red(`❌ 无法删除档案: ${name}`));
@@ -250,7 +244,7 @@ export function buildProgram(): Command {
         ),
     );
 
-  // ─── contacts command ───
+  // ─── contacts ───
 
   program
     .command("contacts")
@@ -259,10 +253,7 @@ export function buildProgram(): Command {
       new Command("list")
         .description("列出所有联系人")
         .action(async () => {
-          const { getGlobalContactStore } = await import(
-            "../../business/contacts.js"
-          );
-          const { join, homedir } = await import("node:path", { assert: { type: "json" } }) as any;
+          const { getGlobalContactStore } = await import("../business/contacts.js");
           const store = getGlobalContactStore({
             persistencePath: join(homedir(), ".yuanbao-lite", "contacts.json"),
             autoSave: true,
@@ -274,18 +265,15 @@ export function buildProgram(): Command {
             return;
           }
 
-          const headers = ["星标", "名称", "用户ID", "标签"];
-          const rows = all.map((c: any) => [
+          const headers = ["", "名称", "用户ID", "标签"];
+          const rows: string[][] = all.map((c: { id: string; name: string; tag?: string; favorite?: boolean }) => [
             c.favorite ? "⭐" : "  ",
             chalk.bold(c.name),
             chalk.dim(c.id.substring(0, 30)),
             c.tag ? chalk.cyan(`[${c.tag}]`) : "",
           ]);
 
-          const table = renderTable(headers, rows, {
-            colWidths: [4, 20, 30, 15],
-          });
-          console.log(table);
+          console.log(renderTable(headers, rows, [4, 20, 30, 15]));
           console.log(chalk.dim(`\n  共 ${all.length} 个联系人\n`));
         }),
     )
@@ -296,10 +284,7 @@ export function buildProgram(): Command {
         .argument("<name>", "显示名称")
         .argument("[tag]", "标签")
         .action(async (id: string, name: string, tag: string | undefined) => {
-          const { getGlobalContactStore } = await import(
-            "../../business/contacts.js"
-          );
-          const { join, homedir } = await import("node:path", { assert: { type: "json" } }) as any;
+          const { getGlobalContactStore } = await import("../business/contacts.js");
           const store = getGlobalContactStore({
             persistencePath: join(homedir(), ".yuanbao-lite", "contacts.json"),
             autoSave: true,
@@ -313,10 +298,7 @@ export function buildProgram(): Command {
         .description("删除联系人")
         .argument("<nameOrId>", "联系人名称或 ID")
         .action(async (nameOrId: string) => {
-          const { getGlobalContactStore } = await import(
-            "../../business/contacts.js"
-          );
-          const { join, homedir } = await import("node:path", { assert: { type: "json" } }) as any;
+          const { getGlobalContactStore } = await import("../business/contacts.js");
           const store = getGlobalContactStore({
             persistencePath: join(homedir(), ".yuanbao-lite", "contacts.json"),
             autoSave: true,
@@ -327,44 +309,4 @@ export function buildProgram(): Command {
     );
 
   return program;
-}
-
-/**
- * Render a flat text table using the `table` library.
- */
-function renderTable(
-  headers: string[],
-  rows: string[][],
-  options: { colWidths?: number[] } = {},
-): string {
-  const { colWidths } = options;
-
-  const config: Table.TableOptions = {
-    columns: {},
-    border: Table.getBorderCharacters("none"),
-    drawHorizontal: () => false,
-    drawVertical: () => false,
-  };
-
-  if (colWidths) {
-    colWidths.forEach((w, i) => {
-      config.columns[i] = { width: w };
-    });
-  }
-
-  const data = [headers, ...rows];
-  return Table.table(data, config);
-}
-
-/**
- * Load config, run callback with profile + globalConfig.
- */
-async function withProfile<T>(
-  fn: (
-    profile: CliProfile,
-    globalConfig: Record<string, unknown>,
-  ) => Promise<void>,
-): Promise<void> {
-  const { profile, globalConfig } = loadConfig({});
-  await fn(profile, globalConfig);
 }

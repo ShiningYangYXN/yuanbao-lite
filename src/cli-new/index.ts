@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * New CLI — the unified entry point.
+ * New CLI — unified entry point.
  *
  * Routes between three modes:
  *   1. `interactive` / `repl` — interactive REPL (Clack prompts)
@@ -13,12 +13,12 @@
  *   - src/index.ts              (YuanbaoBot)
  */
 
-import { Command } from "commander";
 import chalk from "chalk";
-import { runInteractive } from "../core/interactive.js";
-import { runDaemon } from "../core/daemon.js";
-import { buildProgram } from "../commands/non-interactive.js";
-import { getVersion } from "../../version.js";
+import { runInteractive } from "./interactive.js";
+import { runDaemon } from "./daemon.js";
+import { buildProgram } from "./non-interactive.js";
+import { getVersion } from "../version.js";
+
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
