@@ -30,6 +30,10 @@ export type ReminderJob = {
   cronExpr?: string;
   createdAt: number;
   active: boolean;
+  /** Target to send the message to (userId for DM, groupCode for group). Defaults to userId (DM). */
+  targetId?: string;
+  /** Whether the target is a group (true) or DM (false). Defaults to false (DM). */
+  isGroup?: boolean;
 };
 
 type ReminderData = {
@@ -248,8 +252,10 @@ export function listReminders(userId?: string): ReminderJob[] {
 /**
  * Start all active jobs (call on daemon boot).
  */
+export type SendFunction = (targetId: string, message: string, isGroup: boolean) => Promise<void>;
+
 export function startAllJobs(
-  sendFn: (userId: string, message: string) => Promise<void>,
+  sendFn: SendFunction,
 ): void {
   const data = load();
   for (const job of data.jobs) {
@@ -261,23 +267,25 @@ export function startAllJobs(
 
 function scheduleJob(
   job: ReminderJob,
-  sendFn: (userId: string, message: string) => Promise<void>,
+  sendFn: SendFunction,
 ): void {
   const now = Date.now();
   const delay = Math.max(0, job.fireAt - now);
 
   if (delay > 2_147_483_647) {
-    // setTimeout max is ~2^31 ms (~24.8 days) — reschedule in chunks
     log.info(`job ${job.id} delay >24d, scheduling in 24d chunks`);
     const timer = setTimeout(() => scheduleJob(job, sendFn), 2_147_483_647);
     activeTimers.set(job.id, timer);
     return;
   }
 
+  const targetId = job.targetId ?? job.userId;
+  const isGroup = job.isGroup ?? false;
+
   const timer = setTimeout(async () => {
     activeTimers.delete(job.id);
     try {
-      await sendFn(job.userId, `⏰ 提醒: ${job.message}`);
+      await sendFn(targetId, `⏰ 提醒: ${job.message}`, isGroup);
     } catch (err) {
       log.error(`job ${job.id} send failed: ${(err as Error).message}`);
     }

@@ -1143,6 +1143,22 @@ export class YuanbaoBot {
         void cs._handleLlmWizardInput(this, userId, chatMessage.text, replyFn);
         return;
       }
+
+      // Check /term interactive terminal session
+      const cs2 = this.commandSystem as unknown as {
+        _termSessions?: Map<string, unknown>;
+        _handleTermInput?: (bot: unknown, userId: string, text: string, reply: (t: string) => Promise<void>) => Promise<boolean>;
+      };
+      if (cs2._termSessions?.has(userId) && cs2._handleTermInput) {
+        // Allow /term exit to pass through to command dispatch
+        const text = chatMessage.text.trim();
+        if (text === "/term exit" || text === "/term") {
+          // Let the command system handle it
+        } else {
+          void cs2._handleTermInput(this, userId, chatMessage.text, replyFn);
+          return;
+        }
+      }
     }
 
     // ─── Step 2: Try command dispatch ───

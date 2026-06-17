@@ -49,6 +49,10 @@ export class CommandSystem {
   private _unsafeMode = false;
   /** Timer for auto-expiring unsafe mode */
   private _unsafeTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Per-command authorization: command names allowed in group chat even without unsafe mode */
+  private _allowedCommands = new Set<string>();
+  /** Commands that cannot be authorized via /unsafe allow */
+  private static UNAUTHORIZABLE_COMMANDS = new Set(["unsafe", "trust", "config", "init", "daemon"]);
 
   constructor(config?: CommandSystemConfig) {
     this.config = {
@@ -69,7 +73,7 @@ export class CommandSystem {
 
   /**
    * Enable unsafe mode — temporarily allows dmOnly commands in group chat.
-   * @param durationMs - How long unsafe mode lasts (default: 5 minutes, 0 = until manually disabled)
+   * @param durationMs - How long unsafe mode lasts (default: 5 minutes, 0 = forever)
    */
   enableUnsafeMode(durationMs = 5 * 60 * 1000): void {
     this._unsafeMode = true;
@@ -81,7 +85,7 @@ export class CommandSystem {
         this.log.info("unsafe mode expired, dmOnly restrictions restored");
       }, durationMs);
     }
-    this.log.info(`unsafe mode enabled${durationMs > 0 ? ` for ${durationMs}ms` : " (no expiry)"}`);
+    this.log.info(`unsafe mode enabled${durationMs > 0 ? ` for ${durationMs}ms` : " (forever)"}`);
   }
 
   /**
@@ -101,6 +105,57 @@ export class CommandSystem {
    */
   isUnsafeMode(): boolean {
     return this._unsafeMode;
+  }
+
+  /**
+   * Check if unsafe mode is permanent (no expiry timer).
+   */
+  isUnsafeForever(): boolean {
+    return this._unsafeMode && this._unsafeTimer === null;
+  }
+
+  /**
+   * Authorize a single command to bypass dmOnly in group chat.
+   * Commands in UNAUTHORIZABLE_COMMANDS cannot be authorized.
+   * Non-dmOnly commands are auto-skipped (no need to authorize).
+   */
+  allowCommand(cmdName: string): { ok: boolean; reason?: string } {
+    const normalized = cmdName.toLowerCase().replace(/^\//, "");
+    if (CommandSystem.UNAUTHORIZABLE_COMMANDS.has(normalized)) {
+      return { ok: false, reason: `命令 /${normalized} 不支持被授权` };
+    }
+    const def = this.get(normalized);
+    if (!def) {
+      return { ok: false, reason: `未知命令: /${normalized}` };
+    }
+    if (!def.dmOnly) {
+      return { ok: false, reason: `命令 /${normalized} 不是受限命令，无需授权` };
+    }
+    this._allowedCommands.add(normalized);
+    this.log.info(`command /${normalized} authorized for group use`);
+    return { ok: true };
+  }
+
+  /**
+   * Remove per-command authorization.
+   */
+  disallowCommand(cmdName: string): boolean {
+    const normalized = cmdName.toLowerCase().replace(/^\//, "");
+    return this._allowedCommands.delete(normalized);
+  }
+
+  /**
+   * Get all currently authorized commands.
+   */
+  getAllowedCommands(): string[] {
+    return Array.from(this._allowedCommands);
+  }
+
+  /**
+   * Check if a specific command is authorized for group use.
+   */
+  isCommandAllowed(cmdName: string): boolean {
+    return this._allowedCommands.has(cmdName.toLowerCase());
   }
 
   // ─── Registration ───
@@ -229,8 +284,45 @@ export class CommandSystem {
       return { handled: true };
     }
 
-    // Check dmOnly restriction (bypassed when unsafe mode is active, or CLI source)
-    if (def.dmOnly && message.chatType === "group" && !this._unsafeMode && source !== "cli") {
+    // Check for --help/-h/-? flag BEFORE executing the command
+    // For /shell and /sh: only check if the flag is the FIRST argument
+    // (flags after the actual command are passed through to the shell)
+    const isShellCmd = commandName === "shell" || commandName === "sh";
+    let helpRequested = false;
+    if (isShellCmd) {
+      // For shell, only --help/-h/-? as the FIRST arg counts
+      const firstArg = args[0];
+      if (firstArg === "--help" || firstArg === "-h" || firstArg === "-?") {
+        helpRequested = true;
+      }
+    } else {
+      // For all other commands, check if any arg is --help/-h/-?
+      // (these are stripped from args by makeContext if they match --all/-a pattern,
+      // so we check the raw args here)
+      helpRequested = args.some(a => a === "--help" || a === "-h" || a === "-?");
+    }
+
+    if (helpRequested) {
+      const ctx = this.makeContext(bot, message, commandName, [], onReply, source);
+      const lines = [
+        `📖 命令: ${this.config.prefix}${def.name}`,
+        `描述: ${def.description}`,
+      ];
+      if (def.usage) lines.push(`用法: ${def.usage}`);
+      if (def.aliases?.length) lines.push(`别名: ${def.aliases.join(", ")}`);
+      if (def.category) lines.push(`分类: ${def.category}`);
+      const flags: string[] = [];
+      if (def.dmOnly) flags.push("仅私聊");
+      if (def.requireConnected) flags.push("需连接");
+      if (def.hidden) flags.push("隐藏");
+      if (flags.length > 0) lines.push(`标记: ${flags.join(", ")}`);
+      await ctx.reply(lines.join("\n"));
+      return { handled: true };
+    }
+
+    // Check dmOnly restriction (bypassed when unsafe mode is active, CLI source,
+    // or the specific command is authorized via /unsafe allow)
+    if (def.dmOnly && message.chatType === "group" && !this._unsafeMode && source !== "cli" && !this.isCommandAllowed(commandName)) {
       // Check if the user is trusted — trusted users get a hint to enable /unsafe
       let isTrustedUser = false;
       try {
@@ -657,16 +749,18 @@ export class CommandSystem {
       },
     });
 
-    // /remind — persistent one-shot reminders (dmOnly, unlimited time)
+    // /remind — persistent one-shot reminders (dmOnly, unlimited time, target support)
     this.register({
       name: "remind",
       aliases: ["提醒", "timer"],
-      description: "设置定时提醒（支持任意时长、时间点，持久化）",
-      usage: "/remind <时间> <消息>\n/remind list|cancel <ID>\n时间: 30s|5m|2h|1d|1w|1mo|1y|14:30|2026-06-18 14:30|1d2h3m",
+      description: "设置定时提醒（支持任意时长、时间点、目标，持久化）",
+      usage: "/remind <时间> <消息> [--to <目标ID>] [--group]\n/remind list|cancel <ID>",
       category: "misc" as CommandCategory,
       dmOnly: true,
       handler: async (ctx) => {
-        const { addReminder, removeReminder, listReminders, parseTimeString } = await import("../business/reminders.js");
+        const reminders = await import("../business/reminders.js");
+        const { addReminder, removeReminder, listReminders, parseTimeString, startAllJobs } = reminders;
+        type SendFunction = (targetId: string, message: string, isGroup: boolean) => Promise<void>;
         const subCmd = ctx.args[0]?.toLowerCase();
 
         if (subCmd === "list") {
@@ -677,7 +771,8 @@ export class CommandSystem {
           }
           const lines = jobs.map(j => {
             const time = new Date(j.fireAt).toLocaleString("zh-CN");
-            return `  ${j.id}: ${time} — "${j.message}"`;
+            const target = j.isGroup ? `群${j.targetId}` : j.targetId ?? j.userId;
+            return `  ${j.id}: ${time} → ${target} — "${j.message}"`;
           });
           await ctx.reply(`📋 提醒列表 (${jobs.length}):\n${lines.join("\n")}`);
           return;
@@ -691,23 +786,50 @@ export class CommandSystem {
 
         if (ctx.args.length < 2) {
           await ctx.reply(
-            "用法: /remind <时间> <消息>\n" +
+            "用法: /remind <时间> <消息> [--to <目标ID>] [--group]\n" +
             "时间格式:\n" +
-            "  相对: 30s (秒), 5m (分), 2h (时), 1d (天), 1w (周), 1mo (月), 1y (年)\n" +
-            "  组合: 1d2h3m (1天2小时3分)\n" +
-            "  时间点: 14:30 (今天14:30), 09:00:00\n" +
-            "  完整: 2026-06-18 14:30\n\n" +
+            "  相对: 30s, 5m, 2h, 1d, 1w, 1mo, 1y\n" +
+            "  组合: 1d2h3m\n" +
+            "  时间点: 14:30\n" +
+            "  完整: 2026-06-18 14:30\n" +
+            "目标: --to <用户ID/群号> (默认当前会话), --group (发到群)\n\n" +
             "管理: /remind list | /remind cancel <ID>",
           );
           return;
         }
 
         const timeStr = ctx.args[0];
-        const message = ctx.args.slice(1).join(" ");
+        // Parse --to and --group flags
+        const remaining = ctx.args.slice(1);
+        let targetId: string | undefined;
+        let isGroup = false;
+        const msgParts: string[] = [];
+        for (let i = 0; i < remaining.length; i++) {
+          if (remaining[i] === "--to" && remaining[i + 1]) {
+            targetId = remaining[i + 1];
+            i++;
+          } else if (remaining[i] === "--group") {
+            isGroup = true;
+          } else {
+            msgParts.push(remaining[i]);
+          }
+        }
+        const message = msgParts.join(" ");
+        if (!message) {
+          await ctx.reply("❌ 消息内容不能为空");
+          return;
+        }
+
         const parsed = parseTimeString(timeStr);
         if (parsed.error) {
           await ctx.reply(`❌ ${parsed.error}`);
           return;
+        }
+
+        // Default target: current chat
+        if (!targetId) {
+          targetId = ctx.isGroup ? (ctx.groupCode ?? ctx.message.fromUserId) : ctx.message.fromUserId;
+          isGroup = ctx.isGroup;
         }
 
         const id = addReminder({
@@ -716,42 +838,40 @@ export class CommandSystem {
           message,
           fireAt: parsed.fireAt,
           intervalMs: 0,
+          targetId,
+          isGroup,
         });
 
         // Schedule the timer
-        const sendFn = async (uid: string, msg: string) => {
-          await ctx.bot.sendDirectMessage(uid, msg);
+        const sendFn: SendFunction = async (tid, msg, grp) => {
+          if (grp) await ctx.bot.sendGroupMessage(tid, msg);
+          else await ctx.bot.sendDirectMessage(tid, msg);
         };
-        const { startAllJobs: _s } = await import("../business/reminders.js");
-        // Re-schedule just this job
-        const jobs = listReminders(ctx.message.fromUserId);
-        const job = jobs.find(j => j.id === id);
-        if (job) {
-          // Use the module's internal scheduler by restarting all
-          // (simpler than exposing scheduleJob)
-          _s(sendFn);
-        }
+        startAllJobs(sendFn);
 
         await ctx.reply(
           `⏰ 提醒已设置 [${id}]:\n` +
           `  消息: "${message}"\n` +
           `  触发: ${new Date(parsed.fireAt).toLocaleString("zh-CN")}\n` +
+          `  目标: ${isGroup ? "群" : "私聊"} ${targetId}\n` +
           `  (距现在 ${Math.round(parsed.delayMs / 1000)} 秒)\n` +
           `取消: /remind cancel ${id}`,
         );
       },
     });
 
-    // /cron — persistent recurring scheduled messages (dmOnly)
+    // /cron — persistent recurring scheduled messages (dmOnly, target support)
     this.register({
       name: "cron",
       aliases: ["定时任务", "周期提醒"],
-      description: "设置周期性定时任务（cron表达式，持久化）",
-      usage: "/cron <cron表达式> <消息>\n/cron list|cancel <ID>\n表达式: 分 时 日 月 周\n例如: \"30 9 * * 1-5\" 工作日9:30",
+      description: "设置周期性定时任务（cron表达式，持久化，可指定目标）",
+      usage: "/cron <cron表达式> <消息> [--to <目标ID>] [--group]\n/cron list|cancel <ID>",
       category: "misc" as CommandCategory,
       dmOnly: true,
       handler: async (ctx) => {
-        const { addReminder, removeReminder, listReminders, parseCronExpression, startAllJobs } = await import("../business/reminders.js");
+        const reminders = await import("../business/reminders.js");
+        const { addReminder, removeReminder, listReminders, parseCronExpression, startAllJobs } = reminders;
+        type SendFunction = (targetId: string, message: string, isGroup: boolean) => Promise<void>;
         const subCmd = ctx.args[0]?.toLowerCase();
 
         if (subCmd === "list") {
@@ -762,7 +882,8 @@ export class CommandSystem {
           }
           const lines = jobs.map(j => {
             const next = new Date(j.fireAt).toLocaleString("zh-CN");
-            return `  ${j.id}: ${j.cronExpr} → 下次: ${next}\n    "${j.message}"`;
+            const target = j.isGroup ? `群${j.targetId}` : j.targetId ?? j.userId;
+            return `  ${j.id}: ${j.cronExpr} → ${target} 下次: ${next}\n    "${j.message}"`;
           });
           await ctx.reply(`📋 定时任务 (${jobs.length}):\n${lines.join("\n")}`);
           return;
@@ -776,23 +897,42 @@ export class CommandSystem {
 
         if (ctx.args.length < 6) {
           await ctx.reply(
-            "用法: /cron <cron表达式> <消息>\n" +
+            "用法: /cron <cron表达式> <消息> [--to <目标ID>] [--group]\n" +
             "cron表达式: 分 时 日 月 周 (5个字段)\n" +
             "  * — 任意值\n" +
-            "  */N — 每N个单位\n" +
+            "  star/N — 每N个单位\n" +
             "  N-M — 范围\n" +
             "  N,M — 列表\n\n" +
             "示例:\n" +
-            "  /cron \"30 9 * * 1-5\" 早安\n" +
-            "  /cron \"0 */2 * * *\" 每2小时\n" +
-            "  /cron \"0 0 1 * *\" 每月1号\n\n" +
+            "  /cron 30 9 * * 1-5 早安\n" +
+            "  /cron 0 */2 * * * 每2小时喝水 --to 765035413 --group\n\n" +
             "管理: /cron list | /cron cancel <ID>",
           );
           return;
         }
 
         const cronExpr = ctx.args.slice(0, 5).join(" ");
-        const message = ctx.args.slice(5).join(" ");
+        // Parse --to and --group flags from remaining args
+        const remaining = ctx.args.slice(5);
+        let targetId: string | undefined;
+        let isGroup = false;
+        const msgParts: string[] = [];
+        for (let i = 0; i < remaining.length; i++) {
+          if (remaining[i] === "--to" && remaining[i + 1]) {
+            targetId = remaining[i + 1];
+            i++;
+          } else if (remaining[i] === "--group") {
+            isGroup = true;
+          } else {
+            msgParts.push(remaining[i]);
+          }
+        }
+        const message = msgParts.join(" ");
+        if (!message) {
+          await ctx.reply("❌ 消息内容不能为空");
+          return;
+        }
+
         const parsed = parseCronExpression(cronExpr);
         if (parsed.error) {
           await ctx.reply(`❌ ${parsed.error}`);
@@ -805,6 +945,12 @@ export class CommandSystem {
           return;
         }
 
+        // Default target: current chat
+        if (!targetId) {
+          targetId = ctx.isGroup ? (ctx.groupCode ?? ctx.message.fromUserId) : ctx.message.fromUserId;
+          isGroup = ctx.isGroup;
+        }
+
         const id = addReminder({
           type: "cron",
           userId: ctx.message.fromUserId,
@@ -812,11 +958,14 @@ export class CommandSystem {
           fireAt: nextFire,
           intervalMs: 0,
           cronExpr,
+          targetId,
+          isGroup,
         });
 
         // Restart scheduler to pick up the new job
-        const sendFn = async (uid: string, msg: string) => {
-          await ctx.bot.sendDirectMessage(uid, msg);
+        const sendFn: SendFunction = async (tid, msg, grp) => {
+          if (grp) await ctx.bot.sendGroupMessage(tid, msg);
+          else await ctx.bot.sendDirectMessage(tid, msg);
         };
         startAllJobs(sendFn);
 
@@ -824,6 +973,7 @@ export class CommandSystem {
           `🔄 定时任务已设置 [${id}]:\n` +
           `  表达式: ${cronExpr}\n` +
           `  消息: "${message}"\n` +
+          `  目标: ${isGroup ? "群" : "私聊"} ${targetId}\n` +
           `  下次触发: ${new Date(nextFire).toLocaleString("zh-CN")}\n` +
           `取消: /cron cancel ${id}`,
         );
@@ -1148,6 +1298,111 @@ export class CommandSystem {
       },
     });
 
+    // /term — interactive terminal (dmOnly, blocking, 5min timeout)
+    // Enters an interactive shell session. Each subsequent non-slash message
+    // is executed as a shell command. Output is sent back. /term exit to quit.
+    this.register({
+      name: "term",
+      aliases: ["终端", "terminal", "shell-session"],
+      description: "进入交互式终端（阻塞，5分钟无操作自动退出，仅私聊）",
+      usage: "/term   (进入终端，发送命令直接执行，/term exit 退出)",
+      category: "system" as CommandCategory,
+      dmOnly: true,
+      handler: async (ctx) => {
+        if (ctx.args[0]?.toLowerCase() === "exit") {
+          // Exit is handled by the wizard session mechanism
+          const sessions = (this as unknown as { _termSessions?: Map<string, unknown> })._termSessions;
+          if (sessions) {
+            sessions.delete(ctx.message.fromUserId);
+            await ctx.reply("🖥️ 终端已退出");
+          }
+          return;
+        }
+
+        // Start terminal session
+        const sessions = (this as unknown as { _termSessions?: Map<string, { lastActivity: number; exitCode: number | null }> })._termSessions;
+        if (!sessions) {
+          await ctx.reply("❌ 终端会话管理不可用");
+          return;
+        }
+
+        sessions.set(ctx.message.fromUserId, { lastActivity: Date.now(), exitCode: null });
+        await ctx.reply(
+          "🖥️ 交互式终端已启动\n\n" +
+          "接下来的消息将作为 shell 命令执行。\n" +
+          "发送 /term exit 退出终端。\n" +
+          "5分钟无操作自动退出。\n\n" +
+          "示例: ls -la, echo hello, whoami",
+        );
+      },
+    });
+
+    // Register terminal session handler (similar to wizard sessions)
+    {
+      const termSessions = new Map<string, { lastActivity: number; exitCode: number | null }>();
+      (this as unknown as { _termSessions: Map<string, unknown> })._termSessions = termSessions;
+
+      (this as unknown as { _handleTermInput: (bot: unknown, userId: string, text: string, reply: (t: string) => Promise<void>) => Promise<boolean> })._handleTermInput =
+        async (bot: unknown, userId: string, text: string, reply: (t: string) => Promise<void>): Promise<boolean> => {
+          const session = termSessions.get(userId);
+          if (!session) return false;
+
+          // Check 5-minute timeout
+          if (Date.now() - session.lastActivity > 5 * 60 * 1000) {
+            termSessions.delete(userId);
+            await reply("⏰ 终端已超时（5分钟无操作），自动退出");
+            return true;
+          }
+
+          session.lastActivity = Date.now();
+          const cmd = text.trim();
+
+          // Check for exit command
+          if (cmd === "exit" || cmd === "quit" || cmd === "/term exit") {
+            termSessions.delete(userId);
+            const exitCode = session.exitCode;
+            await reply(`🖥️ 终端已退出${exitCode !== null ? ` (最后退出码: ${exitCode})` : ""}`);
+            return true;
+          }
+
+          // Execute shell command
+          try {
+            const { exec } = await import("node:child_process");
+            const result = await new Promise<{ stdout: string; stderr: string; code: number }>((resolve) => {
+              exec(cmd, {
+                timeout: 30_000,
+                maxBuffer: 1024 * 1024,
+                cwd: process.env.HOME || process.cwd(),
+              }, (err, stdout, stderr) => {
+                resolve({
+                  stdout: stdout?.toString() ?? "",
+                  stderr: stderr?.toString() ?? "",
+                  code: err ? 1 : 0,
+                });
+              });
+            });
+
+            session.exitCode = result.code;
+
+            let output = "";
+            if (result.stdout) output += result.stdout;
+            if (result.stderr) output += (output ? "\n" : "") + result.stderr;
+            if (!output) output = "(无输出)";
+
+            // Truncate to 3000 chars
+            if (output.length > 3000) {
+              output = output.slice(0, 3000) + `\n... (截断，共 ${output.length} 字符)`;
+            }
+
+            await reply(`$ ${cmd}\n${output}\n[退出码: ${result.code}]`);
+          } catch (err) {
+            await reply(`$ ${cmd}\n❌ 执行失败: ${(err as Error).message}`);
+          }
+
+          return true;
+        };
+    }
+
     // /ping
     this.register({
       name: "ping",
@@ -1203,7 +1458,44 @@ export class CommandSystem {
 
         const subCmd2 = ctx.args[0]?.toLowerCase();
 
+        if (subCmd2 === "allow") {
+          // /unsafe allow <command> — authorize a single command
+          if (!ctx.args[1]) {
+            const allowed = this.getAllowedCommands();
+            await ctx.reply(
+              `已授权命令: ${allowed.length > 0 ? allowed.map(c => `/${c}`).join(", ") : "(无)"}\n` +
+              `用法: /unsafe allow <命令名> (授权单个命令在群聊使用)\n` +
+              `/unsafe disallow <命令名> (取消授权)\n` +
+              `不可授权: unsafe, trust, config, init, daemon`,
+            );
+            return;
+          }
+          const result = this.allowCommand(ctx.args[1]);
+          await ctx.reply(result.ok
+            ? `✅ 已授权 /${ctx.args[1]} 在群聊中使用`
+            : `❌ ${result.reason}`,
+          );
+          return;
+        }
+
+        if (subCmd2 === "disallow" && ctx.args[1]) {
+          const ok = this.disallowCommand(ctx.args[1]);
+          await ctx.reply(ok ? `✅ 已取消授权 /${ctx.args[1]}` : `/${ctx.args[1]} 未被授权`);
+          return;
+        }
+
         if (!subCmd2 || subCmd2 === "on") {
+          // Check for "forever" keyword
+          if (ctx.args[1]?.toLowerCase() === "forever") {
+            this.enableUnsafeMode(0); // 0 = forever
+            await ctx.reply(
+              `🔓 危险模式已永久开启\n` +
+              `  效果: 所有dmOnly命令可在群聊中使用\n` +
+              `  关闭: /unsafe off\n` +
+              `⚠️ 请注意安全`,
+            );
+            return;
+          }
           // Default: 5 minutes
           const minutes = parseInt(ctx.args[1], 10);
           const durationMs = (isNaN(minutes) || minutes <= 0) ? 5 * 60 * 1000 : minutes * 60 * 1000;
@@ -1214,13 +1506,23 @@ export class CommandSystem {
             `  有效期: ${mins}分钟\n` +
             `  效果: 所有dmOnly命令可在群聊中使用\n` +
             `  关闭: /unsafe off\n` +
-            `⚠️ 请注意安全，用完及时关闭`
+            `⚠️ 请注意安全，用完及时关闭\n` +
+            `永久开启: /unsafe on forever`,
           );
         } else if (subCmd2 === "off") {
           this.disableUnsafeMode();
           await ctx.reply("🔒 危险模式已关闭，dmOnly限制已恢复");
         } else {
-          await ctx.reply("用法: /unsafe [on|off|status] [分钟数]\n  /unsafe       — 开启5分钟\n  /unsafe 10    — 开启10分钟\n  /unsafe off   — 关闭\n  /unsafe status — 查看状态");
+          await ctx.reply(
+            "用法: /unsafe [on|off|status|allow|disallow] [参数]\n" +
+            "  /unsafe              — 开启5分钟\n" +
+            "  /unsafe 10           — 开启10分钟\n" +
+            "  /unsafe on forever   — 永久开启\n" +
+            "  /unsafe off          — 关闭\n" +
+            "  /unsafe status       — 查看状态\n" +
+            "  /unsafe allow <命令> — 授权单个命令在群聊使用\n" +
+            "  /unsafe disallow <命令> — 取消授权",
+          );
         }
       },
     });

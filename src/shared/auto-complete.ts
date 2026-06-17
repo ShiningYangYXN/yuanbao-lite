@@ -85,6 +85,7 @@ const TOP_LEVEL_COMMANDS = [
   { cmd: "/whoami", aliases: ["/我是谁", "/我的信息"] },
   { cmd: "/myip", aliases: ["/服务器ip", "/serverip"] },
   { cmd: "/cron", aliases: ["/定时任务", "/周期提醒"] },
+  { cmd: "/term", aliases: ["/终端", "/terminal", "/shell-session"] },
   { cmd: "/exit", aliases: ["/quit", "/q"] },
 ];
 
@@ -105,7 +106,7 @@ const SUB_COMMANDS: Record<string, string[]> = {
   "/tempfile": ["gofile", "tmpfiles", "uguu", "litterbox"],
   "/chat": ["group"],
   "/log": ["debug", "info", "warn", "error"],
-  "/unsafe": ["on", "off", "status"],
+  "/unsafe": ["on", "off", "status", "allow", "disallow", "forever"],
 };
 
 // Commands that support --all/-a flag for disabling truncation

@@ -32,7 +32,7 @@ const COMMANDS_WITH_SUBCOMMANDS: Record<string, string[]> = {
   "/trust": ["list", "add", "remove", "rm", "status"],
   "/stickers": ["search", "load", "emojis"],
   "/tempfile": ["gofile", "tmpfiles", "uguu", "litterbox"],
-  "/unsafe": ["on", "off", "status"],
+  "/unsafe": ["on", "off", "status", "allow", "disallow", "forever"],
 };
 
 const _ALL_COMMANDS = [
@@ -77,6 +77,7 @@ const _ALL_COMMANDS = [
   "/whoami", "/我是谁", "/我的信息",
   "/myip", "/服务器ip", "/serverip",
   "/cron", "/定时任务", "/周期提醒",
+  "/term", "/终端", "/terminal", "/shell-session",
   "/exit", "/quit", "/q",
 ];
 
