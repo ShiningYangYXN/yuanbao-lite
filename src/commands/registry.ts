@@ -1347,7 +1347,7 @@ export class CommandSystem {
       name: "term",
       aliases: ["终端", "terminal", "shell-session"],
       description: "进入交互式终端（阻塞，5分钟无操作自动退出，仅私聊）",
-      usage: "/term   (进入终端，发送命令直接执行，/term exit 退出)",
+      usage: "/term   (进入交互式终端，5分钟无操作自动退出)\n/term exit 退出终端",
       category: "system" as CommandCategory,
       dmOnly: true,
       handler: async (ctx) => {
@@ -1465,8 +1465,8 @@ export class CommandSystem {
     this.register({
       name: "unsafe",
       aliases: ["危险模式"],
-      description: "临时允许群聊使用受限命令（需受信）",
-      usage: "/unsafe [on|off|status] [分钟数]   (默认5分钟)",
+      description: "管理危险模式和单命令授权（需受信）",
+      usage: "/unsafe [on [分钟|forever] | off | status | allow <命令> [分钟|forever] | disallow <命令>]",
       category: "system" as CommandCategory,
       handler: async (ctx) => {
         const subCmd = ctx.args[0]?.toLowerCase();
@@ -2804,7 +2804,7 @@ export class CommandSystem {
       name: "llm",
       aliases: ["ai"],
       description: "LLM 接管控制（开启/关闭AI自动回复，配置模型参数）",
-      usage: "/llm <on|off|status|chat|prompt|model|temp|history|clear|provider|apikey|baseurl|raw|im|group|merge|cooldown|iterate> [参数]",
+      usage: "/llm <on|off|status|billing|chat|prompt|model|temp|history|clear|provider|config|customprovider|raw|im|group|merge|cooldown|iterate> [参数]",
       category: "llm" as CommandCategory,
       dmOnly: true,
       handler: async (ctx) => {
