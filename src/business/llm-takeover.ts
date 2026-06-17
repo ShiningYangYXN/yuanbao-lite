@@ -204,8 +204,14 @@ const DEFAULT_SYSTEM_PROMPT = `你是元宝Lite智能助手，一个友好、专
 const DEFAULT_TEMPERATURE = 0.7;
 const DEFAULT_MAX_TOKENS = 2048;
 const DEFAULT_MAX_HISTORY_TURNS = 20;
-const DEFAULT_COOLDOWN_MS = 1000;
-const DEFAULT_MERGE_WINDOW_MS = 3000;
+// Cooldown and merge window are DISABLED by default (0ms).
+// Rationale: these were designed to prevent spam in busy groups, but they
+// cause confusing "skipped" behavior — users send a message and get no
+// response because the engine is "cooling down" or "merging". Users who
+// need throttling can enable it explicitly via /llm cooldown <ms> and
+// /llm merge <ms>.
+const DEFAULT_COOLDOWN_MS = 0;
+const DEFAULT_MERGE_WINDOW_MS = 0;
 const DEFAULT_MAX_ITERATE = 50;
 
 // ─── Provider Factory ───

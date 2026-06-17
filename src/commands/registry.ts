@@ -301,16 +301,16 @@ export class CommandSystem {
       return { handled: false };
     }
 
-    // Check mention requirement for groups — ONLY for non-command messages.
-    // Slash commands (starting with /) should always work in groups without @mention.
-    // The LLM auto-reply's requireMentionInGroup is handled separately in the engine.
+    // Check mention requirement for groups.
+    // Per dispatch policy: in group chats, the bot ONLY responds when it is
+    // explicitly @mentioned — this applies to BOTH plain text (LLM auto-reply,
+    // handled by the engine's requireMentionInGroup) AND slash commands.
+    // Rationale: in a busy group, allowing un-at'd slash commands would let
+    // any member trigger bot actions (e.g. /send, /atall) without the bot
+    // owner's intent. Requiring @mention makes the bot's activation explicit.
+    // DM (chatType=direct) is unaffected — no @mention needed in private chat.
     if (message.chatType === "group" && this.config.requireMentionInGroup && !message.isMentioned) {
-      // Check if this is a slash command — if so, allow it through without @mention
-      const trimmedText = message.text.trim();
-      if (!trimmedText.startsWith(this.config.prefix)) {
-        return { handled: false };
-      }
-      // It's a slash command — proceed even without @mention
+      return { handled: false };
     }
 
     // Parse command from message text

@@ -15,6 +15,12 @@
  *
  * Plus daemon management:
  *   daemon start / stop / status
+ *
+ * IMPORTANT: `config` is registered STATICALLY (not via registerDynamicCommands)
+ * because users need to run `yb-cli config init` BEFORE the daemon can start
+ * (the daemon requires credentials). If config were dynamic, the daemon
+ * wouldn't be running yet, and Commander would fall back to the default
+ * `interactive` command, producing "too many arguments for 'interactive'".
  */
 
 import { Command } from "commander";
@@ -28,6 +34,8 @@ import {
   DEFAULT_DAEMON_HOST,
   type DaemonInfo,
 } from "./daemon-client.js";
+import { runInitWizard } from "./wizard.js";
+import { getGlobalConfigStore } from "../config.js";
 import { COLORS, printH1, printKV, printResult, printError, printWarn } from "../theme.js";
 
 // ─── Top-level program ───
@@ -121,6 +129,154 @@ export function buildProgram(): Command {
           }
           printDaemonInfo(info);
         }),
+    );
+
+  // ─── config (static — must work without daemon) ───
+  // Registered statically because `yb-cli config init` must work BEFORE the
+  // daemon can start (the daemon requires credentials). All other config
+  // subcommands (show/set/get/profile) also operate directly on the shared
+  // ConfigStore file, so they don't need the daemon either.
+  program
+    .command("config")
+    .description("配置管理 (查看/设置/初始化/档案)")
+    .addCommand(
+      new Command("init")
+        .description("交互式配置向导 (首次使用必填)")
+        .action(async () => {
+          await runInitWizard();
+        }),
+    )
+    .addCommand(
+      new Command("show")
+        .description("显示当前配置")
+        .action(async () => {
+          const store = getGlobalConfigStore({ autoSave: true });
+          const active = store.getActiveProfileName();
+          const pr = store.getActiveProfile();
+          const lines = [
+            "📋 当前配置:",
+            `  档案: ${active}`,
+            `  App Key: ${pr.appKey ? `***${pr.appKey.slice(-4)}` : "(未设置)"}`,
+            `  App Secret: ${pr.appSecret ? "***" + pr.appSecret.slice(-4) : "(未设置)"}`,
+            `  Token: ${pr.token ? "***" + pr.token.slice(-4) : "(未设置)"}`,
+            `  API域名: ${pr.apiDomain || "(默认)"}`,
+            `  WS地址: ${pr.wsUrl || "(默认)"}`,
+            `  日志级别: ${pr.logLevel || "(默认)"}`,
+            `  贴纸目录: ${pr.stickerDir || "(未设置)"}`,
+            `  下载目录: ${pr.downloadDir || store.getGlobal("downloadDir") || "(默认)"}`,
+            `  LLM供应商: ${pr.llmProvider || "(未设置)"}`,
+            `  LLM模型: ${pr.llmModel || "(未设置)"}`,
+            `  配置路径: ${store.getConfigDir()}`,
+          ];
+          console.log(lines.join("\n"));
+        }),
+    )
+    .addCommand(
+      new Command("get")
+        .description("获取配置项")
+        .argument("<key>", "配置键名")
+        .action(async (key: string) => {
+          const store = getGlobalConfigStore({ autoSave: true });
+          const value = store.get(key as keyof import("../../shared/config.js").CliProfile);
+          if (value === undefined) {
+            printWarn(`配置项 ${key} 未设置`);
+            return;
+          }
+          if (typeof value === "string" && (key === "appKey" || key === "appSecret" || key === "token" || key === "llmApiKey")) {
+            console.log(`${key} = ***${value.slice(-4)}`);
+          } else {
+            console.log(`${key} = ${String(value)}`);
+          }
+        }),
+    )
+    .addCommand(
+      new Command("set")
+        .description("设置配置项")
+        .argument("<key>", "配置键名")
+        .argument("<value>", "配置值")
+        .action(async (key: string, value: string) => {
+          const store = getGlobalConfigStore({ autoSave: true });
+          const validKeys = [
+            "appKey", "appSecret", "token", "apiDomain", "wsUrl",
+            "logLevel", "stickerDir", "downloadDir", "prompt",
+            "llmProvider", "llmApiKey", "llmBaseUrl", "llmModel",
+            "llmSystemPrompt", "llmEnabled", "defaultTarget", "defaultChatMode",
+          ];
+          if (!validKeys.includes(key)) {
+            printError(`无效配置键: ${key}\n可选: ${validKeys.join(", ")}`);
+            process.exit(1);
+          }
+          store.set(key as never, value as never);
+          const masked = (key === "appKey" || key === "appSecret" || key === "token" || key === "llmApiKey") ? "***" : value;
+          printResult(`已设置 ${key} = ${masked}`);
+          printWarn("提示: 如需让新配置生效，请重启 daemon (yb-cli daemon restart)");
+        }),
+    )
+    .addCommand(
+      new Command("profile")
+        .description("配置档案管理")
+        .addCommand(
+          new Command("list")
+            .description("列出所有档案")
+            .action(async () => {
+              const store = getGlobalConfigStore({ autoSave: true });
+              const active = store.getActiveProfileName();
+              const names = store.getProfileNames();
+              if (names.length === 0) {
+                printWarn("无配置档案。运行 yb-cli config init 创建。");
+                return;
+              }
+              const lines = names.map(n => `  ${n === active ? "▶" : " "} ${n}`);
+              console.log(`📋 配置档案 (共 ${names.length} 个):\n${lines.join("\n")}`);
+            }),
+        )
+        .addCommand(
+          new Command("switch")
+            .description("切换激活档案")
+            .argument("<name>", "档案名称")
+            .action(async (name: string) => {
+              const store = getGlobalConfigStore({ autoSave: true });
+              if (!store.getProfile(name)) {
+                printError(`档案不存在: ${name}`);
+                process.exit(1);
+              }
+              store.switchProfile(name);
+              printResult(`已切换到档案: ${name}`);
+              printWarn("提示: 请重启 daemon 让新档案生效 (yb-cli daemon restart)");
+            }),
+        )
+        .addCommand(
+          new Command("add")
+            .description("添加新档案")
+            .argument("<name>", "档案名称")
+            .action(async (name: string) => {
+              const store = getGlobalConfigStore({ autoSave: true });
+              if (store.getProfile(name)) {
+                printError(`档案已存在: ${name}`);
+                process.exit(1);
+              }
+              store.createProfile(name, { name });
+              printResult(`已创建档案: ${name} (空配置，请用 yb-cli config set 设置 appKey/appSecret)`);
+            }),
+        )
+        .addCommand(
+          new Command("remove")
+            .description("删除档案")
+            .argument("<name>", "档案名称")
+            .action(async (name: string) => {
+              const store = getGlobalConfigStore({ autoSave: true });
+              if (!store.getProfile(name)) {
+                printError(`档案不存在: ${name}`);
+                process.exit(1);
+              }
+              if (name === store.getActiveProfileName()) {
+                printError(`不能删除当前激活的档案: ${name} (先 switch 到其他档案)`);
+                process.exit(1);
+              }
+              store.deleteProfile(name);
+              printResult(`已删除档案: ${name}`);
+            }),
+        ),
     );
 
   // ─── Dynamic commands from Registry ───

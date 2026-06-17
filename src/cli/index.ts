@@ -120,7 +120,15 @@ async function main(): Promise<void> {
   // This makes every / slash command available as a CLI subcommand, sharing
   // the exact same handler code. Skipped if daemon is not available.
   // Only do this for non-interactive invocations (when args are present).
-  if (args.length > 0 && args[0] !== "interactive" && args[0] !== "repl" && !(args[0] === "daemon" && (args[1] === "start" || args[1] === "stop" || args[1] === "restart" || args[1] === "status"))) {
+  // Skip for: interactive/repl (default), daemon start/stop/restart/status
+  // (fast paths), and config (statically registered — must work without daemon).
+  if (
+    args.length > 0 &&
+    args[0] !== "interactive" &&
+    args[0] !== "repl" &&
+    args[0] !== "config" &&
+    !(args[0] === "daemon" && (args[1] === "start" || args[1] === "stop" || args[1] === "restart" || args[1] === "status"))
+  ) {
     await registerDynamicCommands(program);
   }
 
