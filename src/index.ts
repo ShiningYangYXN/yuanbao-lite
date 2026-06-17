@@ -185,9 +185,13 @@ export class YuanbaoBot {
       }
     }
 
-    // Initialize LLM engine — always create with defaults + persistence
-    // so /llm commands work even without explicit llmConfig
-    this.llmAutoReply = config.llmAutoReply ?? false; // default OFF to prevent group chat explosion
+    // Initialize LLM engine — always create so /llm commands work.
+    // When no llmConfig is provided, use defaults (engine exists but isReady=false
+    // until a provider is configured). When llmConfig IS provided, respect it fully.
+    // llmAutoReply defaults to true — bot responds when @mentioned in groups or DM'd.
+    // The LLM engine's requireMentionInGroup (default true) ensures it only replies
+    // to @mentions in groups, preventing spam.
+    this.llmAutoReply = config.llmAutoReply ?? true;
     this.llmEngine = createLlmTakeover({
       ...(config.llmConfig ?? {}),
       persistencePath: join(homedir(), ".yuanbao-lite", "llm-config.json"),
@@ -1052,15 +1056,16 @@ export class YuanbaoBot {
     }
 
     // Fix isMentioned: always verify against the bot's own ID
-    // The default isBotMentioned() checks if ANY mention exists (not bot-specific),
-    // so we always override based on whether the bot is specifically mentioned.
-    // Also use String() for comparison since user_id from TIMCustomElem may be a number.
     if (chatMessage.chatType === "group" && this.account.botId) {
       const botId = String(this.account.botId);
+      // Debug: log raw message structure for mention analysis
+      this.log.debug(`mention check: botId=${botId} mentions=${JSON.stringify(chatMessage.mentions?.map(m => ({userId: m.userId, name: m.displayName})))} cloud_custom_data=${msg.cloud_custom_data?.substring(0, 200)}`);
+      this.log.debug(`mention check: msg_body types=${msg.msg_body?.map(e => e.msg_type).join(",")} raw text="${chatMessage.text?.substring(0, 100)}"`);
+
       const mentioned = chatMessage.mentions?.some(m => String(m.userId) === botId);
       if (mentioned) {
         chatMessage.isMentioned = true;
-        this.log.debug(`isMentioned=true: bot ${botId} found in TIMCustomElem mentions`);
+        this.log.debug(`isMentioned=true: bot ${botId} found in mentions`);
       } else {
         // Fallback: check cloud_custom_data groupAtInfo directly from raw message
         // The extractMentionsFromMsgBody may miss mentions if TIMCustomElem parsing fails
@@ -1161,28 +1166,72 @@ export class YuanbaoBot {
     }
 
     // ─── Step 2: Try command dispatch ───
-    const isSlashCommand = chatMessage.text.trim().startsWith("/");
-    if (isSlashCommand && this.commandSystem) {
-      this.commandSystem.dispatch(this, chatMessage).then((result) => {
-        if (result.handled) {
-          this.log.debug(`command handled: ${chatMessage.text}`);
-          // Trigger data persistence after command execution
-          this.persistData();
-          return;
-        }
-        // Unknown slash command — still emit and try LLM
-        this.emitMessageEvents(chatMessage, chatType);
-        this.tryLlmAutoReply(chatMessage);
-      }).catch((err) => {
-        this.log.error(`command dispatch error: ${(err as Error).message}`);
-        this.emitMessageEvents(chatMessage, chatType);
-        this.tryLlmAutoReply(chatMessage);
-      });
-    } else {
-      // Non-slash message — emit events and try LLM auto-reply
-      this.emitMessageEvents(chatMessage, chatType);
-      this.tryLlmAutoReply(chatMessage);
+    // Dispatch rules (apply to each line of an incoming message):
+    //   1. 未续行 (standalone line, not preceded by \) → independent content,
+    //      recognize slash independently (line starting with / is a slash command).
+    //   2. 续行 (continuation line, preceded by \) → extension of the previous
+    //      command (joined via \\\n → space, never dispatched on its own).
+    //   3. 不符合任何一条规则 (standalone plain text — no slash, not continuation):
+    //      - 私聊 (DM / chatType=direct): skip — do not dispatch, do not auto-reply.
+    //        Use /llm chat <text> or /ask <text> to explicitly invoke LLM.
+    //      - 群聊 (group): try LLM auto-reply (engine requires @mention by default).
+    //      - CLI: send directly as chat (handled by cli/client/interactive.ts).
+    let dispatchText = chatMessage.text.trim();
+    if (chatMessage.chatType === "group") {
+      // Remove leading @nickname patterns (e.g. "@机器人 " or "@bot ")
+      dispatchText = dispatchText.replace(/^@\S+\s+/, "").trim();
     }
+
+    // Parse multi-line commands with \ continuation support
+    // Step 1: Join lines ending with \ into the next line (续行 = extension of previous)
+    const continuedText = dispatchText.replace(/\\\n\s*/g, " ");
+    // Step 2: Split by newlines into individual command lines (未续行 = independent)
+    const lines = continuedText.split(/\n/).map(l => l.trim()).filter(l => l.length > 0);
+    // Step 3: Find lines that start with / (standalone slash commands)
+    const commandLines = lines.filter(l => l.startsWith("/"));
+    const isSlashCommand = commandLines.length > 0;
+
+    this.log.debug(`dispatch check: text="${chatMessage.text.substring(0, 100)}" lines=${lines.length} cmdLines=${commandLines.length} chatType=${chatMessage.chatType} isMentioned=${chatMessage.isMentioned}`);
+
+    if (isSlashCommand && this.commandSystem) {
+      // Execute each slash command line sequentially.
+      // Any plain text lines in the same multi-line message are silently skipped
+      // (per dispatch rule 3 — DM would skip them anyway, group only auto-replies
+      // on @mention so multi-line plain text is also skipped here).
+      const executeCommands = async () => {
+        for (const cmdLine of commandLines) {
+          const dispatchMsg = { ...chatMessage, text: cmdLine };
+          try {
+            const result = await this.commandSystem!.dispatch(this, dispatchMsg);
+            if (result.handled) {
+              this.log.debug(`command handled: ${cmdLine.substring(0, 80)}`);
+            } else {
+              // Not a recognized slash command — skip silently
+              this.log.debug(`skipped unrecognized line: ${cmdLine.substring(0, 80)}`);
+            }
+          } catch (err) {
+            this.log.error(`command dispatch error for "${cmdLine.substring(0, 80)}": ${(err as Error).message}`);
+          }
+        }
+        // Trigger data persistence after all commands
+        this.persistData();
+      };
+      executeCommands().catch((err) => {
+        this.log.error(`multi-command execution error: ${(err as Error).message}`);
+      });
+      return; // Don't fall through to LLM for slash commands
+    }
+
+    // No slash commands — pure plain text message.
+    // Per dispatch rule 3:
+    //   - DM (direct): skip — do not auto-reply to plain text in private chat.
+    //   - Group: try LLM auto-reply (engine requires @mention by default).
+    this.emitMessageEvents(chatMessage, chatType);
+    if (chatMessage.chatType === "direct") {
+      this.log.debug(`DM plain text skipped per dispatch rule 3: "${chatMessage.text.substring(0, 80)}"`);
+      return;
+    }
+    this.tryLlmAutoReply(chatMessage);
   }
 
   /**

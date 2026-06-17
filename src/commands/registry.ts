@@ -301,9 +301,16 @@ export class CommandSystem {
       return { handled: false };
     }
 
-    // Check mention requirement for groups
+    // Check mention requirement for groups — ONLY for non-command messages.
+    // Slash commands (starting with /) should always work in groups without @mention.
+    // The LLM auto-reply's requireMentionInGroup is handled separately in the engine.
     if (message.chatType === "group" && this.config.requireMentionInGroup && !message.isMentioned) {
-      return { handled: false };
+      // Check if this is a slash command — if so, allow it through without @mention
+      const trimmedText = message.text.trim();
+      if (!trimmedText.startsWith(this.config.prefix)) {
+        return { handled: false };
+      }
+      // It's a slash command — proceed even without @mention
     }
 
     // Parse command from message text

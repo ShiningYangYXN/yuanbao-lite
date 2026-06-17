@@ -111,9 +111,11 @@ export async function runInteractive(): Promise<void> {
 
   await new Promise<void>((resolve) => {
     rl.on("line", async (input: string) => {
-      // Multi-line continuation: if line ends with \, accumulate
+      // 续行 (continuation): line ending with \ is extension of previous command.
+      // Join with a SPACE (not \n) so the next line becomes part of the same
+      // command rather than a separate line — per dispatch rule 2.
       if (input.endsWith("\\") && !input.endsWith("\\\\")) {
-        state.multilineBuffer += input.slice(0, -1) + "\n";
+        state.multilineBuffer += input.slice(0, -1) + " ";
         rl.setPrompt(chalk.dim("... ") + " ".repeat(state.chatTarget.length + 2));
         rl.prompt();
         return;
@@ -170,8 +172,36 @@ export async function runInteractive(): Promise<void> {
 }
 
 // ─── Line processing ───
-
+//
+// Dispatch rules (mirror src/index.ts handleDispatch Step 2):
+//   1. 未续行 (standalone line, not preceded by \) → independent content,
+//      recognize slash independently. Lines starting with / are slash commands.
+//   2. 续行 (continuation, preceded by \) → extension of previous command.
+//      Already joined with a space by the readline handler above, so the
+//      assembled fullLine never contains a stray \n from continuation.
+//   3. 不符合任何一条规则 (standalone plain text — no slash, not continuation):
+//      - 私聊 (bot-side DM, chatType=c2c in src/index.ts): skip — do not auto-reply.
+//      - CLI (here): send directly as chat message to the current target.
+//        If no chat target is set, sendChatMessage() prints an error hint.
 async function processLine(line: string, client: DaemonClient): Promise<void> {
+  // After \-continuation joining, any remaining \n separates genuinely
+  // independent lines (e.g. pasted multi-line input). Process each in order.
+  const lines = line.split(/\n/).map(l => l.trim()).filter(l => l.length > 0);
+  if (lines.length === 0) return;
+
+  // Walk lines in their original order so side effects (e.g. /chat dm X
+  // followed by plain text "hello") behave intuitively: slash commands
+  // dispatch via daemon, plain text sends as chat.
+  for (const ln of lines) {
+    if (ln.startsWith("/")) {
+      await processSingleCommand(ln, client);
+    } else {
+      await sendChatMessage(ln, client);
+    }
+  }
+}
+
+async function processSingleCommand(line: string, client: DaemonClient): Promise<void> {
   // /exit /quit /q
   if (line === "/exit" || line === "/quit" || line === "/q") {
     state.running = false;
@@ -181,7 +211,6 @@ async function processLine(line: string, client: DaemonClient): Promise<void> {
   // /chat [dm|group <id>] — handle locally + delegate to CommandSystem
   if (line === "/chat" || line.startsWith("/chat ")) {
     handleChatCommand(line);
-    // Also dispatch to CommandSystem so /chat is unified across CLI and IM
     await dispatchCommand(line, client);
     return;
   }
@@ -198,7 +227,7 @@ async function processLine(line: string, client: DaemonClient): Promise<void> {
     return;
   }
 
-  // /switch — show locally + delegate (CommandSystem may add listing)
+  // /switch — show locally + delegate
   if (line === "/switch" || line.startsWith("/switch ")) {
     printStatus(`当前模式: ${state.chatMode} ${state.chatTarget ? `→ ${state.chatTarget}` : ""}`);
     await dispatchCommand(line, client);
@@ -210,13 +239,16 @@ async function processLine(line: string, client: DaemonClient): Promise<void> {
     await dispatchCommand(line, client);
     return;
   }
+}
+
+async function sendChatMessage(text: string, client: DaemonClient): Promise<void> {
 
   // Non-slash input — check if a wizard session is active
   // If so, route the input to the wizard instead of sending as chat message
   try {
     const wizStatus = await client.wizardStatus("cli");
     if (wizStatus.active) {
-      const result = await client.wizardInput(line, "cli");
+      const result = await client.wizardInput(text, "cli");
       if (result.handled) {
         if (result.replies.length > 0) {
           process.stdout.write("\n");
@@ -239,7 +271,7 @@ async function processLine(line: string, client: DaemonClient): Promise<void> {
   }
   if (state.chatMode === "dm") {
     try {
-      await client.sendDm(state.chatTarget, line);
+      await client.sendDm(state.chatTarget, text);
       printResult(`已发送给 ${state.chatTarget}`);
     } catch (err) {
       printError(`发送失败: ${(err as Error).message}`);
@@ -247,7 +279,7 @@ async function processLine(line: string, client: DaemonClient): Promise<void> {
     return;
   }
   try {
-    await client.sendGroup(state.chatTarget, line);
+    await client.sendGroup(state.chatTarget, text);
     printResult(`已发送到群 ${state.chatTarget}`);
   } catch (err) {
     printError(`发送失败: ${(err as Error).message}`);

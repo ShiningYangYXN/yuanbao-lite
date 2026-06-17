@@ -54,6 +54,10 @@ export type CliProfile = {
   llmSystemPrompt?: string;
   /** Whether LLM is enabled */
   llmEnabled?: boolean;
+  /** Whether LLM auto-reply is on (default: true, only responds to @mentions in groups) */
+  llmAutoReply?: boolean;
+  /** User-defined system prompt appended after the default */
+  userSystemPrompt?: string;
   /** Default chat target */
   defaultTarget?: string;
   /** Default chat mode: dm | group */
