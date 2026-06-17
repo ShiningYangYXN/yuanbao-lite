@@ -111,11 +111,12 @@ export async function runInteractive(): Promise<void> {
 
   await new Promise<void>((resolve) => {
     rl.on("line", async (input: string) => {
-      // 续行 (continuation): line ending with \ is extension of previous command.
-      // Join with a SPACE (not \n) so the next line becomes part of the same
-      // command rather than a separate line — per dispatch rule 2.
+      // 续行 (continuation): line ending with \ is extension of previous input.
+      // Join with \n so the assembled fullLine preserves line boundaries —
+      // processLine below splits by \n and dispatches each line independently
+      // (per dispatch rule 2: 续行本来就要拆行).
       if (input.endsWith("\\") && !input.endsWith("\\\\")) {
-        state.multilineBuffer += input.slice(0, -1) + " ";
+        state.multilineBuffer += input.slice(0, -1) + "\n";
         rl.setPrompt(chalk.dim("... ") + " ".repeat(state.chatTarget.length + 2));
         rl.prompt();
         return;
@@ -176,22 +177,20 @@ export async function runInteractive(): Promise<void> {
 // Dispatch rules (mirror src/index.ts handleDispatch Step 2):
 //   1. 未续行 (standalone line, not preceded by \) → independent content,
 //      recognize slash independently. Lines starting with / are slash commands.
-//   2. 续行 (continuation, preceded by \) → extension of previous command.
-//      Already joined with a space by the readline handler above, so the
-//      assembled fullLine never contains a stray \n from continuation.
+//   2. 续行 (continuation, preceded by \) → extension of previous input, but
+//      the joined fullLine preserves \n so processLine below splits and
+//      dispatches each line independently (续行本来就要拆行).
 //   3. 不符合任何一条规则 (standalone plain text — no slash, not continuation):
-//      - 私聊 (bot-side DM, chatType=c2c in src/index.ts): skip — do not auto-reply.
+//      - 私聊 (bot-side DM, chatType=direct in src/index.ts): auto-reply via LLM.
 //      - CLI (here): send directly as chat message to the current target.
 //        If no chat target is set, sendChatMessage() prints an error hint.
 async function processLine(line: string, client: DaemonClient): Promise<void> {
-  // After \-continuation joining, any remaining \n separates genuinely
-  // independent lines (e.g. pasted multi-line input). Process each in order.
+  // Split by \n — this includes both pasted multi-line input AND lines joined
+  // by \ continuation (which preserve \n per the readline handler above).
+  // Each line is dispatched independently in its original order.
   const lines = line.split(/\n/).map(l => l.trim()).filter(l => l.length > 0);
   if (lines.length === 0) return;
 
-  // Walk lines in their original order so side effects (e.g. /chat dm X
-  // followed by plain text "hello") behave intuitively: slash commands
-  // dispatch via daemon, plain text sends as chat.
   for (const ln of lines) {
     if (ln.startsWith("/")) {
       await processSingleCommand(ln, client);

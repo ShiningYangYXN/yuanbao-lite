@@ -1169,12 +1169,14 @@ export class YuanbaoBot {
     // Dispatch rules (apply to each line of an incoming message):
     //   1. 未续行 (standalone line, not preceded by \) → independent content,
     //      recognize slash independently (line starting with / is a slash command).
-    //   2. 续行 (continuation line, preceded by \) → extension of the previous
-    //      command (joined via \\\n → space, never dispatched on its own).
+    //   2. 续行 (continuation line, preceded by \) → extension of previous input,
+    //      but the joined text preserves \n so each line is dispatched independently
+    //      (续行本来就要拆行 — the \ just lets the user span multiple terminal lines).
     //   3. 不符合任何一条规则 (standalone plain text — no slash, not continuation):
-    //      - 私聊 (DM / chatType=direct): skip — do not dispatch, do not auto-reply.
-    //        Use /llm chat <text> or /ask <text> to explicitly invoke LLM.
-    //      - 群聊 (group): try LLM auto-reply (engine requires @mention by default).
+    //      - 私聊 (DM / chatType=direct): MUST auto-reply via LLM (user expects
+    //        a response to every DM). Use /llm off to disable if needed.
+    //      - 群聊 (group): try LLM auto-reply (engine requires @mention by default
+    //        to prevent spam — plain text without @ is silently ignored).
     //      - CLI: send directly as chat (handled by cli/client/interactive.ts).
     let dispatchText = chatMessage.text.trim();
     if (chatMessage.chatType === "group") {
@@ -1224,13 +1226,10 @@ export class YuanbaoBot {
 
     // No slash commands — pure plain text message.
     // Per dispatch rule 3:
-    //   - DM (direct): skip — do not auto-reply to plain text in private chat.
+    //   - DM (direct): auto-reply via LLM (user expects a response to every DM).
     //   - Group: try LLM auto-reply (engine requires @mention by default).
+    // Both paths call tryLlmAutoReply which checks llmAutoReply flag + engine readiness.
     this.emitMessageEvents(chatMessage, chatType);
-    if (chatMessage.chatType === "direct") {
-      this.log.debug(`DM plain text skipped per dispatch rule 3: "${chatMessage.text.substring(0, 80)}"`);
-      return;
-    }
     this.tryLlmAutoReply(chatMessage);
   }
 

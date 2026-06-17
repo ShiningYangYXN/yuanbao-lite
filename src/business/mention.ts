@@ -164,7 +164,11 @@ export async function parseMentions(
         try {
           const allMembers = await allMembersResolver();
           atAll = true;
-          // Expand into individual mentions for each member
+          // Expand @[所有人]() into individual @nickname tokens for EVERY
+          // group member. Each token will later be matched by
+          // buildMentionMsgBody's splitRegex and converted into a separate
+          // TIMCustomElem (elem_type=1002) so every member actually receives
+          // an @ mention notification — not just a single "@所有人" text.
           const displayParts: string[] = [];
           for (const user of allMembers) {
             const mention: MentionInfo = {
@@ -180,9 +184,11 @@ export async function parseMentions(
             }
             displayParts.push(`@${user.nickname || user.userId}`);
           }
-          // Replace @[所有人]() / @[](all) with "@所有人" or expanded list
+          // Replace @[所有人]() / @[](all) with "@张三 @李四 ... @王五"
+          // (space-separated @displayName tokens). If the group is empty,
+          // fall back to a single "@所有人" so the message still reads naturally.
           const replacement = displayParts.length > 0
-            ? `@所有人`
+            ? displayParts.join(" ")
             : `@所有人`;
           text = text.slice(0, m.index) + replacement + text.slice(m.index + m.full.length);
           const diff = replacement.length - m.full.length;
@@ -530,8 +536,12 @@ export async function buildMentionMsgBody(
             }),
           },
         });
-      } else if (part.trim()) {
-        // Regular text segment
+      } else if (part) {
+        // Regular text segment. Use truthy check (not part.trim()) so that
+        // whitespace BETWEEN consecutive @mentions is preserved as a
+        // TIMTextElem — otherwise "@张三 @李四 @王五" would collapse into
+        // "@张三@李四@王五" and render incorrectly in the IM client.
+        // Empty strings (from split boundaries) are still skipped.
         msgBody.push({
           msg_type: "TIMTextElem",
           msg_content: { text: part },

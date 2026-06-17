@@ -2396,32 +2396,37 @@ export class CommandSystem {
     // /mention /at — send with @mention
     // Unified with inline @[昵称](id) syntax: sendText already handles
     // parseMentions with nicknameResolver for @[昵称]() auto-matching in groups.
+    // Also supports @[所有人]() / @[](all) which expands to every group member
+    // as individual @[](userId) TIMCustomElem mentions.
     this.register({
       name: "mention",
       aliases: ["at", "提及"],
-      description: "发送含@提及的消息（支持 @[昵称](id) 内联语法）",
-      usage: "/mention <目标> <消息>   消息中可用 @[昵称](id), @[](id), @[昵称]()",
+      description: "发送含@提及的消息（支持 @[昵称](id), @[所有人]() 内联语法）",
+      usage: "/mention <目标> <消息>   消息中可用 @[昵称](id), @[](id), @[昵称](), @[所有人]()",
       category: "chat" as CommandCategory,
       requireConnected: true,
       handler: async (ctx) => {
         if (ctx.args.length < 2) {
-          await ctx.reply("用法: /mention <目标> <消息>\n消息中可用 @语法:\n  @[昵称](id) — 用指定昵称@指定用户\n  @[](id) — 用默认昵称@指定用户\n  @[昵称]() — 群聊中按昵称自动匹配ID");
+          await ctx.reply("用法: /mention <目标> <消息>\n消息中可用 @语法:\n  @[昵称](id) — 用指定昵称@指定用户\n  @[](id) — 用默认昵称@指定用户\n  @[昵称]() — 群聊中按昵称自动匹配ID\n  @[所有人]() — @所有群成员（逐个展开）");
           return;
         }
         const target = ctx.args[0];
         const text = ctx.args.slice(1).join(" ");
+        // Determine if target is a group (group code is all digits, len >= 5)
+        // This allows /mention to work from DM context targeting a group.
+        const targetIsGroup = /^\d{5,}$/.test(target) || ctx.isGroup;
         try {
-          // sendText handles parseMentions internally, including nicknameResolver
-          // for @[昵称]() auto-matching in group contexts
+          // sendText handles parseMentions internally, including all resolvers
+          // for @[昵称]() and @[所有人]() auto-expansion in group contexts
           await ctx.bot.sendText({
             to: target,
             text,
-            isGroup: ctx.isGroup,
+            isGroup: targetIsGroup,
           });
 
           // Parse mentions from the original text for the confirmation message
           const { parseMentions } = await import("../business/mention.js");
-          const nicknameResolver = (ctx.isGroup && target)
+          const nicknameResolver = (targetIsGroup && target)
             ? async (nickname: string) => {
               const { SearchEngine } = await import("../business/search.js");
               const searchEngine = new SearchEngine(ctx.bot);
@@ -2429,10 +2434,22 @@ export class CommandSystem {
               return results.filter(r => r.score >= 0.8).map(r => ({ userId: r.userId, nickname: r.nickName }));
             }
             : undefined;
-          const parsed = await parseMentions(text, ctx.bot.getAliasStore(), nicknameResolver);
+          const allMembersResolver = (targetIsGroup && target)
+            ? async () => {
+              try {
+                const resp = await ctx.bot.getGroupMemberList(String(target));
+                const members = resp?.member_list ?? [];
+                return members.map(m => ({ userId: m.user_id, nickname: m.nick_name }));
+              } catch {
+                return [];
+              }
+            }
+            : undefined;
+          const parsed = await parseMentions(text, ctx.bot.getAliasStore(), nicknameResolver, allMembersResolver);
           if (parsed.mentions.length > 0) {
             const mentionNames = parsed.mentions.map(m => `@${m.displayName}(${m.userId})`).join(", ");
-            await ctx.reply(`✅ 消息已发送，提及了: ${mentionNames}`);
+            const atAllSuffix = parsed.atAll ? `（含@所有人，共 ${parsed.mentions.length} 个提及）` : "";
+            await ctx.reply(`✅ 消息已发送，提及了: ${mentionNames}${atAllSuffix}`);
           } else {
             await ctx.reply(`✅ 消息已发送到 ${target}`);
           }
@@ -2491,6 +2508,7 @@ export class CommandSystem {
         }
 
         // Use the @[所有人]() syntax which the mention parser will expand
+        // into individual @[](userId) TIMCustomElem for every group member.
         const fullMessage = `@[所有人]() ${message}`;
 
         try {
@@ -2499,7 +2517,18 @@ export class CommandSystem {
             text: fullMessage,
             isGroup: true,
           });
-          await ctx.reply(`✅ 已发送 @所有人 消息到群 ${groupCode}`);
+          // Count members for the confirmation (best-effort, ignore errors)
+          let memberCount = -1;
+          try {
+            const resp = await ctx.bot.getGroupMemberList(groupCode);
+            memberCount = resp?.member_list?.length ?? 0;
+          } catch {
+            // member list fetch failed — just report send success
+          }
+          const countHint = memberCount >= 0
+            ? `（已逐个展开 @${memberCount} 个成员）`
+            : "";
+          await ctx.reply(`✅ 已发送 @所有人 消息到群 ${groupCode}${countHint}`);
         } catch (err) {
           await ctx.reply(`❌ 发送失败: ${(err as Error).message}`);
         }
