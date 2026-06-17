@@ -929,101 +929,141 @@ export class CommandSystem {
     this.register({
       name: "batch",
       aliases: ["批量"],
-      description: "批量发送消息（支持JS插值模板）",
-      usage: "/batch text <目标> <数量> <间隔ms> \"模板${i}\"",
+      description: "批量发送消息（text/sticker/image/file，支持JS插值模板）",
+      usage: "/batch <text|sticker|image|file> <目标> <数量> <间隔ms> <模板>\n/batch list | stop [id] | status [id]",
       category: "batch" as CommandCategory,
       requireConnected: true,
       dmOnly: true,
       handler: async (ctx) => {
         const subCmd = ctx.args[0]?.toLowerCase();
 
-        switch (subCmd) {
-          case "text": {
-            if (ctx.args.length < 5) {
-              await ctx.reply("用法: /batch text <目标> <数量> <间隔ms> <模板>");
-              return;
-            }
-            const target = ctx.args[1];
-            const count = parseInt(ctx.args[2], 10);
-            const intervalMs = parseInt(ctx.args[3], 10);
-            const template = ctx.args.slice(4).join(" ");
-
-            if (isNaN(count) || count < 1 || count > 100) {
-              await ctx.reply("数量范围: 1-100");
-              return;
-            }
-            if (isNaN(intervalMs) || intervalMs < 500) {
-              await ctx.reply("间隔最小500ms");
-              return;
-            }
-
-            // Determine isGroup based on target, not source context.
-            // Since /batch is dmOnly, ctx.isGroup is always false — but the target
-            // may be a group code. We check: if target is a known group code or
-            // looks like a group code (all digits, no "@"), treat as group.
-            const isGroup = (() => {
-              // Explicit group target indicators
-              if (target.startsWith("g:")) return true; // explicit group prefix
-              if (target.includes("@")) return false;   // user IDs may contain @
-              // Check if target is a known group code
-              const groupStore = ctx.bot.getGroupStore();
-              if (groupStore && groupStore.get(target)) return true;
-              // Heuristic: all-digit targets are likely group codes
-              if (/^\d{5,}$/.test(target)) return true;
-              return false;
-            })();
-
-            const { startBatch, cleanupBatch } = await import("../business/batch.js");
-            const runner = startBatch("cli-batch", ctx.bot, {
-              type: "text",
-              target,
-              isGroup,
-              count,
-              intervalMs,
-              template,
-            });
-
-            await ctx.reply(`🔄 批量发送已启动: ${count}条, 间隔${intervalMs}ms, 目标${target}`);
-
-            // Run the batch — startBatch() only registers, caller must run()
-            runner.run().then((result) => {
-              cleanupBatch("cli-batch");
-              ctx.reply(
-                `✅ 批量发送完成: 成功${result.sent}条, 失败${result.failed}条, 耗时${result.durationMs}ms`,
-              ).catch(() => { });
-            }).catch((err) => {
-              cleanupBatch("cli-batch");
-              ctx.reply(`❌ 批量发送失败: ${(err as Error).message}`).catch(() => { });
-            });
-
-            break;
+        // ─── Management sub-commands ───
+        if (subCmd === "list") {
+          const { getActiveBatchIds, getActiveBatch } = await import("../business/batch.js");
+          const ids = getActiveBatchIds();
+          if (ids.length === 0) {
+            await ctx.reply("没有正在运行的批量任务");
+            return;
           }
-          case "stop": {
-            const { cancelBatch } = await import("../business/batch.js");
-            const cancelled = cancelBatch("cli-batch");
-            await ctx.reply(cancelled ? "✅ 批量发送已取消" : "没有正在运行的批量任务");
-            break;
+          const lines: string[] = ["📋 运行中的批量任务:"];
+          for (const id of ids) {
+            const b = getActiveBatch(id);
+            if (!b) continue;
+            const p = b.getProgress();
+            lines.push(`  ${id}: ${p.sent}/${p.total} (失败 ${p.failed})${p.cancelled ? " [已取消]" : ""}`);
           }
-          case "status": {
-            const { getActiveBatch } = await import("../business/batch.js");
-            const batch = getActiveBatch("cli-batch");
-            if (!batch) {
-              await ctx.reply("没有正在运行的批量任务");
-              return;
-            }
-            const progress = batch.getProgress();
-            await ctx.reply(
-              `📊 批量任务状态:\n` +
-              `  进度: ${progress.sent}/${progress.total}\n` +
-              `  失败: ${progress.failed}\n` +
-              `  运行中: ${progress.running}\n` +
-              `  已取消: ${progress.cancelled}`,
-            );
-            break;
-          }
-          default:
-            await ctx.reply("用法: /batch <text|stop|status> [参数]\n模板支持 ${i}(索引), ${n}(序号), ${total}(总数), ${timestamp}(时间戳)");
+          await ctx.reply(lines.join("\n"));
+          return;
         }
+
+        if (subCmd === "stop") {
+          const { cancelBatch, getActiveBatchIds } = await import("../business/batch.js");
+          const id = ctx.args[1] ?? getActiveBatchIds()[0];
+          if (!id) {
+            await ctx.reply("没有正在运行的批量任务");
+            return;
+          }
+          const cancelled = cancelBatch(id);
+          await ctx.reply(cancelled ? `✅ 批量任务 ${id} 已取消` : `未找到任务: ${id}`);
+          return;
+        }
+
+        if (subCmd === "status") {
+          const { getActiveBatch, getActiveBatchIds } = await import("../business/batch.js");
+          const id = ctx.args[1] ?? getActiveBatchIds()[0];
+          if (!id) {
+            await ctx.reply("没有正在运行的批量任务");
+            return;
+          }
+          const batch = getActiveBatch(id);
+          if (!batch) {
+            await ctx.reply(`未找到任务: ${id}`);
+            return;
+          }
+          const p = batch.getProgress();
+          const eta = p.estimatedRemaining ? ` (~${Math.ceil(p.estimatedRemaining / 1000)}s 剩余)` : "";
+          await ctx.reply(
+            `📊 批量任务 ${id}:\n` +
+            `  进度: ${p.sent}/${p.total}${eta}\n` +
+            `  失败: ${p.failed}\n` +
+            `  运行中: ${p.running ? "是" : "否"}\n` +
+            `  已取消: ${p.cancelled ? "是" : "否"}`,
+          );
+          return;
+        }
+
+        // ─── Batch-start sub-commands: text | sticker | image | file ───
+        const validTypes = ["text", "sticker", "image", "file"];
+        if (!validTypes.includes(subCmd ?? "")) {
+          await ctx.reply(
+            "用法:\n" +
+            "  /batch text    <目标> <数量> <间隔ms> \"模板${i}\"\n" +
+            "  /batch sticker <目标> <数量> <间隔ms> <stickerId模板>\n" +
+            "  /batch image   <目标> <数量> <间隔ms> <文件路径模板>\n" +
+            "  /batch file    <目标> <数量> <间隔ms> <文件路径模板>\n" +
+            "  /batch list | stop [id] | status [id]\n" +
+            "模板变量: ${i}(索引), ${n}(序号), ${total}(总数), ${timestamp}(时间戳)",
+          );
+          return;
+        }
+
+        if (ctx.args.length < 5) {
+          await ctx.reply(`用法: /batch ${subCmd} <目标> <数量> <间隔ms> <模板>`);
+          return;
+        }
+        const target = ctx.args[1];
+        const count = parseInt(ctx.args[2], 10);
+        const intervalMs = parseInt(ctx.args[3], 10);
+        const template = ctx.args.slice(4).join(" ");
+
+        if (isNaN(count) || count < 1 || count > 100) {
+          await ctx.reply("数量范围: 1-100");
+          return;
+        }
+        if (isNaN(intervalMs) || intervalMs < 500) {
+          await ctx.reply("间隔最小 500ms");
+          return;
+        }
+
+        // Determine isGroup based on target
+        const isGroup = (() => {
+          if (target.startsWith("g:")) return true;
+          if (target.includes("@")) return false;
+          const groupStore = ctx.bot.getGroupStore();
+          if (groupStore && groupStore.get(target)) return true;
+          if (/^\d{5,}$/.test(target)) return true;
+          return false;
+        })();
+        const cleanTarget = target.startsWith("g:") ? target.slice(2) : target;
+
+        // Generate a unique batch ID (so multiple batches can run concurrently)
+        const batchId = `batch-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+
+        const { startBatch, cleanupBatch } = await import("../business/batch.js");
+        const config: Record<string, unknown> = {
+          type: subCmd,
+          target: cleanTarget,
+          isGroup,
+          count,
+          intervalMs,
+          template,
+        };
+        if (subCmd === "sticker") config.stickerTemplate = template;
+        if (subCmd === "image" || subCmd === "file") config.fileTemplate = template;
+
+        const runner = startBatch(batchId, ctx.bot, config as never);
+
+        await ctx.reply(`🔄 批量发送已启动 [${batchId}]: ${subCmd} ${count}条, 间隔${intervalMs}ms, 目标 ${cleanTarget}`);
+
+        runner.run().then((result) => {
+          cleanupBatch(batchId);
+          ctx.reply(
+            `✅ 批量任务 ${batchId} 完成: 成功 ${result.sent}/${result.total}, 失败 ${result.failed}, 耗时 ${result.durationMs}ms`,
+          ).catch(() => { });
+        }).catch((err) => {
+          cleanupBatch(batchId);
+          ctx.reply(`❌ 批量任务 ${batchId} 失败: ${(err as Error).message}`).catch(() => { });
+        });
       },
     });
 

@@ -178,13 +178,15 @@ async function processLine(line: string, client: DaemonClient): Promise<void> {
     return;
   }
 
-  // /chat [dm|group <id>]
+  // /chat [dm|group <id>] — handle locally + delegate to CommandSystem
   if (line === "/chat" || line.startsWith("/chat ")) {
     handleChatCommand(line);
+    // Also dispatch to CommandSystem so /chat is unified across CLI and IM
+    await dispatchCommand(line, client);
     return;
   }
 
-  // /join <groupCode>
+  // /join <groupCode> — set chat mode locally + delegate
   if (line === "/join" || line.startsWith("/join ")) {
     const parts = line.split(/\s+/);
     if (parts.length >= 2) {
@@ -196,9 +198,10 @@ async function processLine(line: string, client: DaemonClient): Promise<void> {
     return;
   }
 
-  // /switch
-  if (line === "/switch") {
+  // /switch — show locally + delegate (CommandSystem may add listing)
+  if (line === "/switch" || line.startsWith("/switch ")) {
     printStatus(`当前模式: ${state.chatMode} ${state.chatTarget ? `→ ${state.chatTarget}` : ""}`);
+    await dispatchCommand(line, client);
     return;
   }
 
