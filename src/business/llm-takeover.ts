@@ -347,8 +347,8 @@ export type LlmTakeoverConfig = {
   requireMentionInGroup?: boolean;
   /** Cooldown between responses in ms (default: 1000) */
   cooldownMs?: number;
-  /** Time window to merge consecutive group messages in ms (default: 3000). 
-   *  When multiple messages arrive in a group within this window, they are 
+  /** Time window to merge consecutive group messages in ms (default: 3000).
+   *  When multiple messages arrive in a group within this window, they are
    *  combined into a single LLM call for better context understanding. */
   mergeWindowMs?: number;
   /** Custom response prefix (e.g. "🤖 ") */
@@ -369,6 +369,30 @@ export type LlmTakeoverConfig = {
   markdownRawMode?: boolean;
   /** Maximum invoke iteration rounds (default: 50, 0 = unlimited) */
   maxIterate?: number;
+
+  // ─── Model pool & key pool (new) ───
+
+  /** Pool of API keys for the active provider. On error (401/429), the engine
+   *  automatically rotates to the next key. */
+  apiKeys?: string[];
+  /** Pool of fallback providers. If the active provider fails after all keys
+   *  are exhausted, the engine switches to the next provider in the pool. */
+  providerPool?: Array<{
+    provider: LlmProviderType;
+    model?: string;
+    apiKey?: string;
+    apiKeys?: string[];
+    baseUrl?: string;
+    apiVersion?: string;
+  }>;
+  /** Whether to auto-rotate keys on 401/429 errors (default: true) */
+  autoRotateKeys?: boolean;
+  /** Whether to auto-switch providers on repeated failures (default: true) */
+  autoSwitchProvider?: boolean;
+  /** Cooldown for a failed key before retrying it (ms, default: 5 min) */
+  keyCooldownMs?: number;
+  /** Max consecutive failures before switching provider (default: 3) */
+  maxFailuresBeforeSwitch?: number;
 };
 
 export type ConversationHistory = {
@@ -774,6 +798,18 @@ export class LlmTakeoverEngine {
   /** Path to persist LLM config as JSON. If set, config changes are auto-saved. */
   private persistencePath: string | undefined;
 
+  // ─── Model pool & key pool state ───
+  /** Active key index within apiKeys[] (or 0 if only apiKey is set) */
+  private activeKeyIndex = 0;
+  /** Active provider index within providerPool[] (0 = primary config) */
+  private activeProviderIndex = 0;
+  /** Map of key → failure count */
+  private keyFailures = new Map<string, number>();
+  /** Map of key → cooldown-until timestamp */
+  private keyCooldowns = new Map<string, number>();
+  /** Consecutive failure count for the active provider */
+  private providerFailures = 0;
+
   constructor(config?: LlmTakeoverConfig & { persistencePath?: string }) {
     this.config = {
       enabled: config?.enabled ?? true,
@@ -796,6 +832,13 @@ export class LlmTakeoverEngine {
       apiVersion: config?.apiVersion ?? "",
       markdownRawMode: config?.markdownRawMode ?? true,
       maxIterate: config?.maxIterate ?? DEFAULT_MAX_ITERATE,
+      // New pool config
+      apiKeys: config?.apiKeys ?? [],
+      providerPool: config?.providerPool ?? [],
+      autoRotateKeys: config?.autoRotateKeys ?? true,
+      autoSwitchProvider: config?.autoSwitchProvider ?? true,
+      keyCooldownMs: config?.keyCooldownMs ?? 5 * 60 * 1000,
+      maxFailuresBeforeSwitch: config?.maxFailuresBeforeSwitch ?? 3,
     };
 
     this.conversationManager = new ConversationManager(this.config.maxHistoryTurns);
@@ -816,11 +859,235 @@ export class LlmTakeoverEngine {
     this.provider = this.createProviderFromConfig();
   }
 
+  // ─── Key pool & provider pool management ───
+
   /**
-   * Create a provider from the current config.
+   * Get the active API key (from apiKeys[] pool or single apiKey).
+   * Skips keys that are in cooldown.
+   */
+  private getActiveApiKey(): string {
+    const keys = this.getActiveKeyPool();
+    if (keys.length === 0) return "";
+
+    // Try the active key first
+    const now = Date.now();
+    for (let i = 0; i < keys.length; i++) {
+      const idx = (this.activeKeyIndex + i) % keys.length;
+      const key = keys[idx];
+      const cooldownUntil = this.keyCooldowns.get(key) ?? 0;
+      if (now >= cooldownUntil) {
+        this.activeKeyIndex = idx;
+        return key;
+      }
+    }
+
+    // All keys in cooldown — return the one with the shortest remaining cooldown
+    this.log.warn("all API keys in cooldown, using least-cooling key");
+    let bestKey = keys[0];
+    let bestCooldown = Infinity;
+    for (const key of keys) {
+      const until = this.keyCooldowns.get(key) ?? 0;
+      if (until < bestCooldown) {
+        bestCooldown = until;
+        bestKey = key;
+      }
+    }
+    return bestKey;
+  }
+
+  /**
+   * Get the key pool for the active provider.
+   * Falls back to [apiKey] if apiKeys[] is empty.
+   */
+  private getActiveKeyPool(): string[] {
+    // If we're using the primary config (index 0), use config.apiKeys or [config.apiKey]
+    if (this.activeProviderIndex === 0) {
+      if (this.config.apiKeys.length > 0) return this.config.apiKeys;
+      return this.config.apiKey ? [this.config.apiKey] : [];
+    }
+    // Otherwise, use the providerPool entry
+    const poolEntry = this.config.providerPool[this.activeProviderIndex - 1];
+    if (!poolEntry) return [];
+    if (poolEntry.apiKeys && poolEntry.apiKeys.length > 0) return poolEntry.apiKeys;
+    return poolEntry.apiKey ? [poolEntry.apiKey] : [];
+  }
+
+  /**
+   * Mark a key as failed. After maxFailuresBeforeSwitch consecutive failures,
+   * put it in cooldown and rotate to the next key.
+   */
+  private markKeyFailed(key: string): void {
+    const count = (this.keyFailures.get(key) ?? 0) + 1;
+    this.keyFailures.set(key, count);
+    this.log.warn(`key ${key.slice(0, 8)}... failed ${count}/${this.config.maxFailuresBeforeSwitch} times`);
+
+    if (count >= this.config.maxFailuresBeforeSwitch) {
+      // Put in cooldown
+      this.keyCooldowns.set(key, Date.now() + this.config.keyCooldownMs);
+      this.log.warn(`key ${key.slice(0, 8)}... put in cooldown for ${this.config.keyCooldownMs / 1000}s`);
+
+      // Reset failure count (will start fresh after cooldown)
+      this.keyFailures.set(key, 0);
+
+      // Rotate to next key
+      const keys = this.getActiveKeyPool();
+      if (keys.length > 1 && this.config.autoRotateKeys) {
+        this.activeKeyIndex = (this.activeKeyIndex + 1) % keys.length;
+        this.log.info(`rotated to key index ${this.activeKeyIndex}`);
+      }
+    }
+  }
+
+  /**
+   * Mark a successful call — resets failure count for the active key.
+   */
+  private markKeySuccess(): void {
+    const keys = this.getActiveKeyPool();
+    const activeKey = keys[this.activeKeyIndex];
+    if (activeKey) {
+      this.keyFailures.set(activeKey, 0);
+    }
+    this.providerFailures = 0;
+  }
+
+  /**
+   * Mark the active provider as failed. If failures exceed the threshold,
+   * switch to the next provider in the pool.
+   */
+  private markProviderFailed(): void {
+    this.providerFailures++;
+    this.log.warn(`provider ${this.getActiveProviderName()} failed ${this.providerFailures}/${this.config.maxFailuresBeforeSwitch} times`);
+
+    if (
+      this.providerFailures >= this.config.maxFailuresBeforeSwitch &&
+      this.config.autoSwitchProvider &&
+      this.config.providerPool.length > 0
+    ) {
+      this.switchToNextProvider();
+    }
+  }
+
+  /**
+   * Switch to the next provider in the pool (cyclic).
+   */
+  private switchToNextProvider(): void {
+    const totalProviders = 1 + this.config.providerPool.length; // primary + pool
+    this.activeProviderIndex = (this.activeProviderIndex + 1) % totalProviders;
+    this.activeKeyIndex = 0;
+    this.providerFailures = 0;
+    this.log.info(`switched to provider index ${this.activeProviderIndex}: ${this.getActiveProviderName()}`);
+
+    // Recreate the provider instance
+    this.provider = this.createProviderFromConfig();
+  }
+
+  /**
+   * Get the name of the active provider.
+   */
+  private getActiveProviderName(): string {
+    if (this.activeProviderIndex === 0) return this.config.provider;
+    return this.config.providerPool[this.activeProviderIndex - 1]?.provider ?? "unknown";
+  }
+
+  /**
+   * Get the active model (from providerPool entry if applicable).
+   */
+  private getActiveModel(): string {
+    if (this.activeProviderIndex === 0) return this.config.model;
+    return this.config.providerPool[this.activeProviderIndex - 1]?.model ?? this.config.model;
+  }
+
+  /**
+   * Call the LLM provider with automatic key/provider failover.
+   *
+   * On error (401/429/network), marks the active key as failed and retries
+   * with the next key. If all keys are exhausted, switches to the next
+   * provider in the pool and retries.
+   *
+   * Returns the provider's response, or throws if all providers fail.
+   */
+  private async callProviderWithFailover(
+    messages: ConversationHistory[],
+    options: { temperature: number; maxTokens: number; model?: string },
+  ): Promise<{ content: string; tokensUsed?: number }> {
+    const maxAttempts = 1 + this.getActiveKeyPool().length + this.config.providerPool.length;
+    let lastError: Error | null = null;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        this.log.info(`calling LLM (${this.getActiveProviderName()}) attempt ${attempt + 1}/${maxAttempts}`);
+        const result = await this.provider.chat(messages, {
+          ...options,
+          model: options.model || this.getActiveModel() || undefined,
+        });
+        this.markKeySuccess();
+        return result;
+      } catch (err) {
+        lastError = err as Error;
+        const errMsg = (err as Error).message.toLowerCase();
+
+        // Check if this is a key-related error (401/429/rate limit)
+        const isKeyError = /401|403|429|rate.?limit|unauthor|invalid.?api.?key/.test(errMsg);
+        const isServerError = /5\d{2}|server.?error|timeout|econnreset|enotfound/.test(errMsg);
+
+        if (isKeyError) {
+          const keys = this.getActiveKeyPool();
+          const activeKey = keys[this.activeKeyIndex];
+          if (activeKey) {
+            this.markKeyFailed(activeKey);
+          }
+          // Recreate provider with the new active key
+          this.provider = this.createProviderFromConfig();
+          continue;
+        }
+
+        if (isServerError) {
+          this.markProviderFailed();
+          // Provider may have been switched in markProviderFailed
+          continue;
+        }
+
+        // Non-retryable error — rethrow
+        throw err;
+      }
+    }
+
+    throw lastError ?? new Error("all LLM providers failed");
+  }
+
+  /**
+   * Create a provider from the current active config.
+   *
+   * If we're using the primary config (index 0), uses config.provider/apiKey/etc.
+   * If we're using a pool entry (index > 0), uses that entry's settings.
    */
   private createProviderFromConfig(): LlmProvider {
     try {
+      // If using a providerPool entry, merge its config
+      if (this.activeProviderIndex > 0) {
+        const poolEntry = this.config.providerPool[this.activeProviderIndex - 1];
+        if (poolEntry) {
+          const mergedConfig: LlmTakeoverConfig = {
+            ...this.config,
+            provider: poolEntry.provider,
+            model: poolEntry.model ?? this.config.model,
+            apiKey: poolEntry.apiKey ?? this.getActiveApiKey(),
+            apiKeys: poolEntry.apiKeys,
+            baseUrl: poolEntry.baseUrl ?? this.config.baseUrl,
+            apiVersion: poolEntry.apiVersion ?? this.config.apiVersion,
+          };
+          return createProvider(mergedConfig);
+        }
+      }
+      // Primary config — inject the active key from the pool
+      const activeKey = this.getActiveApiKey();
+      if (activeKey && activeKey !== this.config.apiKey) {
+        const mergedConfig: LlmTakeoverConfig = {
+          ...this.config,
+          apiKey: activeKey,
+        };
+        return createProvider(mergedConfig);
+      }
       return createProvider(this.config);
     } catch (err) {
       this.log.error(`provider creation failed: ${(err as Error).message}`);
@@ -873,10 +1140,26 @@ export class LlmTakeoverEngine {
       providerChanged = true;
     }
 
+    // New pool config
+    if (patch.apiKeys !== undefined) {
+      this.config.apiKeys = patch.apiKeys;
+      this.activeKeyIndex = 0; // reset on pool change
+      providerChanged = true;
+    }
+    if (patch.providerPool !== undefined) {
+      this.config.providerPool = patch.providerPool;
+      this.activeProviderIndex = 0; // reset to primary
+      providerChanged = true;
+    }
+    if (patch.autoRotateKeys !== undefined) this.config.autoRotateKeys = patch.autoRotateKeys;
+    if (patch.autoSwitchProvider !== undefined) this.config.autoSwitchProvider = patch.autoSwitchProvider;
+    if (patch.keyCooldownMs !== undefined) this.config.keyCooldownMs = patch.keyCooldownMs;
+    if (patch.maxFailuresBeforeSwitch !== undefined) this.config.maxFailuresBeforeSwitch = patch.maxFailuresBeforeSwitch;
+
     // Recreate provider if relevant config changed
     if (providerChanged) {
       try {
-        this.provider = createProvider(this.config);
+        this.provider = this.createProviderFromConfig();
         this.log.info(`provider switched to: ${this.provider.name}`);
       } catch (err) {
         this.log.error(`provider switch failed: ${(err as Error).message}`);
@@ -894,6 +1177,37 @@ export class LlmTakeoverEngine {
    */
   getConfig(): Readonly<Required<LlmTakeoverConfig>> {
     return { ...this.config };
+  }
+
+  /**
+   * Get the current pool status (active provider, key index, failure counts).
+   * Useful for /llm status command.
+   */
+  getPoolStatus(): {
+    activeProvider: string;
+    activeProviderIndex: number;
+    activeKeyIndex: number;
+    activeModel: string;
+    keyPoolSize: number;
+    keysInCooldown: number;
+    providerPoolSize: number;
+    providerFailures: number;
+    maxFailuresBeforeSwitch: number;
+  } {
+    const keys = this.getActiveKeyPool();
+    const now = Date.now();
+    const keysInCooldown = keys.filter(k => (this.keyCooldowns.get(k) ?? 0) > now).length;
+    return {
+      activeProvider: this.getActiveProviderName(),
+      activeProviderIndex: this.activeProviderIndex,
+      activeKeyIndex: this.activeKeyIndex,
+      activeModel: this.getActiveModel(),
+      keyPoolSize: keys.length,
+      keysInCooldown,
+      providerPoolSize: this.config.providerPool.length,
+      providerFailures: this.providerFailures,
+      maxFailuresBeforeSwitch: this.config.maxFailuresBeforeSwitch,
+    };
   }
 
   /**
@@ -1192,12 +1506,12 @@ export class LlmTakeoverEngine {
 
     // Call LLM via provider
     try {
-      this.log.info(`calling LLM (${this.provider.name}) for ${convKey}: "${msg.text.substring(0, 50)}..."`);
+      this.log.info(`calling LLM (${this.getActiveProviderName()}) for ${convKey}: "${msg.text.substring(0, 50)}..."`);
 
-      const result = await this.provider.chat(llmMessages, {
+      const result = await this.callProviderWithFailover(llmMessages, {
         temperature: this.config.temperature,
         maxTokens: this.config.maxTokens,
-        model: this.config.model || undefined,
+        model: this.getActiveModel() || undefined,
       });
 
       const rawText = result.content;
@@ -1505,10 +1819,10 @@ export class LlmTakeoverEngine {
         this.log.info(`iterative invoke: round ${iteration}${maxIterations > 0 ? `/${maxIterations}` : ""} for ${convKey}`);
         const llmMessages = this.buildLlmMessages(convKey, msg, bot);
 
-        const llmResult = await this.provider.chat(llmMessages, {
+        const llmResult = await this.callProviderWithFailover(llmMessages, {
           temperature: this.config.temperature,
           maxTokens: this.config.maxTokens,
-          model: this.config.model || undefined,
+          model: this.getActiveModel() || undefined,
         });
 
         const rawText = llmResult.content;
@@ -1599,10 +1913,10 @@ export class LlmTakeoverEngine {
       timestamp: Date.now(),
     });
 
-    const result = await this.provider.chat(messages, {
+    const result = await this.callProviderWithFailover(messages, {
       temperature: this.config.temperature,
       maxTokens: this.config.maxTokens,
-      model: this.config.model || undefined,
+      model: this.getActiveModel() || undefined,
     });
 
     const rawText = result.content;

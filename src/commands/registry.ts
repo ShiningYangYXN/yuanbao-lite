@@ -1664,7 +1664,20 @@ export class CommandSystem {
           }
           case "status": {
             const config = engine.getConfig();
-            await ctx.reply(`🤖 LLM 状态: enabled=${config.enabled}, auto=${ctx.bot.isLlmAutoReply()}, ready=${engine.isReady}`);
+            const pool = engine.getPoolStatus();
+            const lines = [
+              `🤖 LLM 状态:`,
+              `  启用: ${config.enabled ? "是" : "否"}`,
+              `  自动回复: ${ctx.bot.isLlmAutoReply() ? "是" : "否"}`,
+              `  就绪: ${engine.isReady ? "是" : "否"}`,
+              `  供应商: ${pool.activeProvider} (index ${pool.activeProviderIndex})`,
+              `  模型: ${pool.activeModel || "(默认)"}`,
+              `  密钥池: ${pool.keyPoolSize} 个 (${pool.keysInCooldown} 冷却中)`,
+              `  供应商池: ${pool.providerPoolSize} 个备选`,
+              `  当前密钥索引: ${pool.activeKeyIndex}`,
+              `  连续失败: ${pool.providerFailures}/${pool.maxFailuresBeforeSwitch}`,
+            ];
+            await ctx.reply(lines.join("\n"));
             break;
           }
           case "chat":
@@ -1800,6 +1813,96 @@ export class CommandSystem {
             }
             engine.updateConfig({ baseUrl: subArgs[0] });
             await ctx.reply(`✅ 基础URL已设为: ${subArgs[0]}`);
+            break;
+          }
+          case "keypool":
+          case "密钥池": {
+            const config = engine.getConfig();
+            if (subArgs.length === 0) {
+              const keys = config.apiKeys ?? [];
+              if (keys.length === 0) {
+                await ctx.reply("密钥池为空。用法: /llm keypool add <key> | remove <key> | clear | list");
+              } else {
+                const masked = keys.map((k, i) => `  ${i}: ***${k.slice(-4)}`);
+                await ctx.reply(`密钥池 (${keys.length} 个):\n${masked.join("\n")}`);
+              }
+              return;
+            }
+            const action = subArgs[0];
+            const currentKeys = [...(config.apiKeys ?? [])];
+            if (action === "add" && subArgs[1]) {
+              if (currentKeys.includes(subArgs[1])) {
+                await ctx.reply("该密钥已在池中");
+                return;
+              }
+              currentKeys.push(subArgs[1]);
+              engine.updateConfig({ apiKeys: currentKeys });
+              await ctx.reply(`✅ 密钥已添加 (池中共 ${currentKeys.length} 个)`);
+            } else if (action === "remove" && subArgs[1]) {
+              const idx = currentKeys.indexOf(subArgs[1]);
+              if (idx < 0) {
+                await ctx.reply("未找到该密钥");
+                return;
+              }
+              currentKeys.splice(idx, 1);
+              engine.updateConfig({ apiKeys: currentKeys });
+              await ctx.reply(`✅ 密钥已移除 (池中共 ${currentKeys.length} 个)`);
+            } else if (action === "clear") {
+              engine.updateConfig({ apiKeys: [] });
+              await ctx.reply("✅ 密钥池已清空");
+            } else if (action === "list") {
+              if (currentKeys.length === 0) {
+                await ctx.reply("密钥池为空");
+              } else {
+                const masked = currentKeys.map((k, i) => `  ${i}: ***${k.slice(-4)}`);
+                await ctx.reply(`密钥池 (${currentKeys.length} 个):\n${masked.join("\n")}`);
+              }
+            } else {
+              await ctx.reply("用法: /llm keypool add <key> | remove <key> | clear | list");
+            }
+            break;
+          }
+          case "providerpool":
+          case "供应商池": {
+            const config = engine.getConfig();
+            if (subArgs.length === 0) {
+              const pool = config.providerPool ?? [];
+              if (pool.length === 0) {
+                await ctx.reply("供应商池为空。用法: /llm providerpool add <provider> <model> <apiKey> [baseUrl] | clear | list");
+              } else {
+                const lines = pool.map((p, i) =>
+                  `  ${i}: ${p.provider}/${p.model ?? "?"} key=${p.apiKey ? `***${p.apiKey.slice(-4)}` : "(无)"}${p.baseUrl ? ` baseUrl=${p.baseUrl}` : ""}`,
+                );
+                await ctx.reply(`供应商池 (${pool.length} 个):\n${lines.join("\n")}`);
+              }
+              return;
+            }
+            const action = subArgs[0];
+            const currentPool = [...(config.providerPool ?? [])];
+            if (action === "add" && subArgs.length >= 4) {
+              currentPool.push({
+                provider: subArgs[1] as "z-ai" | "openai" | "anthropic" | "deepseek" | "custom",
+                model: subArgs[2],
+                apiKey: subArgs[3],
+                baseUrl: subArgs[4],
+              });
+              engine.updateConfig({ providerPool: currentPool });
+              await ctx.reply(`✅ 供应商已添加 (池中共 ${currentPool.length} 个)`);
+            } else if (action === "clear") {
+              engine.updateConfig({ providerPool: [] });
+              await ctx.reply("✅ 供应商池已清空");
+            } else if (action === "list") {
+              if (currentPool.length === 0) {
+                await ctx.reply("供应商池为空");
+              } else {
+                const lines = currentPool.map((p, i) =>
+                  `  ${i}: ${p.provider}/${p.model ?? "?"} key=${p.apiKey ? `***${p.apiKey.slice(-4)}` : "(无)"}${p.baseUrl ? ` baseUrl=${p.baseUrl}` : ""}`,
+                );
+                await ctx.reply(`供应商池 (${currentPool.length} 个):\n${lines.join("\n")}`);
+              }
+            } else {
+              await ctx.reply("用法: /llm providerpool add <provider> <model> <apiKey> [baseUrl] | clear | list");
+            }
             break;
           }
           case "group":
