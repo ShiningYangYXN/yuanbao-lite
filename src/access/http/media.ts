@@ -447,7 +447,7 @@ async function uploadBufferToCos(params: {
     if ((err as Error).message.startsWith("COS PUT failed")) {
       throw err;
     }
-    throw new Error(`COS PUT error: ${(err as Error).message}`);
+    throw new Error(`COS PUT error: ${(err as Error).message}`, { cause: err });
   }
 }
 

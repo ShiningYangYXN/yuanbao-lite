@@ -513,7 +513,7 @@ const bot = new YuanbaoBot({
 
 ## 项目结构
 
-```
+```text
 src/
 ├── index.ts                    # 主入口，YuanbaoBot 类
 ├── types.ts                    # 核心类型定义
@@ -548,13 +548,26 @@ src/
 │   ├── index.ts                # 命令系统导出
 │   ├── registry.ts             # 命令注册与分发（35+ 内置命令）
 │   └── types.ts                # 命令类型定义
-└── cli/
-    ├── index.ts                # 交互式 CLI
-    ├── non-interactive.ts      # 非交互模式 (Commander)
-    ├── config.ts               # 配置持久化
-    ├── rich-history.ts         # 历史记录
-    ├── auto-complete.ts        # Tab 补全（含 --all 标志）
-    └── syntax-highlight.ts     # 语法高亮
+├── cli/
+│   ├── index.ts                # 交互式 CLI
+│   ├── non-interactive.ts      # 非交互模式 (Commander)
+│   ├── config.ts               # 配置持久化
+│   ├── rich-history.ts         # 历史记录
+│   ├── auto-complete.ts        # Tab 补全（含 --all 标志）
+│   └── syntax-highlight.ts     # 语法高亮
+└── cli-new/                    # daemon-first 现代化 CLI
+    ├── index.ts                # 入口，daemon-first 路由
+    ├── config.ts               # 重新导出 src/cli/config.ts
+    ├── theme.ts                # 颜色调色板 + 无边框渲染
+    ├── daemon/
+    │   ├── server.ts           # HTTP 服务器 + SSE
+    │   ├── routes.ts           # 路由处理器
+    │   └── pid-file.ts         # PID 文件 + 自动杀菌
+    └── client/
+        ├── daemon-client.ts    # HTTP 客户端 + ensureDaemon()
+        ├── commands.ts         # Commander 程序
+        ├── interactive.ts      # Clack REPL
+        └── wizard.ts           # 配置初始化向导
 ```
 
 ## 版本历史

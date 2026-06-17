@@ -421,7 +421,7 @@ export async function uploadToTempFile(
       }
     }
 
-    throw new Error(`All temp file providers failed. Last error: ${message}`);
+    throw new Error(`All temp file providers failed. Last error: ${message}`, { cause: err });
   }
 }
 

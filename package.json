@@ -33,6 +33,11 @@
     "start": "node dist/cli/index.js",
     "cli": "node dist/cli/index.js",
     "cli-new": "node dist/cli-new/index.js",
+    "daemon": "node dist/cli-new/index.js daemon start",
+    "daemon:start": "node dist/cli-new/index.js daemon start",
+    "daemon:stop": "node dist/cli-new/index.js daemon stop",
+    "daemon:status": "node dist/cli-new/index.js daemon status",
+    "daemon:restart": "node dist/cli-new/index.js daemon stop && node dist/cli-new/index.js daemon start",
     "lint": "eslint ."
   },
   "dependencies": {

@@ -1,80 +1,103 @@
 #!/usr/bin/env node
 /**
- * New CLI — unified entry point.
+ * Yuanbao Lite CLI (new) — daemon-first entry point.
  *
- * Routes between three modes:
- *   1. `interactive` / `repl` — interactive REPL (Clack prompts)
- *   2. `daemon` — background bot with HTTP health check
- *   3. Anything else — delegated to Commander (non-interactive commands)
+ * Routing rules:
+ *   - `daemon start`            → spawn daemon in-process and block
+ *   - `daemon stop`             → POST /shutdown to running daemon
+ *   - `daemon status`           → GET /health
+ *   - `interactive` / `repl`    → ensure daemon, then REPL
+ *   - (no args)                 → same as `interactive`
+ *   - any other subcommand      → ensure daemon, then Commander
  *
- * Business logic is shared via:
- *   - src/commands/registry.ts  (CommandSystem)
- *   - src/cli/config.ts         (ConfigStore)
- *   - src/index.ts              (YuanbaoBot)
+ * "Ensure daemon" means: ping /health; if no response, spawn a detached
+ * daemon child process and wait up to 30s for it to become ready.
+ *
+ * Business logic (command handlers, bot lifecycle, stores) lives in:
+ *   - src/commands/registry.ts   (CommandSystem — used by daemon /command)
+ *   - src/cli/config.ts          (ConfigStore — shared config singleton)
+ *   - src/index.ts               (YuanbaoBot — held by daemon)
+ *
+ * This file contains zero business logic.
  */
 
 import chalk from "chalk";
-import { runInteractive } from "./interactive.js";
-import { runDaemon } from "./daemon.js";
-import { buildProgram } from "./non-interactive.js";
+import { runDaemon } from "./daemon/server.js";
+import { buildProgram } from "./client/commands.js";
+import { runInteractive } from "./client/interactive.js";
 import { getVersion } from "../version.js";
-
+import {
+  getDefaultClient,
+  DEFAULT_DAEMON_PORT,
+  DEFAULT_DAEMON_HOST,
+} from "./client/daemon-client.js";
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
 
-  // ─── Mode routing ───
-
-  // No args or "interactive" subcommand → interactive REPL
-  if (args.length === 0 || args[0] === "interactive" || args[0] === "repl") {
-    console.log(chalk.dim(`\n🚀 Yuanbao Lite CLI (new) v${getVersion()}`));
-    await runInteractive();
-    return;
-  }
-
-  // "daemon" subcommand → daemon mode
-  if (args[0] === "daemon") {
+  // ─── `daemon start` runs the server in-process ───
+  if (args[0] === "daemon" && (args[1] === "start" || args[1] === "run")) {
     const portMatch = args.findIndex((a) => a === "--port" || a === "-p");
     const port =
-      portMatch >= 0 && args[portMatch + 1]
-        ? parseInt(args[portMatch + 1], 10)
-        : 9090;
-
-    const hcMatch = args.findIndex((a) => a === "--no-health-check");
-    const healthCheck = hcMatch < 0; // true unless explicitly disabled
+      portMatch >= 0 && args[portMatch + 1] ? parseInt(args[portMatch + 1], 10) : DEFAULT_DAEMON_PORT;
+    const hostMatch = args.findIndex((a) => a === "--host");
+    const host = hostMatch >= 0 && args[hostMatch + 1] ? args[hostMatch + 1] : DEFAULT_DAEMON_HOST;
 
     console.log(chalk.dim(`\n🦾 Yuanbao Lite Daemon v${getVersion()}`));
-    await runDaemon({ port, healthCheck });
+    await runDaemon({ port, host });
     return;
   }
 
-  // Everything else → Commander subcommands
+  // ─── `daemon stop` — POST /shutdown ───
+  if (args[0] === "daemon" && args[1] === "stop") {
+    const client = getDefaultClient();
+    const info = await client.ping();
+    if (!info) {
+      console.log(chalk.yellow("daemon 未在运行"));
+      process.exit(0);
+    }
+    await client.shutdown();
+    console.log(chalk.green(`✓ 已发送关闭指令 (pid=${info.pid})`));
+    process.exit(0);
+  }
+
+  // ─── `daemon status` — GET /health ───
+  if (args[0] === "daemon" && args[1] === "status") {
+    const client = getDefaultClient();
+    const info = await client.ping();
+    if (!info) {
+      console.log(chalk.yellow("daemon 未在运行"));
+      process.exit(1);
+    }
+    console.log(chalk.cyan(`\n📊 daemon 运行中`));
+    console.log(`  PID:     ${info.pid}`);
+    console.log(`  版本:    ${info.version}`);
+    console.log(`  端口:    ${info.port}`);
+    console.log(`  地址:    ${info.host}`);
+    console.log(`  运行:    ${info.uptime}s`);
+    console.log(`  Bot:     ${info.bot?.connected ? chalk.green("✓ 已连接") : chalk.red("✗ 未连接")}`);
+    if (info.bot?.botId) console.log(`  Bot ID:  ${info.bot.botId}`);
+    console.log();
+    process.exit(0);
+  }
+
+  // ─── Build the Commander program ───
   const program = buildProgram();
 
+  // Register `interactive` / `repl` as a Commander subcommand (default).
+  // `daemon` start/stop/status fast paths are handled above before we get here.
   program
     .command("interactive", { isDefault: true })
     .alias("repl")
-    .description("启动交互式模式 (默认)")
+    .description("启动交互式 REPL (默认)")
     .action(async () => {
       await runInteractive();
-    });
-
-  program
-    .command("daemon")
-    .description("启动守护进程模式")
-    .option("-p, --port <number>", "HTTP 端口", "9090")
-    .option("--no-health-check", "禁用健康检查端点")
-    .action(async (opts: Record<string, unknown>) => {
-      await runDaemon({
-        port: parseInt(opts.port as string, 10),
-        healthCheck: opts.healthCheck !== false,
-      });
     });
 
   await program.parseAsync(args, { from: "user" });
 }
 
 main().catch((err) => {
-  console.error(chalk.red("Fatal error:"), err);
+  console.error(chalk.red("Fatal:"), err);
   process.exit(1);
 });
