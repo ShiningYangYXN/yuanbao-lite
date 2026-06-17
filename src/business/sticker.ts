@@ -829,7 +829,7 @@ export function loadStickerPacksFromDir(dirPath: string): number {
 
       const filePath = join(packDir, file);
       const name = basename(file, ext);
-      const stat = statSync(filePath);
+      const _stat = statSync(filePath);
 
       stickers.push({
         id: `${entry.name}:${name}`,

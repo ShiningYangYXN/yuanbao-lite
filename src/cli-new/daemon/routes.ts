@@ -12,7 +12,7 @@
  */
 
 import type { YuanbaoBot } from "../../index.js";
-import type { BotState, ResolvedYuanbaoAccount, ChatMessage } from "../../types.js";
+import type { ChatMessage } from "../../types.js";
 import type { CliProfile } from "../../cli-legacy/config.js";
 import { getVersion } from "../../version.js";
 import { resolve } from "node:path";

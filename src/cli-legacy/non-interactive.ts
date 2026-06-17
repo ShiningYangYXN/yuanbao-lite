@@ -22,7 +22,7 @@
  */
 
 import { Command } from "commander";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { homedir } from "node:os";
 import { createInterface } from "node:readline";
@@ -32,7 +32,7 @@ import { getVersion } from "../version.js";
 import { ConfigStore, getGlobalConfigStore, normalizeDir } from "./config.js";
 import type { CliProfile } from "./config.js";
 import { interpolate, buildMessageContext } from "../business/interpolate.js";
-import { createLog, setLogLevel } from "../logger.js";
+import { setLogLevel } from "../logger.js";
 
 // ─── Helper: create bot from config ───
 

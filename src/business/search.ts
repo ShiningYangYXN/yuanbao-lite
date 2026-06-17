@@ -12,7 +12,7 @@
 import { createLog } from "../logger.js";
 import type { ModuleLog } from "../logger.js";
 import type { YuanbaoBot } from "../index.js";
-import type { WsGroupInfo, WsGroupMember } from "../access/ws/types.js";
+import type { WsGroupMember } from "../access/ws/types.js";
 
 // ─── Types ───
 

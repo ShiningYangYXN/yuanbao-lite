@@ -25,18 +25,7 @@ import {
   encodeQueryBotInfoReq,
   decodeQueryBotInfoRsp,
 } from "./biz-codec.js";
-import {
-  decodeConnMsg,
-  decodePB,
-  buildAuthBindMsg,
-  buildPingMsg,
-  buildPushAck,
-  buildBusinessConnMsg,
-  PB_MSG_TYPES,
-  CMD_TYPE,
-  CMD,
-  MODULE,
-} from "./conn-codec.js";
+import { decodeConnMsg, decodePB, buildAuthBindMsg, buildPingMsg, buildPushAck, buildBusinessConnMsg, PB_MSG_TYPES, CMD_TYPE, CMD } from "./conn-codec.js";
 import type { PBConnMsg } from "./conn-codec.js";
 import type {
   WsClientCallbacks,
@@ -576,7 +565,7 @@ export class YuanbaoWsClient {
       this.reconnectTimer = null;
     }
     // Reject all pending requests
-    for (const [msgId, pending] of this.pendingRequests) {
+    for (const [, pending] of this.pendingRequests) {
       clearTimeout(pending.timer);
       pending.reject(new Error("Connection closed"));
     }

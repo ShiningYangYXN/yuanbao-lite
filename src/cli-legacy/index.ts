@@ -21,8 +21,8 @@
  */
 
 import { createInterface, Interface as ReadlineInterface } from "node:readline";
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { homedir } from "node:os";
 import chalk from "chalk";
 import { YuanbaoBot } from "../index.js";
@@ -30,79 +30,20 @@ import { CommandSystem } from "../commands/registry.js";
 import { getVersion } from "../version.js";
 import type { ChatMessage, BotState } from "../types.js";
 import { RichHistory } from "./rich-history.js";
-import { highlightChatText, highlightLine } from "./syntax-highlight.js";
+import { highlightLine } from "./syntax-highlight.js";
 import { getCompletions, type CompletionContext } from "./auto-complete.js";
-import {
-  detectSticker,
-  getSticker,
-  searchStickers,
-  getStickerPacks,
-  loadStickerPacksFromDir,
-  prepareStickerMsgBody,
-  getBuiltinEmojis,
-} from "../business/sticker.js";
-import {
-  uploadMedia,
-  downloadMedia,
-  extractMediaInfo,
-  downloadAllMedia,
-} from "../access/http/media.js";
-import {
-  uploadToGoFile,
-  uploadAndFormatLink as gofileFormatLink,
-} from "../access/http/gofile.js";
-import {
-  uploadToTempFile,
-  uploadAndFormatLink as tempfileFormatLink,
-  uploadToLitterbox,
-} from "../access/http/tempfile.js";
-import {
-  LlmTakeoverEngine,
-  ConversationManager,
-  markdownToImText,
-  createLlmTakeover,
-} from "../business/llm-takeover.js";
-import type {
-  LlmTakeoverConfig,
-  TakeoverResult,
-  LlmProviderType,
-} from "../business/llm-takeover.js";
-import { AliasStore, getGlobalAliasStore } from "../business/alias.js";
-import type { AliasEntry } from "../business/alias.js";
-import { ContactStore } from "../business/contacts.js";
-import type { ContactEntry } from "../business/contacts.js";
+import { detectSticker, loadStickerPacksFromDir } from "../business/sticker.js";
+import { LlmTakeoverEngine, markdownToImText, createLlmTakeover } from "../business/llm-takeover.js";
+import type { LlmTakeoverConfig, LlmProviderType } from "../business/llm-takeover.js";
 import { GroupStore } from "../business/groups.js";
-import type { GroupEntry } from "../business/groups.js";
-import { parseMentions, buildMentionMsgBody } from "../business/mention.js";
-import type { ParsedMentions } from "../business/mention.js";
-import {
-  MessageHistoryStore,
-  getGlobalHistoryStore,
-  formatHistoryMessage,
-  formatHistoryList,
-} from "../business/history.js";
-import type {
-  HistoryFilter,
-  HistoryFormatOptions,
-} from "../business/history.js";
-import {
-  BatchRunner,
-  startBatch,
-  cancelBatch,
-  cleanupBatch,
-  getActiveBatch,
-  interpolateTemplate,
-} from "../business/batch.js";
-import type { BatchConfig } from "../business/batch.js";
+import { formatHistoryList } from "../business/history.js";
+import type { HistoryFormatOptions } from "../business/history.js";
+import { startBatch, cancelBatch, cleanupBatch, getActiveBatch } from "../business/batch.js";
 import { MultiAccountManager } from "../business/multi-account.js";
-import type { AccountEntry } from "../business/multi-account.js";
 import { SearchEngine } from "../business/search.js";
-import { createLog, setLogLevel } from "../logger.js";
-import { ConfigStore, getGlobalConfigStore, normalizeDir } from "./config.js";
-import {
-  generateColoredHelp,
-  generatePlainHelp,
-} from "../commands/help-text.js";
+import { createLog } from "../logger.js";
+import { getGlobalConfigStore } from "./config.js";
+import { generateColoredHelp } from "../commands/help-text.js";
 import { buildProgram } from "./non-interactive.js";
 
 // ─── Types ───
@@ -1470,7 +1411,7 @@ export class InteractiveCli {
         }
 
         try {
-          const entry = this.multiAccount.addAccount(
+          this.multiAccount.addAccount(
             id,
             { appKey, appSecret },
             name,
@@ -2186,7 +2127,7 @@ export class InteractiveCli {
     // We'll hook into the readline's keypress processing.
     // The readline interface already listens for keypress on stdin.
     // We add our own listener that runs before readline's processing.
-    const origLineHandler = this.rl as unknown as Record<string, unknown>;
+    // (Original _processLine hook not used — see syncHistoryToReadline below.)
 
     // Access the internal _processLine or similar is not reliable.
     // Instead, we use a simpler approach: override the history lookup.

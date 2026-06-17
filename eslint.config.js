@@ -16,7 +16,23 @@ export default defineConfig([
   },
   { files: ["**/*.{js,mjs,cjs,ts,mts,cts}"], plugins: { js }, extends: ["js/recommended"], languageOptions: { globals: globals.node } },
   tseslint.configs.recommended,
-  { rules: { 'no-unused-vars': 'warn', '@typescript-eslint/no-unused-vars': 'warn', } },
+  {
+    rules: {
+      // Disable the base rule — let @typescript-eslint handle it.
+      'no-unused-vars': 'off',
+      // Only warn on unused imports/variables, not on unused function args
+      // (the project has many interface callbacks where args are intentionally unused).
+      '@typescript-eslint/no-unused-vars': ['warn', {
+        args: 'none',
+        vars: 'all',
+        varsIgnorePattern: '^_',
+        caughtErrors: 'none',
+        caughtErrorsIgnorePattern: '^_',
+        ignoreRestSiblings: true,
+        destructuredArrayIgnorePattern: '^_',
+      }],
+    },
+  },
   { files: ["**/*.json"], plugins: { json }, language: "json/json", extends: ["json/recommended"] },
   { files: ["**/*.jsonc"], plugins: { json }, language: "json/jsonc", extends: ["json/recommended"] },
   { files: ["**/*.json5"], plugins: { json }, language: "json/json5", extends: ["json/recommended"] },

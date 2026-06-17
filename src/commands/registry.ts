@@ -20,7 +20,7 @@ import type {
   CommandCategory,
 }
   from "./types.js";
-import { generateColoredHelp, generatePlainHelp } from "./help-text.js";
+import { generateColoredHelp } from "./help-text.js";
 import {
   searchStickers,
   getStickerPacks,
@@ -31,8 +31,6 @@ import {
   uploadToLitterbox,
   uploadAndFormatLink as tempfileFormatLink,
 } from "../access/http/tempfile.js";
-import { MultiAccountManager } from "../business/multi-account.js";
-import type { LlmProviderType } from "../business/llm-takeover.js";
 
 // ─── Defaults ───
 
@@ -1426,7 +1424,7 @@ export class CommandSystem {
             const groupCode = ctx.args[1];
             const name = ctx.args[2];
             const tag = ctx.args.slice(3).join(" ") || undefined;
-            const entry = store.add(groupCode, name, tag);
+            store.add(groupCode, name, tag);
 
             // Try to fetch group name from server if not provided
             if (!name) {

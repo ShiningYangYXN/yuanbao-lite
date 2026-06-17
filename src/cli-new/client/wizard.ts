@@ -8,7 +8,7 @@
 import * as p from "@clack/prompts";
 import chalk from "chalk";
 import { getGlobalConfigStore } from "../config.js";
-import { COLORS, printResult, printError } from "../theme.js";
+import { printResult, printError } from "../theme.js";
 
 export async function runInitWizard(): Promise<void> {
   p.intro(chalk.cyan("🤖 Yuanbao Lite 配置向导"));

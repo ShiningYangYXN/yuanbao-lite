@@ -32,7 +32,6 @@
  * ```
  */
 
-import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
@@ -42,43 +41,24 @@ import { createLog, setLogLevel, setLogPrefix } from "./logger.js";
 import type { ModuleLog, PluginLogger } from "./logger.js";
 import { getSignToken, forceRefreshSignToken, clearAllSignTokenCache } from "./access/http/request.js";
 import { resolveAccount } from "./accounts.js";
-import { toChatMessage, extractTextFromMsgBody, buildTextMsgBody, splitTextChunks } from "./business/messaging/extract.js";
+import { toChatMessage, buildTextMsgBody, splitTextChunks } from "./business/messaging/extract.js";
 import { CommandSystem } from "./commands/registry.js";
 import type { CommandSystemConfig, CommandDefinition } from "./commands/types.js";
-import { uploadMedia, uploadMediaToCos, downloadMedia, extractMediaInfo, downloadAllMedia, buildImageMsgBody, buildFileMsgBody } from "./access/http/media.js";
+import { uploadMedia, downloadMedia, extractMediaInfo, downloadAllMedia, buildImageMsgBody, buildFileMsgBody } from "./access/http/media.js";
 import type { UploadResult, DownloadResult, MediaInfo } from "./access/http/media.js";
-import { detectSticker, prepareStickerMsgBody, buildEmojiMsgBody, buildCustomStickerMsgBody, buildStickerImageMsgBody, buildStickerMsgBody, buildStickerMsgBodyFromParts } from "./business/sticker.js";
-import type { StickerInfo, StickerType } from "./business/sticker.js";
-import { LlmTakeoverEngine, ConversationManager, markdownToImText, createLlmTakeover, ZaiProvider, OpenAIProvider, AnthropicProvider, DeepSeekProvider, CustomProvider, createProvider } from "./business/llm-takeover.js";
-import type { LlmTakeoverConfig, TakeoverResult, LlmResponse, ConversationHistory, ConversationState, LlmProvider, LlmProviderType } from "./business/llm-takeover.js";
-import { AliasStore, getGlobalAliasStore, resetGlobalAliasStore } from "./business/alias.js";
-import type { AliasEntry, AliasStoreConfig } from "./business/alias.js";
-import { ContactStore, getGlobalContactStore, resetGlobalContactStore } from "./business/contacts.js";
-import type { ContactEntry, ContactStoreConfig } from "./business/contacts.js";
-import { GroupStore, getGlobalGroupStore, resetGlobalGroupStore } from "./business/groups.js";
-import type { GroupEntry, GroupStoreConfig } from "./business/groups.js";
-import { parseMentions, buildMentionMsgBody, extractMentionsFromMsgBody, isUserMentioned, buildCloudCustomDataWithMentions, buildMentionMsgBodyElements, buildAtUserMsgBodyItem } from "./business/mention.js";
-import type { MentionInfo as MentionInfoType, ParsedMentions, GroupAtInfo } from "./business/mention.js";
-import { interpolate, buildMessageContext, hasInterpolation, chatContextFromMessage, type ChatContext } from "./business/interpolate.js";
-import { MessageHistoryStore, getGlobalHistoryStore, resetGlobalHistoryStore } from "./business/history.js";
-import type { HistoryFilter, HistoryPage, HistoryStats, HistoryStoreConfig } from "./business/history.js";
-import { BatchRunner, startBatch, cancelBatch, cleanupBatch, getActiveBatch, getActiveBatchIds, interpolateTemplate, buildBatchContext } from "./business/batch.js";
-import type { BatchConfig, BatchMessageType, BatchProgress, BatchResult } from "./business/batch.js";
+import { detectSticker, prepareStickerMsgBody, buildEmojiMsgBody } from "./business/sticker.js";
+import type { StickerInfo } from "./business/sticker.js";
+import { LlmTakeoverEngine, createLlmTakeover } from "./business/llm-takeover.js";
+import type { LlmTakeoverConfig } from "./business/llm-takeover.js";
+import { AliasStore, getGlobalAliasStore } from "./business/alias.js";
+import { ContactStore, getGlobalContactStore } from "./business/contacts.js";
+import { GroupStore, getGlobalGroupStore } from "./business/groups.js";
+import { parseMentions, buildMentionMsgBody, buildCloudCustomDataWithMentions } from "./business/mention.js";
+import { interpolate, buildMessageContext, chatContextFromMessage } from "./business/interpolate.js";
+import { MessageHistoryStore, getGlobalHistoryStore } from "./business/history.js";
 import { MultiAccountManager } from "./business/multi-account.js";
-import type { AccountEntry, MultiAccountConfig, MultiAccountEvent } from "./business/multi-account.js";
 import { SearchEngine } from "./business/search.js";
-import type { GroupSearchResult, MemberSearchResult, SearchConfig } from "./business/search.js";
-import type {
-  YuanbaoAccountConfig,
-  ResolvedYuanbaoAccount,
-  YuanbaoInboundMessage,
-  YuanbaoMsgBodyElement,
-  ChatMessage,
-  SendTextMessageParams,
-  BotStatus,
-  BotState,
-  MentionInfo,
-} from "./types.js";
+import type { YuanbaoAccountConfig, ResolvedYuanbaoAccount, YuanbaoInboundMessage, YuanbaoMsgBodyElement, ChatMessage, SendTextMessageParams, BotStatus, BotState } from "./types.js";
 import type { WsPushEvent, WsAuthBindResult, WsClientState } from "./access/ws/types.js";
 
 // ─── Event types ───

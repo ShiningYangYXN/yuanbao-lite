@@ -37,19 +37,7 @@ import {
   DEFAULT_DAEMON_HOST,
   type DaemonInfo,
 } from "./daemon-client.js";
-import {
-  COLORS,
-  printH1,
-  printH2,
-  printKV,
-  printTable,
-  printResult,
-  printError,
-  printWarn,
-  printStatus,
-  printSection,
-  truncateToWidth,
-} from "../theme.js";
+import { COLORS, printH1, printKV, printTable, printResult, printError, printWarn, printStatus, printSection, truncateToWidth } from "../theme.js";
 
 // ─── Top-level program ───
 

@@ -108,7 +108,7 @@ const LITTERBOX_EXPIRES = ["1h", "12h", "24h", "72h"];
  */
 export function getCompletions(line: string, ctx?: CompletionContext): CompletionResult {
   const trimmed = line.trimStart();
-  const leadingSpaces = line.length - trimmed.length;
+  const _leadingSpaces = line.length - trimmed.length;
 
   // Empty line — suggest all commands
   if (!trimmed) {

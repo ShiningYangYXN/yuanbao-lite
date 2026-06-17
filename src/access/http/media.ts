@@ -13,13 +13,12 @@
  * Fallback: If COS upload fails, falls back to the old /api/v5/robotLogic/upload endpoint.
  */
 
-import { createReadStream, createWriteStream, existsSync, mkdirSync, statSync, unlinkSync } from "node:fs";
+import { existsSync, mkdirSync, statSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
-import { basename, extname, join, dirname } from "node:path";
+import { basename, extname, join } from "node:path";
 import { randomBytes, createHash, createHmac } from "node:crypto";
 import { createLog } from "../../logger.js";
-import type { ModuleLog } from "../../logger.js";
-import type { ResolvedYuanbaoAccount, ImImageInfoArrayItem, YuanbaoMsgBodyElement } from "../../types.js";
+import type { ResolvedYuanbaoAccount, YuanbaoMsgBodyElement } from "../../types.js";
 import { getAuthHeaders, yuanbaoPost, yuanbaoGet } from "./request.js";
 
 // ─── Types ───
@@ -346,7 +345,7 @@ async function apiGetUploadInfo(
 /**
  * Get COS download URL for a given resourceId.
  */
-async function apiGetDownloadUrl(
+export async function apiGetDownloadUrl(
   account: ResolvedYuanbaoAccount,
   resourceId: string,
 ): Promise<string> {

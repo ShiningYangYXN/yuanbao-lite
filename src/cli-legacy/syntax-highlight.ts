@@ -31,7 +31,7 @@ const COMMANDS_WITH_SUBCOMMANDS: Record<string, string[]> = {
   "/unsafe": ["on", "off", "status"],
 };
 
-const ALL_COMMANDS = [
+const _ALL_COMMANDS = [
   "/help", "/h", "/?", "/帮助",
   "/dm", "/私聊", "/group", "/群发",
   "/reply", "/引用回复", "/chat", "/聊天",

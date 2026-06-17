@@ -20,14 +20,12 @@
  */
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { resolve } from "node:path";
-import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { YuanbaoBot } from "../../index.js";
-import type { BotState, ResolvedYuanbaoAccount } from "../../types.js";
+import type { BotState } from "../../types.js";
 import type { ChatMessage } from "../../types.js";
-import { getGlobalConfigStore, type CliProfile } from "../../cli-legacy/config.js";
+import { getGlobalConfigStore } from "../../cli-legacy/config.js";
 import { createLog, setLogLevel } from "../../logger.js";
 import { getVersion } from "../../version.js";
 import { acquirePidFile, releasePidFile, getPidFilePath } from "./pid-file.js";

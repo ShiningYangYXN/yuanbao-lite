@@ -97,7 +97,7 @@ export function generateColoredHelp(
     cmds.sort((a, b) => a.name.localeCompare(b.name));
   }
 
-  const maxW = options.width ?? 88;
+  const _maxW = options.width ?? 88;
 
   // ── Pass 1: compute max display width for each category's command lines ──
   const maxNameWidth = new Map<CommandCategory, number>();

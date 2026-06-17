@@ -22,20 +22,11 @@
 
 import * as p from "@clack/prompts";
 import chalk from "chalk";
-import { getVersion } from "../../version.js";
 import { getDefaultClient, type DaemonClient } from "./daemon-client.js";
 import { RichHistory } from "../../cli-legacy/rich-history.js";
-import { getCompletions, type CompletionContext } from "../../cli-legacy/auto-complete.js";
+import { type CompletionContext } from "../../cli-legacy/auto-complete.js";
 import { highlightLine } from "../../cli-legacy/syntax-highlight.js";
-import {
-  COLORS,
-  printH1,
-  printStatus,
-  printResult,
-  printError,
-  printWarn,
-  printSection,
-} from "../theme.js";
+import { COLORS, printH1, printStatus, printResult, printError, printWarn } from "../theme.js";
 import type { ChatMessage, BotState } from "../../types.js";
 
 // ─── State ───
@@ -74,7 +65,8 @@ export async function runInteractive(): Promise<void> {
 
   // 4. Subscribe to SSE for live messages
   const history = new RichHistory();
-  const completionCtx: CompletionContext = {}; // daemon holds the stores; we can't populate them locally cheaply
+  // daemon holds the stores; we can't populate them locally cheaply
+  const _completionCtx: CompletionContext = {};
 
   const unsubscribe = client.subscribeSse((event, data) => {
     handleSseEvent(event, data);

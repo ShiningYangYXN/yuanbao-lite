@@ -19,13 +19,12 @@
 import ZAI from "z-ai-web-dev-sdk";
 import { marked } from "marked";
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { homedir } from "node:os";
+import { dirname } from "node:path";
 import { createLog } from "../logger.js";
 import type { ModuleLog } from "../logger.js";
-import type { ChatMessage, YuanbaoMsgBodyElement } from "../types.js";
+import type { ChatMessage } from "../types.js";
 import type { YuanbaoBot } from "../index.js";
-import { splitTextChunks, buildTextMsgBody } from "./messaging/extract.js";
+import { splitTextChunks } from "./messaging/extract.js";
 
 // ─── Provider Types ───
 
