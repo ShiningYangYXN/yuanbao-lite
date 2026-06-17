@@ -49,8 +49,8 @@ export class CommandSystem {
   private _unsafeMode = false;
   /** Timer for auto-expiring unsafe mode */
   private _unsafeTimer: ReturnType<typeof setTimeout> | null = null;
-  /** Per-command authorization: command names allowed in group chat even without unsafe mode */
-  private _allowedCommands = new Set<string>();
+  /** Per-command authorization with expiry: command name → { expiresAt (0=forever), timer } */
+  private _allowedCommands = new Map<string, { expiresAt: number; timer: ReturnType<typeof setTimeout> | null }>();
   /** Commands that cannot be authorized via /unsafe allow */
   private static UNAUTHORIZABLE_COMMANDS = new Set(["unsafe", "trust", "config", "init", "daemon"]);
 
@@ -118,8 +118,9 @@ export class CommandSystem {
    * Authorize a single command to bypass dmOnly in group chat.
    * Commands in UNAUTHORIZABLE_COMMANDS cannot be authorized.
    * Non-dmOnly commands are auto-skipped (no need to authorize).
+   * @param durationMs - How long the authorization lasts (default: 5 minutes, 0 = forever)
    */
-  allowCommand(cmdName: string): { ok: boolean; reason?: string } {
+  allowCommand(cmdName: string, durationMs = 5 * 60 * 1000): { ok: boolean; reason?: string } {
     const normalized = cmdName.toLowerCase().replace(/^\//, "");
     if (CommandSystem.UNAUTHORIZABLE_COMMANDS.has(normalized)) {
       return { ok: false, reason: `命令 /${normalized} 不支持被授权` };
@@ -131,8 +132,20 @@ export class CommandSystem {
     if (!def.dmOnly) {
       return { ok: false, reason: `命令 /${normalized} 不是受限命令，无需授权` };
     }
-    this._allowedCommands.add(normalized);
-    this.log.info(`command /${normalized} authorized for group use`);
+    // Clear existing timer if re-authorizing
+    const existing = this._allowedCommands.get(normalized);
+    if (existing?.timer) clearTimeout(existing.timer);
+
+    const expiresAt = durationMs > 0 ? Date.now() + durationMs : 0; // 0 = forever
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    if (durationMs > 0) {
+      timer = setTimeout(() => {
+        this._allowedCommands.delete(normalized);
+        this.log.info(`command /${normalized} authorization expired`);
+      }, durationMs);
+    }
+    this._allowedCommands.set(normalized, { expiresAt, timer });
+    this.log.info(`command /${normalized} authorized${durationMs > 0 ? ` for ${durationMs}ms` : " (forever)"}`);
     return { ok: true };
   }
 
@@ -141,21 +154,39 @@ export class CommandSystem {
    */
   disallowCommand(cmdName: string): boolean {
     const normalized = cmdName.toLowerCase().replace(/^\//, "");
-    return this._allowedCommands.delete(normalized);
+    const entry = this._allowedCommands.get(normalized);
+    if (!entry) return false;
+    if (entry.timer) clearTimeout(entry.timer);
+    this._allowedCommands.delete(normalized);
+    this.log.info(`command /${normalized} authorization revoked`);
+    return true;
   }
 
   /**
-   * Get all currently authorized commands.
+   * Get all currently authorized commands with their expiry info.
    */
-  getAllowedCommands(): string[] {
-    return Array.from(this._allowedCommands);
+  getAllowedCommands(): Array<{ name: string; expiresAt: number; forever: boolean }> {
+    const now = Date.now();
+    return Array.from(this._allowedCommands.entries())
+      .filter(([_, v]) => v.expiresAt === 0 || v.expiresAt > now)
+      .map(([name, v]) => ({ name, expiresAt: v.expiresAt, forever: v.expiresAt === 0 }));
   }
 
   /**
    * Check if a specific command is authorized for group use.
    */
   isCommandAllowed(cmdName: string): boolean {
-    return this._allowedCommands.has(cmdName.toLowerCase());
+    const normalized = cmdName.toLowerCase();
+    const entry = this._allowedCommands.get(normalized);
+    if (!entry) return false;
+    if (entry.expiresAt === 0) return true; // forever
+    if (entry.expiresAt <= Date.now()) {
+      // Expired — clean up
+      if (entry.timer) clearTimeout(entry.timer);
+      this._allowedCommands.delete(normalized);
+      return false;
+    }
+    return true;
   }
 
   // ─── Registration ───
@@ -1431,11 +1462,31 @@ export class CommandSystem {
 
         // /unsafe status is globally open — no trust check, no dmOnly
         if (subCmd === "status") {
+          const lines: string[] = [];
           if (this.isUnsafeMode()) {
-            await ctx.reply("🔓 危险模式: 已开启（dmOnly命令可在群聊使用）");
+            if (this.isUnsafeForever()) {
+              lines.push("🔓 危险模式: 已永久开启");
+            } else {
+              lines.push("🔓 危险模式: 已开启");
+            }
           } else {
-            await ctx.reply("🔒 危险模式: 已关闭（dmOnly命令仅限私聊）");
+            lines.push("🔒 危险模式: 已关闭");
           }
+
+          // Show authorized commands whitelist
+          const allowed = this.getAllowedCommands();
+          if (allowed.length > 0) {
+            const now = Date.now();
+            lines.push("", `📋 已授权命令 (${allowed.length}):`);
+            for (const a of allowed) {
+              const expiry = a.forever ? "永久" : `${Math.ceil((a.expiresAt - now) / 60000)}分钟后过期`;
+              lines.push(`  /${a.name} — ${expiry}`);
+            }
+          } else {
+            lines.push("", "📋 已授权命令: (无)");
+          }
+
+          await ctx.reply(lines.join("\n"));
           return;
         }
 
@@ -1459,26 +1510,50 @@ export class CommandSystem {
         const subCmd2 = ctx.args[0]?.toLowerCase();
 
         if (subCmd2 === "allow") {
-          // /unsafe allow <command> — authorize a single command
+          // /unsafe allow [command] [minutes|forever]
+          // No command: list currently authorized
           if (!ctx.args[1]) {
             const allowed = this.getAllowedCommands();
+            const now = Date.now();
+            const lines = allowed.map(a => {
+              const expiry = a.forever ? "永久" : `${Math.ceil((a.expiresAt - now) / 60000)}分钟后过期`;
+              return `  /${a.name} — ${expiry}`;
+            });
             await ctx.reply(
-              `已授权命令: ${allowed.length > 0 ? allowed.map(c => `/${c}`).join(", ") : "(无)"}\n` +
-              `用法: /unsafe allow <命令名> (授权单个命令在群聊使用)\n` +
-              `/unsafe disallow <命令名> (取消授权)\n` +
+              `📋 已授权命令 (${allowed.length}):\n${lines.length > 0 ? lines.join("\n") : "  (无)"}\n\n` +
+              `用法: /unsafe allow <命令名> [分钟数|forever]\n` +
+              `默认: 5分钟, forever=永久\n` +
+              `/unsafe disallow <命令名> — 取消授权\n` +
               `不可授权: unsafe, trust, config, init, daemon`,
             );
             return;
           }
-          const result = this.allowCommand(ctx.args[1]);
+          // Parse duration: minutes number, "forever", or default 5min
+          const cmdName = ctx.args[1];
+          let durationMs = 5 * 60 * 1000; // default 5 min
+          if (ctx.args[2]?.toLowerCase() === "forever") {
+            durationMs = 0;
+          } else {
+            const minutes = parseInt(ctx.args[2], 10);
+            if (!isNaN(minutes) && minutes > 0) {
+              durationMs = minutes * 60 * 1000;
+            }
+          }
+          const result = this.allowCommand(cmdName, durationMs);
+          const expiryStr = durationMs === 0 ? "永久" : `${durationMs / 60000}分钟`;
           await ctx.reply(result.ok
-            ? `✅ 已授权 /${ctx.args[1]} 在群聊中使用`
+            ? `✅ 已授权 /${cmdName} 在群聊中使用 (${expiryStr})`
             : `❌ ${result.reason}`,
           );
           return;
         }
 
-        if (subCmd2 === "disallow" && ctx.args[1]) {
+        if (subCmd2 === "disallow") {
+          // /unsafe disallow <command> — revoke authorization
+          if (!ctx.args[1]) {
+            await ctx.reply("用法: /unsafe disallow <命令名>");
+            return;
+          }
           const ok = this.disallowCommand(ctx.args[1]);
           await ctx.reply(ok ? `✅ 已取消授权 /${ctx.args[1]}` : `/${ctx.args[1]} 未被授权`);
           return;

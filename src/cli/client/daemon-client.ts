@@ -14,7 +14,7 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-export const DEFAULT_DAEMON_PORT = 9100;
+export const DEFAULT_DAEMON_PORT = 8992;
 export const DEFAULT_DAEMON_HOST = "127.0.0.1";
 const DAEMON_READY_TIMEOUT_MS = 30_000;
 const DAEMON_POLL_INTERVAL_MS = 250;

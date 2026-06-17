@@ -51,7 +51,7 @@ export class Daemon {
   private startedAt = 0;
 
   constructor(options: DaemonOptions = {}) {
-    this.port = options.port ?? 9100;
+    this.port = options.port ?? 8992;
     this.host = options.host ?? "127.0.0.1";
     this.quiet = options.quiet ?? false;
   }

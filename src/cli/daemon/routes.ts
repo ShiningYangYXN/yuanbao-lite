@@ -34,7 +34,7 @@ export type RouteContext = {
 
 export type RouteResult = { status: number; body: unknown };
 
-const DAEMON_PORT_DEFAULT = 9100;
+const DAEMON_PORT_DEFAULT = 8992;
 
 export async function handleRoute(
   method: string,

@@ -48,7 +48,7 @@ yb-cli config profile add <name> [--app-key K --app-secret S]
 yb-cli config profile remove <name>
 
 # daemon 直接管理
-yb-cli daemon start [--port 9100] [--host 127.0.0.1]
+yb-cli daemon start [--port 8992] [--host 127.0.0.1]
 yb-cli daemon stop
 yb-cli daemon status
 ```

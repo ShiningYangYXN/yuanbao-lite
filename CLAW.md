@@ -121,7 +121,7 @@ node dist/cli/index.js config set logLevel debug
 ## 故障排查
 
 1. **连接失败**: 检查 appKey/appSecret 是否正确
-2. **daemon 不启动**: 检查端口 9100 是否被占用
+2. **daemon 不启动**: 检查端口 8992 是否被占用
 3. **LLM 不工作**: 检查 `/llm status`，确保供应商已配置且有密钥
 4. **命令不可用**: 检查 `/help <命令名>` 查看是否 dmOnly
 
