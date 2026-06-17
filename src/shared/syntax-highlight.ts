@@ -25,7 +25,7 @@ const COMMANDS_WITH_SUBCOMMANDS: Record<string, string[]> = {
   "/search": ["groups", "群", "members", "member"],
   "/batch": ["text", "sticker", "image", "file", "stop", "status", "list"],
   "/account": ["add", "remove", "rm", "list", "ls", "switch", "start", "stop"],
-  "/llm": ["on", "off", "status", "chat", "ask", "问", "prompt", "系统提示", "model", "模型", "temp", "温度", "history", "历史", "clear", "清除", "markdown", "md", "raw", "im", "provider", "供应商", "apikey", "密钥", "baseurl", "基础URL", "group", "群聊", "merge", "合并", "cooldown", "冷却", "iterate", "迭代", "keypool", "密钥池", "providerpool", "供应商池", "customprovider", "自定义供应商", "config", "配置"],
+  "/llm": ["on", "off", "status", "chat", "ask", "问", "prompt", "系统提示", "model", "模型", "temp", "温度", "history", "历史", "clear", "清除", "markdown", "md", "raw", "im", "provider", "供应商", "apikey", "密钥", "baseurl", "基础URL", "group", "群聊", "merge", "合并", "cooldown", "冷却", "iterate", "迭代", "keypool", "密钥池", "providerpool", "供应商池", "customprovider", "自定义供应商", "billing", "用量", "账单", "config", "配置"],
   "/config": ["show", "get", "set", "profile", "export", "import"],
   "/init": ["appkey", "appsecret", "token", "cancel"],
   "/daemon": ["stop", "reset", "restart", "status"],

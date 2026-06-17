@@ -2134,18 +2134,53 @@ export class CommandSystem {
             await ctx.reply("🤖 LLM 自动回复已关闭");
             break;
           }
+          case "billing":
+          case "用量":
+          case "账单": {
+            const usage = engine.getUsage();
+            if (usage.totalCalls === 0) {
+              await ctx.reply("📊 暂无用量记录");
+              return;
+            }
+            const lines = [
+              `📊 LLM 用量统计:`,
+              `  总调用: ${usage.totalCalls} 次`,
+              `  总Token: ${usage.totalTokens}`,
+              ``,
+              `按供应商:`,
+            ];
+            for (const [name, stats] of Object.entries(usage.byProvider)) {
+              lines.push(`  ${name}: ${stats.calls} 次, ${stats.tokens} tokens`);
+            }
+            // Show recent 5 records
+            const recent = usage.records.slice(-5).reverse();
+            if (recent.length > 0) {
+              lines.push("", "最近调用:");
+              for (const r of recent) {
+                const time = new Date(r.timestamp).toLocaleString("zh-CN");
+                lines.push(`  ${time} — ${r.provider}/${r.model}: ${r.totalTokens} tokens (${r.promptTokens}+${r.completionTokens})`);
+              }
+            }
+            await ctx.reply(lines.join("\n"));
+            return;
+          }
           case "status": {
             const config = engine.getConfig();
             const pool = engine.getPoolStatus();
+            const activeProvider = config.customProviders?.[pool.activeProvider];
             const lines = [
               `🤖 LLM 状态:`,
               `  启用: ${config.enabled ? "是" : "否"}`,
               `  自动回复: ${ctx.bot.isLlmAutoReply() ? "是" : "否"}`,
               `  就绪: ${engine.isReady ? "是" : "否"}`,
-              `  供应商: ${pool.activeProvider} (index ${pool.activeProviderIndex})`,
-              `  模型: ${pool.activeModel || "(默认)"}`,
+              `  活跃供应商: ${pool.activeProvider || "(未设置)"}`,
+              ...(activeProvider ? [
+                `  API格式: ${activeProvider.apiFormat}`,
+                `  模型: ${activeProvider.model}`,
+                `  端点: ${activeProvider.baseUrl}`,
+              ] : []),
               `  密钥池: ${pool.keyPoolSize} 个 (${pool.keysInCooldown} 冷却中)`,
-              `  供应商池: ${pool.providerPoolSize} 个备选`,
+              `  供应商总数: ${pool.providerPoolSize} 个`,
               `  当前密钥索引: ${pool.activeKeyIndex}`,
               `  连续失败: ${pool.providerFailures}/${pool.maxFailuresBeforeSwitch}`,
             ];
@@ -2209,7 +2244,7 @@ export class CommandSystem {
           case "history":
           case "历史": {
             const cm = engine.getConversationManager();
-            const keys = cm.keys;
+            const keys = Array.from(cm.keys);
             if (keys.length === 0) {
               await ctx.reply("暂无对话历史");
               return;
@@ -2249,138 +2284,38 @@ export class CommandSystem {
           case "供应商": {
             if (subArgs.length === 0) {
               const config = engine.getConfig();
-              const builtInProviders = ["z-ai", "openai", "anthropic", "deepseek", "custom"];
-              const customNames = Object.keys(config.customProviders ?? {});
-              const allProviders = [...builtInProviders, ...customNames.filter(n => !builtInProviders.includes(n))];
-              await ctx.reply(`当前供应商: ${config.provider}\n可选: ${allProviders.join(", ")}`);
+              const names = Object.keys(config.customProviders ?? {});
+              await ctx.reply(`当前供应商: ${config.provider || "(未设置)"}\n可用: ${names.join(", ") || "(无)"}`);
               return;
             }
-            const validBuiltIn: string[] = ["z-ai", "openai", "anthropic", "deepseek", "custom"];
             const config = engine.getConfig();
-            const customNames = Object.keys(config.customProviders ?? {});
-            const allValid = [...validBuiltIn, ...customNames];
-            if (!allValid.includes(subArgs[0])) {
-              await ctx.reply(`无效供应商: ${subArgs[0]}\n可选: ${allValid.join(", ")}\n用 /llm customprovider add 添加自定义供应商`);
+            const names = Object.keys(config.customProviders ?? {});
+            if (!names.includes(subArgs[0])) {
+              await ctx.reply(`无效供应商: ${subArgs[0]}\n可用: ${names.join(", ") || "(无)"}\n用 /llm customprovider add 添加自定义供应商`);
               return;
             }
-            try {
-              engine.updateConfig({ provider: subArgs[0] as never });
-              await ctx.reply(`✅ 供应商已切换为: ${subArgs[0]}`);
-            } catch (err) {
-              await ctx.reply(`❌ 切换供应商失败: ${(err as Error).message}`);
-            }
+            engine.updateConfig({ provider: subArgs[0] });
+            await ctx.reply(`✅ 供应商已切换为: ${subArgs[0]}`);
             break;
           }
           case "apikey":
           case "密钥": {
-            if (subArgs.length === 0) {
-              const config = engine.getConfig();
-              await ctx.reply(`当前API密钥: ${config.apiKey ? "***" + config.apiKey.slice(-4) : "(未设置)"}`);
-              return;
-            }
-            engine.updateConfig({ apiKey: subArgs[0] });
-            await ctx.reply("✅ API密钥已更新");
+            await ctx.reply("⚠️ API Key 管理已迁移到 customprovider 系统。\n用 /llm customprovider addkey <名称> <key> 添加密钥");
             break;
           }
           case "baseurl":
           case "基础url": {
-            if (subArgs.length === 0) {
-              const config = engine.getConfig();
-              await ctx.reply(`当前基础URL: ${config.baseUrl || "(默认)"}`);
-              return;
-            }
-            engine.updateConfig({ baseUrl: subArgs[0] });
-            await ctx.reply(`✅ 基础URL已设为: ${subArgs[0]}`);
+            await ctx.reply("⚠️ Base URL 管理已迁移到 customprovider 系统。\n用 /llm customprovider add <名称> <apiFormat> <model> <baseUrl> 添加供应商");
             break;
           }
           case "keypool":
           case "密钥池": {
-            const config = engine.getConfig();
-            if (subArgs.length === 0) {
-              const keys = config.apiKeys ?? [];
-              if (keys.length === 0) {
-                await ctx.reply("密钥池为空。用法: /llm keypool add <key> | remove <key> | clear | list");
-              } else {
-                const masked = keys.map((k, i) => `  ${i}: ***${k.slice(-4)}`);
-                await ctx.reply(`密钥池 (${keys.length} 个):\n${masked.join("\n")}`);
-              }
-              return;
-            }
-            const action = subArgs[0];
-            const currentKeys = [...(config.apiKeys ?? [])];
-            if (action === "add" && subArgs[1]) {
-              if (currentKeys.includes(subArgs[1])) {
-                await ctx.reply("该密钥已在池中");
-                return;
-              }
-              currentKeys.push(subArgs[1]);
-              engine.updateConfig({ apiKeys: currentKeys });
-              await ctx.reply(`✅ 密钥已添加 (池中共 ${currentKeys.length} 个)`);
-            } else if (action === "remove" && subArgs[1]) {
-              const idx = currentKeys.indexOf(subArgs[1]);
-              if (idx < 0) {
-                await ctx.reply("未找到该密钥");
-                return;
-              }
-              currentKeys.splice(idx, 1);
-              engine.updateConfig({ apiKeys: currentKeys });
-              await ctx.reply(`✅ 密钥已移除 (池中共 ${currentKeys.length} 个)`);
-            } else if (action === "clear") {
-              engine.updateConfig({ apiKeys: [] });
-              await ctx.reply("✅ 密钥池已清空");
-            } else if (action === "list") {
-              if (currentKeys.length === 0) {
-                await ctx.reply("密钥池为空");
-              } else {
-                const masked = currentKeys.map((k, i) => `  ${i}: ***${k.slice(-4)}`);
-                await ctx.reply(`密钥池 (${currentKeys.length} 个):\n${masked.join("\n")}`);
-              }
-            } else {
-              await ctx.reply("用法: /llm keypool add <key> | remove <key> | clear | list");
-            }
+            await ctx.reply("⚠️ 密钥池已迁移到 customprovider 系统。\n用 /llm customprovider addkey/removekey 管理密钥");
             break;
           }
           case "providerpool":
           case "供应商池": {
-            const config = engine.getConfig();
-            if (subArgs.length === 0) {
-              const pool = config.providerPool ?? [];
-              if (pool.length === 0) {
-                await ctx.reply("供应商池为空。用法: /llm providerpool add <provider> <model> <apiKey> [baseUrl] | clear | list");
-              } else {
-                const lines = pool.map((p, i) =>
-                  `  ${i}: ${p.provider}/${p.model ?? "?"} key=${p.apiKey ? `***${p.apiKey.slice(-4)}` : "(无)"}${p.baseUrl ? ` baseUrl=${p.baseUrl}` : ""}`,
-                );
-                await ctx.reply(`供应商池 (${pool.length} 个):\n${lines.join("\n")}`);
-              }
-              return;
-            }
-            const action = subArgs[0];
-            const currentPool = [...(config.providerPool ?? [])];
-            if (action === "add" && subArgs.length >= 4) {
-              currentPool.push({
-                provider: subArgs[1] as "z-ai" | "openai" | "anthropic" | "deepseek" | "custom",
-                model: subArgs[2],
-                apiKey: subArgs[3],
-                baseUrl: subArgs[4],
-              });
-              engine.updateConfig({ providerPool: currentPool });
-              await ctx.reply(`✅ 供应商已添加 (池中共 ${currentPool.length} 个)`);
-            } else if (action === "clear") {
-              engine.updateConfig({ providerPool: [] });
-              await ctx.reply("✅ 供应商池已清空");
-            } else if (action === "list") {
-              if (currentPool.length === 0) {
-                await ctx.reply("供应商池为空");
-              } else {
-                const lines = currentPool.map((p, i) =>
-                  `  ${i}: ${p.provider}/${p.model ?? "?"} key=${p.apiKey ? `***${p.apiKey.slice(-4)}` : "(无)"}${p.baseUrl ? ` baseUrl=${p.baseUrl}` : ""}`,
-                );
-                await ctx.reply(`供应商池 (${currentPool.length} 个):\n${lines.join("\n")}`);
-              }
-            } else {
-              await ctx.reply("用法: /llm providerpool add <provider> <model> <apiKey> [baseUrl] | clear | list");
-            }
+            await ctx.reply("⚠️ 供应商池已迁移到 customprovider 系统。\n用 /llm customprovider list/add/remove 管理供应商");
             break;
           }
           case "customprovider":
@@ -2392,128 +2327,106 @@ export class CommandSystem {
             if (!action || action === "list") {
               const names = Object.keys(customProviders);
               if (names.length === 0) {
-                await ctx.reply("自定义供应商列表为空\n用法: /llm customprovider add <名称> <type> [model] [baseUrl]");
+                await ctx.reply("自定义供应商列表为空\n用法: /llm customprovider add <名称> <apiFormat> <model> <baseUrl> [apiKey]");
                 return;
               }
               const lines = names.map(name => {
                 const p = customProviders[name];
                 const keyCount = (p.apiKeys?.length ?? 0) || (p.apiKey ? 1 : 0);
-                return `  ${name}: type=${p.type} model=${p.model ?? "?"} keys=${keyCount}${p.baseUrl ? ` baseUrl=${p.baseUrl}` : ""}`;
+                return `  ${name}: ${p.apiFormat} / ${p.model} / keys=${keyCount} / ${p.baseUrl}`;
               });
               await ctx.reply(`自定义供应商 (${names.length} 个):\n${lines.join("\n")}`);
               return;
             }
 
             if (action === "add") {
-              // /llm customprovider add <name> <type> [model] [baseUrl]
-              if (subArgs.length < 3) {
-                await ctx.reply("用法: /llm customprovider add <名称> <type> [model] [baseUrl]\n  type: openai|anthropic|deepseek|custom|z-ai\n  示例: /llm customprovider add my-azure openai gpt-4o https://xxx.openai.azure.com");
+              // /llm customprovider add <name> <apiFormat> <model> <baseUrl> [apiKey]
+              if (subArgs.length < 5) {
+                const { API_FORMATS } = await import("../business/llm-takeover.js");
+                const formats = API_FORMATS.map(f => `  ${f.value}: ${f.label}`).join("\n");
+                await ctx.reply(`用法: /llm customprovider add <名称> <apiFormat> <model> <baseUrl> [apiKey]\n\nAPI格式:\n${formats}`);
                 return;
               }
               const name = subArgs[1];
-              const type = subArgs[2] as "openai" | "anthropic" | "deepseek" | "custom" | "z-ai";
-              const validTypes = ["openai", "anthropic", "deepseek", "custom", "z-ai"];
-              if (!validTypes.includes(type)) {
-                await ctx.reply(`❌ 无效 type: ${type}\n可选: ${validTypes.join("|")}`);
+              const { API_FORMATS } = await import("../business/llm-takeover.js");
+              const apiFormat = subArgs[2] as typeof API_FORMATS[number]["value"];
+              const validFormats = API_FORMATS.map(f => f.value);
+              if (!validFormats.includes(apiFormat)) {
+                await ctx.reply(`❌ 无效 apiFormat: ${apiFormat}\n可选: ${validFormats.join(", ")}`);
                 return;
               }
               const model = subArgs[3];
               const baseUrl = subArgs[4];
+              const apiKey = subArgs[5] ?? ""; // apiKey can also be added later via addkey
               customProviders[name] = {
-                type,
-                ...(model ? { model } : {}),
-                ...(baseUrl ? { baseUrl } : {}),
-                apiKeys: [],
+                apiFormat,
+                model,
+                baseUrl,
+                apiKey,
+                apiKeys: apiKey ? [apiKey] : [],
               };
               engine.updateConfig({ customProviders });
-              await ctx.reply(`✅ 自定义供应商 "${name}" 已添加 (type=${type})\n用 /llm customprovider addkey ${name} <key> 添加密钥`);
+              // Auto-switch to new provider if none active
+              if (!engine.getConfig().provider) {
+                engine.updateConfig({ provider: name });
+              }
+              await ctx.reply(`✅ 自定义供应商 "${name}" 已添加 (${apiFormat})\n用 /llm customprovider addkey ${name} <key> 添加更多密钥`);
               return;
             }
 
             if (action === "remove") {
-              if (!subArgs[1]) {
-                await ctx.reply("用法: /llm customprovider remove <名称>");
-                return;
-              }
-              const name = subArgs[1];
-              if (!customProviders[name]) {
-                await ctx.reply(`未找到供应商: ${name}`);
-                return;
-              }
-              delete customProviders[name];
+              if (!subArgs[1]) { await ctx.reply("用法: /llm customprovider remove <名称>"); return; }
+              if (!customProviders[subArgs[1]]) { await ctx.reply(`未找到: ${subArgs[1]}`); return; }
+              delete customProviders[subArgs[1]];
               engine.updateConfig({ customProviders });
-              await ctx.reply(`✅ 自定义供应商 "${name}" 已移除`);
+              await ctx.reply(`✅ 已移除: ${subArgs[1]}`);
               return;
             }
 
             if (action === "addkey") {
-              // /llm customprovider addkey <name> <key>
-              if (subArgs.length < 3) {
-                await ctx.reply("用法: /llm customprovider addkey <名称> <key>");
-                return;
-              }
+              if (subArgs.length < 3) { await ctx.reply("用法: /llm customprovider addkey <名称> <key>"); return; }
               const name = subArgs[1];
-              const key = subArgs[2];
-              if (!customProviders[name]) {
-                await ctx.reply(`未找到供应商: ${name}\n先用 /llm customprovider add ${name} <type> 创建`);
-                return;
-              }
+              if (!customProviders[name]) { await ctx.reply(`未找到: ${name}`); return; }
               const pool = customProviders[name].apiKeys ?? [];
-              if (!pool.includes(key)) pool.push(key);
+              if (!pool.includes(subArgs[2])) pool.push(subArgs[2]);
               customProviders[name].apiKeys = pool;
+              if (!customProviders[name].apiKey) customProviders[name].apiKey = subArgs[2];
               engine.updateConfig({ customProviders });
               await ctx.reply(`✅ 密钥已添加到 "${name}" (共 ${pool.length} 个)`);
               return;
             }
 
             if (action === "removekey") {
-              // /llm customprovider removekey <name> <keyIndex>
-              if (subArgs.length < 3) {
-                await ctx.reply("用法: /llm customprovider removekey <名称> <keyIndex>");
-                return;
-              }
+              if (subArgs.length < 3) { await ctx.reply("用法: /llm customprovider removekey <名称> <索引>"); return; }
               const name = subArgs[1];
-              const idx = parseInt(subArgs[2], 10);
-              if (!customProviders[name]) {
-                await ctx.reply(`未找到供应商: ${name}`);
-                return;
-              }
+              if (!customProviders[name]) { await ctx.reply(`未找到: ${name}`); return; }
               const pool = customProviders[name].apiKeys ?? [];
-              if (isNaN(idx) || idx < 0 || idx >= pool.length) {
-                await ctx.reply(`无效索引: ${subArgs[2]} (范围 0-${pool.length - 1})`);
-                return;
-              }
+              const idx = parseInt(subArgs[2], 10);
+              if (isNaN(idx) || idx < 0 || idx >= pool.length) { await ctx.reply(`无效索引 (0-${pool.length - 1})`); return; }
               pool.splice(idx, 1);
               customProviders[name].apiKeys = pool;
               engine.updateConfig({ customProviders });
-              await ctx.reply(`✅ 密钥已移除 (剩 ${pool.length} 个)`);
+              await ctx.reply(`✅ 已移除 (剩 ${pool.length} 个)`);
               return;
             }
 
             if (action === "use") {
-              // /llm customprovider use <name>
-              if (!subArgs[1]) {
-                await ctx.reply("用法: /llm customprovider use <名称>");
-                return;
-              }
-              const name = subArgs[1];
-              if (!customProviders[name]) {
-                await ctx.reply(`未找到供应商: ${name}`);
-                return;
-              }
-              engine.updateConfig({ provider: name });
-              await ctx.reply(`✅ 已切换到自定义供应商: ${name}`);
+              if (!subArgs[1]) { await ctx.reply("用法: /llm customprovider use <名称>"); return; }
+              if (!customProviders[subArgs[1]]) { await ctx.reply(`未找到: ${subArgs[1]}`); return; }
+              engine.updateConfig({ provider: subArgs[1] });
+              await ctx.reply(`✅ 已切换到: ${subArgs[1]}`);
               return;
             }
 
             await ctx.reply(
               "用法:\n" +
-              "  /llm customprovider                                    列出\n" +
-              "  /llm customprovider add <名称> <type> [model] [baseUrl] 添加\n" +
-              "  /llm customprovider remove <名称>                      移除\n" +
-              "  /llm customprovider addkey <名称> <key>                添加密钥\n" +
-              "  /llm customprovider removekey <名称> <索引>            移除密钥\n" +
-              "  /llm customprovider use <名称>                         切换到此供应商",
+              "  /llm customprovider list                                    列出\n" +
+              "  /llm customprovider add <名称> <apiFormat> <model> <baseUrl> [apiKey]  添加\n" +
+              "  /llm customprovider remove <名称>                           移除\n" +
+              "  /llm customprovider addkey <名称> <key>                     添加密钥\n" +
+              "  /llm customprovider removekey <名称> <索引>                 移除密钥\n" +
+              "  /llm customprovider use <名称>                              切换\n\n" +
+              "apiFormat: openai-chat-completions | anthropic-messages | google-gemini-rest | aws-bedrock-converse | azure-openai",
             );
             return;
           }
@@ -2537,20 +2450,20 @@ export class CommandSystem {
 
             // Start wizard
             llmWizardSessions.set(userId, {
-              step: "provider",
+              step: "apiFormat",
               startedAt: Date.now(),
             });
 
             await ctx.reply(
               `🤖 LLM 配置向导已启动（阻塞模式）\n\n` +
               `接下来的对话将被向导捕获。\n\n` +
-              `请选择供应商:\n` +
-              `  1. z-ai (默认)\n` +
-              `  2. openai\n` +
-              `  3. anthropic\n` +
-              `  4. deepseek\n` +
-              `  5. custom\n\n` +
-              `发送供应商名称或编号，或发送已有自定义供应商名称。\n` +
+              `请选择 API 格式 (发送编号或名称):\n` +
+              `  1. openai-chat-completions (OpenAI/DeepSeek/Moonshot等)\n` +
+              `  2. anthropic-messages (Claude)\n` +
+              `  3. google-gemini-rest (Gemini)\n` +
+              `  4. aws-bedrock-converse (Bedrock)\n` +
+              `  5. azure-openai (Azure OpenAI)\n\n` +
+              `随后需要提供: 供应商名称、模型名称、端点URL、API密钥\n` +
               `随时发送 /llm config cancel 取消`,
             );
 
@@ -2652,7 +2565,7 @@ export class CommandSystem {
         const subCmd = ctx.args[0]?.toLowerCase();
 
         // Lazy-import the shared ConfigStore
-        const { getGlobalConfigStore } = await import("../cli-legacy/config.js");
+        const { getGlobalConfigStore } = await import("../shared/config.js");
         const store = getGlobalConfigStore({ autoSave: true });
 
         switch (subCmd) {
@@ -2684,7 +2597,7 @@ export class CommandSystem {
               await ctx.reply("用法: /config get <key>");
               return;
             }
-            const key = ctx.args[1] as keyof import("../cli-legacy/config.js").CliProfile;
+            const key = ctx.args[1] as keyof import("../shared/config.js").CliProfile;
             const value = store.get(key);
             if (value === undefined) {
               await ctx.reply(`配置项 ${key} 未设置`);
@@ -2701,9 +2614,9 @@ export class CommandSystem {
               await ctx.reply("用法: /config set <key> <value>");
               return;
             }
-            const key = ctx.args[1] as keyof import("../cli-legacy/config.js").CliProfile;
+            const key = ctx.args[1] as keyof import("../shared/config.js").CliProfile;
             const value = ctx.args.slice(2).join(" ");
-            const validKeys: Array<keyof import("../cli-legacy/config.js").CliProfile> = [
+            const validKeys: Array<keyof import("../shared/config.js").CliProfile> = [
               "appKey", "appSecret", "token", "apiDomain", "wsUrl",
               "logLevel", "stickerDir", "downloadDir", "prompt",
               "llmProvider", "llmApiKey", "llmBaseUrl", "llmModel",
@@ -2773,7 +2686,7 @@ export class CommandSystem {
             }
             try {
               const json = ctx.args.slice(1).join(" ");
-              const parsed = JSON.parse(json) as import("../cli-legacy/config.js").CliConfigData;
+              const parsed = JSON.parse(json) as import("../shared/config.js").CliConfigData;
               // Merge into existing config
               if (parsed.profiles) {
                 for (const [name, profile] of Object.entries(parsed.profiles)) {
@@ -2840,7 +2753,7 @@ export class CommandSystem {
         requireConnected: false,
         dmOnly: true,
         handler: async (ctx) => {
-          const { getGlobalConfigStore } = await import("../cli-legacy/config.js");
+          const { getGlobalConfigStore } = await import("../shared/config.js");
           const store = getGlobalConfigStore({ autoSave: true });
           const active = store.getActiveProfileName();
           const userId = ctx.message.fromUserId;
@@ -2925,7 +2838,7 @@ export class CommandSystem {
             return true;
           }
 
-          const { getGlobalConfigStore } = await import("../cli-legacy/config.js");
+          const { getGlobalConfigStore } = await import("../shared/config.js");
           const store = getGlobalConfigStore({ autoSave: true });
 
           // Step: choose auth method
@@ -3004,10 +2917,12 @@ export class CommandSystem {
     // ─── LLM interactive config wizard (blocking, like /init) ───
     {
       type LlmWizardSession = {
-        step: "provider" | "apikey" | "model" | "systemPrompt" | "done";
-        provider?: string;
-        apiKey?: string;
+        step: "apiFormat" | "name" | "model" | "baseUrl" | "apiKey" | "systemPrompt" | "done";
+        apiFormat?: string;
+        providerName?: string;
         model?: string;
+        baseUrl?: string;
+        apiKey?: string;
         startedAt: number;
       };
       const llmWizardSessions = new Map<string, LlmWizardSession>();
@@ -3034,55 +2949,85 @@ export class CommandSystem {
 
           const input = text.trim();
 
-          // Step: provider
-          if (session.step === "provider") {
-            const providerMap: Record<string, string> = {
-              "1": "z-ai", "z-ai": "z-ai", "zai": "z-ai",
-              "2": "openai", "openai": "openai",
-              "3": "anthropic", "anthropic": "anthropic",
-              "4": "deepseek", "deepseek": "deepseek",
-              "5": "custom", "custom": "custom",
-            };
-            const provider = providerMap[input.toLowerCase()] ?? input.toLowerCase();
-            session.provider = provider;
-            engine.updateConfig({ provider });
-            session.step = "apikey";
-            await reply(
-              `✅ 供应商已设置为: ${provider}\n\n` +
-              `📝 请发送 API Key (z-ai 可跳过发送 skip):`,
-            );
+          // Step 1: Choose API format
+          if (session.step === "apiFormat") {
+            const { API_FORMATS } = await import("../business/llm-takeover.js");
+            const formatMap: Record<string, string> = {};
+            API_FORMATS.forEach((f, i) => {
+              formatMap[String(i + 1)] = f.value;
+              formatMap[f.value] = f.value;
+              // Also support short forms
+              if (f.value === "openai-chat-completions") { formatMap["openai"] = f.value; formatMap["1"] = f.value; }
+              if (f.value === "anthropic-messages") { formatMap["anthropic"] = f.value; formatMap["claude"] = f.value; formatMap["2"] = f.value; }
+              if (f.value === "google-gemini-rest") { formatMap["gemini"] = f.value; formatMap["google"] = f.value; formatMap["3"] = f.value; }
+              if (f.value === "aws-bedrock-converse") { formatMap["bedrock"] = f.value; formatMap["aws"] = f.value; formatMap["4"] = f.value; }
+              if (f.value === "azure-openai") { formatMap["azure"] = f.value; formatMap["5"] = f.value; }
+            });
+            const apiFormat = formatMap[input.toLowerCase()];
+            if (!apiFormat) {
+              await reply(`❌ 无效选择: ${input}\n请发送 1-5 或格式名称`);
+              return true;
+            }
+            session.apiFormat = apiFormat;
+            session.step = "name";
+            await reply(`✅ API 格式: ${apiFormat}\n\n📝 请发送供应商名称 (如 my-openai, backup-claude):`);
             return true;
           }
 
-          // Step: apikey
-          if (session.step === "apikey") {
-            if (input.toLowerCase() !== "skip") {
-              session.apiKey = input;
-              engine.updateConfig({ apiKey: input });
-            }
+          // Step 2: Provider name
+          if (session.step === "name") {
+            session.providerName = input;
             session.step = "model";
-            await reply(
-              `✅ API Key 已${input.toLowerCase() === "skip" ? "跳过" : "设置"}\n\n` +
-              `📝 请发送模型名称 (如 gpt-4o, claude-3-5-sonnet, 或 skip 使用默认):`,
-            );
+            await reply(`✅ 供应商名称: ${input}\n\n📝 请发送模型名称 (如 gpt-4o, claude-sonnet-4-20250514):`);
             return true;
           }
 
-          // Step: model
+          // Step 3: Model name (required)
           if (session.step === "model") {
-            if (input.toLowerCase() !== "skip") {
-              session.model = input;
-              engine.updateConfig({ model: input });
-            }
+            session.model = input;
+            session.step = "baseUrl";
+            const { API_FORMATS } = await import("../business/llm-takeover.js");
+            const fmt = API_FORMATS.find(f => f.value === session.apiFormat);
+            const hint = fmt?.defaultEndpoint ? `\n(默认: ${fmt.defaultEndpoint})` : "";
+            await reply(`✅ 模型: ${input}\n\n📝 请发送端点 URL (baseUrl):${hint}`);
+            return true;
+          }
+
+          // Step 4: Base URL (required)
+          if (session.step === "baseUrl") {
+            session.baseUrl = input;
+            session.step = "apiKey";
+            await reply(`✅ 端点: ${input}\n\n📝 请发送 API Key:`);
+            return true;
+          }
+
+          // Step 5: API Key (required)
+          if (session.step === "apiKey") {
+            session.apiKey = input;
+            // Save the provider config
+            const config = engine.getConfig() as { customProviders?: Record<string, unknown> };
+            const customProviders = { ...(config.customProviders ?? {}) };
+            customProviders[session.providerName!] = {
+              apiFormat: session.apiFormat,
+              model: session.model,
+              baseUrl: session.baseUrl,
+              apiKey: input,
+              apiKeys: [input],
+            };
+            engine.updateConfig({ customProviders, provider: session.providerName });
             session.step = "systemPrompt";
             await reply(
-              `✅ 模型已${input.toLowerCase() === "skip" ? "跳过" : "设置"}\n\n` +
-              `📝 请发送系统提示词 (或 skip/done 使用默认):`,
+              `✅ 供应商 "${session.providerName}" 已创建!\n` +
+              `  API格式: ${session.apiFormat}\n` +
+              `  模型: ${session.model}\n` +
+              `  端点: ${session.baseUrl}\n` +
+              `  密钥: ***${input.slice(-4)}\n\n` +
+              `📝 请发送系统提示词 (或 skip 使用默认):`,
             );
             return true;
           }
 
-          // Step: systemPrompt
+          // Step 6: System prompt (optional)
           if (session.step === "systemPrompt") {
             if (input.toLowerCase() !== "skip" && input.toLowerCase() !== "done") {
               engine.updateConfig({ systemPrompt: input });
@@ -3091,9 +3036,8 @@ export class CommandSystem {
             llmWizardSessions.delete(userId);
             await reply(
               `✅ LLM 配置完成!\n` +
-              `  供应商: ${session.provider}\n` +
-              `  API Key: ${session.apiKey ? "***" + session.apiKey.slice(-4) : "(未设置)"}\n` +
-              `  模型: ${session.model || "(默认)"}\n\n` +
+              `  供应商: ${session.providerName} (${session.apiFormat})\n` +
+              `  模型: ${session.model}\n\n` +
               `发送 /llm on 开启自动回复\n` +
               `发送 /llm status 查看状态`,
             );

@@ -13,7 +13,7 @@
 
 import type { YuanbaoBot } from "../../index.js";
 import type { ChatMessage } from "../../types.js";
-import type { CliProfile } from "../../cli-legacy/config.js";
+import type { CliProfile } from "../../shared/config.js";
 import { getVersion } from "../../version.js";
 import { resolve } from "node:path";
 import { existsSync } from "node:fs";

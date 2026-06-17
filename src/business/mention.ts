@@ -47,6 +47,14 @@ export type NicknameResolver = (nickname: string) => Promise<NicknameMatch[]>;
  */
 export type AllMembersResolver = () => Promise<NicknameMatch[]>;
 
+/**
+ * Resolver function for @[](id) auto-nickname fetch.
+ * Given a userId, returns the member's nickname (or null if not found).
+ * Used when @[](id) is used without an explicit nickname — the resolver
+ * fetches the member's display name from the group member list.
+ */
+export type UserIdResolver = (userId: string) => Promise<string | null>;
+
 export type MentionInfo = {
   /** The resolved user ID */
   userId: string;
@@ -106,6 +114,7 @@ export async function parseMentions(
   aliasStore?: AliasStore,
   nicknameResolver?: NicknameResolver,
   allMembersResolver?: AllMembersResolver,
+  userIdResolver?: UserIdResolver,
 ): Promise<ParsedMentions> {
   const store = aliasStore ?? getGlobalAliasStore();
   const mentions: MentionInfo[] = [];
@@ -302,14 +311,35 @@ export async function parseMentions(
     let explicitNickname: boolean;
 
     if (m.nickname) {
+      // @[昵称](id) — explicit nickname provided
       displayName = m.nickname;
       explicitNickname = true;
     } else if (aliasNickname) {
+      // @[](id) — no nickname, but alias has one
       displayName = aliasNickname;
       explicitNickname = false;
     } else {
-      displayName = resolvedId;
-      explicitNickname = false;
+      // @[](id) — no nickname, no alias nickname
+      // Try to fetch nickname from group members via userIdResolver
+      // (reverse lookup: find member by userId)
+      if (userIdResolver) {
+        try {
+          const fetchedNickname = await userIdResolver(resolvedId);
+          if (fetchedNickname) {
+            displayName = fetchedNickname;
+            explicitNickname = false;
+          } else {
+            displayName = resolvedId;
+            explicitNickname = false;
+          }
+        } catch {
+          displayName = resolvedId;
+          explicitNickname = false;
+        }
+      } else {
+        displayName = resolvedId;
+        explicitNickname = false;
+      }
     }
 
     const mention: MentionInfo = {
@@ -446,13 +476,14 @@ export async function buildMentionMsgBody(
   aliasStore?: AliasStore,
   nicknameResolver?: NicknameResolver,
   allMembersResolver?: AllMembersResolver,
+  userIdResolver?: UserIdResolver,
 ): Promise<{
   msgBody: YuanbaoMsgBodyElement[];
   cloudCustomData?: string;
   mentions: MentionInfo[];
   atAll: boolean;
 }> {
-  const parsed = await parseMentions(text, aliasStore, nicknameResolver, allMembersResolver);
+  const parsed = await parseMentions(text, aliasStore, nicknameResolver, allMembersResolver, userIdResolver);
 
   const msgBody: YuanbaoMsgBodyElement[] = [];
 

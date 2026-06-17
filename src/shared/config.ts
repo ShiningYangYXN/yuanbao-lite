@@ -16,7 +16,8 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { homedir } from "node:os";
-import type { LlmProviderType } from "../business/llm-takeover.js";
+// LlmProviderType removed — use string for provider names
+type LlmProviderType = string;
 
 // ─── Types ───
 

@@ -25,7 +25,7 @@ import { dirname, join } from "node:path";
 import { YuanbaoBot } from "../../index.js";
 import type { BotState } from "../../types.js";
 import type { ChatMessage } from "../../types.js";
-import { getGlobalConfigStore } from "../../cli-legacy/config.js";
+import { getGlobalConfigStore } from "../../shared/config.js";
 import { createLog, setLogLevel } from "../../logger.js";
 import { getVersion } from "../../version.js";
 import { acquirePidFile, releasePidFile, getPidFilePath } from "./pid-file.js";

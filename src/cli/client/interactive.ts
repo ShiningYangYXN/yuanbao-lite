@@ -16,8 +16,8 @@
 import * as readline from "node:readline";
 import chalk from "chalk";
 import { getDefaultClient, type DaemonClient } from "./daemon-client.js";
-import { RichHistory } from "../../cli-legacy/rich-history.js";
-import { getCompletions, type CompletionContext, type CompletionResult } from "../../cli-legacy/auto-complete.js";
+import { RichHistory } from "../../shared/rich-history.js";
+import { getCompletions, type CompletionContext, type CompletionResult } from "../../shared/auto-complete.js";
 import {
   COLORS,
   printH1,
@@ -335,7 +335,7 @@ function setupSyntaxHighlight(rl: readline.Interface): void {
   // the /command dispatch path (the daemon's CommandSystem produces colored
   // output). For interactive editing, we rely on readline's default behavior.
   //
-  // The highlightLine() function from cli-legacy/syntax-highlight.ts is
+  // The highlightLine() function from shared/syntax-highlight.ts is
   // still available and applied to command replies in dispatchCommand().
   void rl;
 }

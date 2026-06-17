@@ -382,10 +382,26 @@ export class YuanbaoBot {
         }
       : undefined;
 
+    // Build userId resolver for @[](id) auto-nickname fetch
+    // When @[](id) is used without a nickname, this fetches the member's
+    // display name from the group member list.
+    const userIdResolver = (isGroup && to)
+      ? async (userId: string): Promise<string | null> => {
+          try {
+            const resp = await this.getGroupMemberList(String(to));
+            const members = resp?.member_list ?? [];
+            const member = members.find(m => m.user_id === userId);
+            return member?.nick_name ?? null;
+          } catch {
+            return null;
+          }
+        }
+      : undefined;
+
     // Use buildMentionMsgBody which interleaves TIMCustomElem at correct positions
     // (matching the original project's resolveAtMentions approach)
     const { msgBody: mentionMsgBody, cloudCustomData, mentions: parsedMentions, atAll: _atAll } =
-      await buildMentionMsgBody(interpolatedText, this.aliasStore, nicknameResolver, allMembersResolver);
+      await buildMentionMsgBody(interpolatedText, this.aliasStore, nicknameResolver, allMembersResolver, userIdResolver);
     // _atAll flag is already encoded in cloudCustomData via buildCloudCustomDataWithMentions
     void _atAll;
 
@@ -1411,8 +1427,8 @@ export { CommandSystem } from "./commands/registry.js";
 export type { CommandContext, CommandDefinition, CommandResult, CommandSystemConfig } from "./commands/types.js";
 export { detectSticker, prepareStickerMsgBody, buildEmojiMsgBody, buildCustomStickerMsgBody, buildStickerImageMsgBody, buildStickerMsgBody, buildStickerMsgBodyFromParts, registerStickerPack, unregisterStickerPack, getSticker, getStickerPacks, searchStickers, loadStickerPacksFromDir, getBuiltinEmojis, getBuiltinStickersData, cacheReceivedSticker } from "./business/sticker.js";
 export type { StickerInfo, StickerType, StickerPack } from "./business/sticker.js";
-export { LlmTakeoverEngine, ConversationManager, markdownToImText, createLlmTakeover, ZaiProvider, OpenAIProvider, AnthropicProvider, DeepSeekProvider, CustomProvider, createProvider } from "./business/llm-takeover.js";
-export type { LlmTakeoverConfig, TakeoverResult, LlmResponse, ConversationHistory, ConversationState, LlmProvider, LlmProviderType } from "./business/llm-takeover.js";
+export { LlmTakeoverEngine, ConversationManager, markdownToImText, createLlmTakeover, API_FORMATS } from "./business/llm-takeover.js";
+export type { LlmTakeoverConfig, TakeoverResult, LlmResponse, ConversationHistory, ConversationState, ApiFormat, ProviderConfig } from "./business/llm-takeover.js";
 export { AliasStore, getGlobalAliasStore, resetGlobalAliasStore } from "./business/alias.js";
 export type { AliasEntry, AliasStoreConfig } from "./business/alias.js";
 export { ContactStore, getGlobalContactStore, resetGlobalContactStore } from "./business/contacts.js";
@@ -1431,7 +1447,6 @@ export { MultiAccountManager } from "./business/multi-account.js";
 export type { AccountEntry, MultiAccountConfig, MultiAccountEvent } from "./business/multi-account.js";
 export { SearchEngine } from "./business/search.js";
 export type { GroupSearchResult, MemberSearchResult, SearchConfig } from "./business/search.js";
-export { InteractiveCli, runCli } from "./cli-legacy/index.js";
 export { createLog, setLogLevel } from "./logger.js";
 export { getVersion, getVersionString } from "./version.js";
 export type * from "./types.js";
