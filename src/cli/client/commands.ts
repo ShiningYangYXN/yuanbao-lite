@@ -92,19 +92,6 @@ export function buildProgram(): Command {
     );
 
   // ─── status ───
-  program
-    .command("status")
-    .description("查看 bot 连接状态")
-    .action(async () => {
-      const client = await ensureClient(program);
-      const info = await client.ping();
-      if (!info) {
-        printError("daemon 未运行");
-        process.exit(1);
-      }
-      printDaemonInfo(info);
-    });
-
   // ─── upload ───
   program
     .command("upload")

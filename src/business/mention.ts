@@ -140,10 +140,13 @@ export async function parseMentions(
     const m = matches[i];
 
     // ─── @all detection ───
-    // @[所有人]() or @[](all) → expand to all group members
+    // @[所有人]()    → nickname="所有人", id=""
+    // @[](all)       → nickname="", id="all"
+    // @[所有人](all) → nickname="所有人", id="all"  (also valid)
+    // @all           → nickname="all", id=""
     const isAtAllSyntax =
-      (m.nickname === "所有人" && m.id === "") ||
-      (m.id === "all" && m.nickname === "") ||
+      (m.nickname === "所有人" && (m.id === "" || m.id === "all")) ||
+      (m.id === "all" && (m.nickname === "" || m.nickname === "所有人")) ||
       (m.nickname === "all" && m.id === "") ||
       (m.id === "所有人" && m.nickname === "");
 
@@ -200,39 +203,74 @@ export async function parseMentions(
     }
 
     // Case 1: @[昵称]() — auto-resolve by nickname
-    if (m.id === "" && m.nickname && nicknameResolver) {
-      try {
-        const matchedUsers = await nicknameResolver(m.nickname);
-        if (matchedUsers.length > 0) {
-          // Multiple matches: expand into multiple mentions, all @mentioned
-          // Replace the @[昵称]() with @昵称1 @昵称2 ... in text
-          const displayParts: string[] = [];
+    // First check if it's an alias, then try nicknameResolver (group member search)
+    if (m.id === "" && m.nickname) {
+      // Try alias store first — aliases can be used as nicknames too
+      const aliasEntry = store.get(m.nickname);
+      if (aliasEntry) {
+        const mention: MentionInfo = {
+          userId: aliasEntry.id,
+          displayName: aliasEntry.nickname ?? aliasEntry.alias,
+          explicitNickname: true,
+          startIndex: m.index,
+          endIndex: m.index + m.full.length,
+        };
+        mentions.unshift(mention);
+        if (!mentionedUserIds.includes(aliasEntry.id)) {
+          mentionedUserIds.push(aliasEntry.id);
+        }
+        const replacement = `@${aliasEntry.nickname ?? aliasEntry.alias}`;
+        text = text.slice(0, m.index) + replacement + text.slice(m.index + m.full.length);
+        const diff = replacement.length - m.full.length;
+        for (let j = 0; j < i; j++) {
+          matches[j].index += diff;
+        }
+        continue;
+      }
 
-          for (const user of matchedUsers) {
-            const mention: MentionInfo = {
-              userId: user.userId,
-              displayName: user.nickname || user.userId,
-              explicitNickname: true,
-              startIndex: m.index, // approximate
-              endIndex: m.index + m.full.length, // approximate
-            };
-            mentions.unshift(mention);
-            if (!mentionedUserIds.includes(user.userId)) {
-              mentionedUserIds.push(user.userId);
+      // Fall through to nicknameResolver (group member search)
+      if (nicknameResolver) {
+        try {
+          const matchedUsers = await nicknameResolver(m.nickname);
+          if (matchedUsers.length > 0) {
+            // Multiple matches: expand into multiple mentions, all @mentioned
+            // Replace the @[昵称]() with @昵称1 @昵称2 ... in text
+            const displayParts: string[] = [];
+
+            for (const user of matchedUsers) {
+              const mention: MentionInfo = {
+                userId: user.userId,
+                displayName: user.nickname || user.userId,
+                explicitNickname: true,
+                startIndex: m.index, // approximate
+                endIndex: m.index + m.full.length, // approximate
+              };
+              mentions.unshift(mention);
+              if (!mentionedUserIds.includes(user.userId)) {
+                mentionedUserIds.push(user.userId);
+              }
+              displayParts.push(`@${user.nickname || user.userId}`);
             }
-            displayParts.push(`@${user.nickname || user.userId}`);
-          }
 
-          const replacement = displayParts.join(" ");
-          text = text.slice(0, m.index) + replacement + text.slice(m.index + m.full.length);
+            const replacement = displayParts.join(" ");
+            text = text.slice(0, m.index) + replacement + text.slice(m.index + m.full.length);
 
-          // Adjust subsequent match indices
-          const diff = replacement.length - m.full.length;
-          for (let j = 0; j < i; j++) {
-            matches[j].index += diff;
+            // Adjust subsequent match indices
+            const diff = replacement.length - m.full.length;
+            for (let j = 0; j < i; j++) {
+              matches[j].index += diff;
+            }
+          } else {
+            // No match found — leave as plain text
+            const replacement = `@${m.nickname}`;
+            text = text.slice(0, m.index) + replacement + text.slice(m.index + m.full.length);
+            const diff = replacement.length - m.full.length;
+            for (let j = 0; j < i; j++) {
+              matches[j].index += diff;
+            }
           }
-        } else {
-          // No match found — leave as plain text
+        } catch {
+          // Resolver failed — leave as plain text
           const replacement = `@${m.nickname}`;
           text = text.slice(0, m.index) + replacement + text.slice(m.index + m.full.length);
           const diff = replacement.length - m.full.length;
@@ -240,25 +278,14 @@ export async function parseMentions(
             matches[j].index += diff;
           }
         }
-      } catch {
-        // Resolver failed — leave as plain text
+      } else {
+        // No resolver — leave as plain text
         const replacement = `@${m.nickname}`;
         text = text.slice(0, m.index) + replacement + text.slice(m.index + m.full.length);
         const diff = replacement.length - m.full.length;
         for (let j = 0; j < i; j++) {
           matches[j].index += diff;
         }
-      }
-      continue;
-    }
-
-    // Case 2: @[昵称]() without resolver — treat as plain text
-    if (m.id === "" && m.nickname && !nicknameResolver) {
-      const replacement = `@${m.nickname}`;
-      text = text.slice(0, m.index) + replacement + text.slice(m.index + m.full.length);
-      const diff = replacement.length - m.full.length;
-      for (let j = 0; j < i; j++) {
-        matches[j].index += diff;
       }
       continue;
     }

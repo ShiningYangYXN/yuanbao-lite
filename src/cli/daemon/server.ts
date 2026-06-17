@@ -192,6 +192,7 @@ export class Daemon {
       pid: process.pid,
       port: this.port,
       host: this.host,
+      query: Object.fromEntries(url.searchParams.entries()),
       shutdown: () => void this.stop("http-shutdown"),
     };
 

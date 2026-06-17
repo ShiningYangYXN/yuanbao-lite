@@ -211,6 +211,27 @@ async function processLine(line: string, client: DaemonClient): Promise<void> {
     return;
   }
 
+  // Non-slash input — check if a wizard session is active
+  // If so, route the input to the wizard instead of sending as chat message
+  try {
+    const wizStatus = await client.wizardStatus("cli");
+    if (wizStatus.active) {
+      const result = await client.wizardInput(line, "cli");
+      if (result.handled) {
+        if (result.replies.length > 0) {
+          process.stdout.write("\n");
+          for (const reply of result.replies) {
+            console.log(reply);
+          }
+          process.stdout.write("\n");
+        }
+        return;
+      }
+    }
+  } catch {
+    // wizard check failed — fall through to normal send
+  }
+
   // Plain text → send to current chat target
   if (state.chatMode === "none") {
     printError("未进入聊天模式，使用 /chat dm <id> 或 /chat group <groupCode>");

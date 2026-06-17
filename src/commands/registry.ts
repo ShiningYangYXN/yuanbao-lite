@@ -3153,7 +3153,32 @@ export class CommandSystem {
             return;
           }
 
-          // Confirmation tracking
+          // CLI source bypasses the 3x confirmation (CLI is pre-authorized)
+          if (ctx.source === "cli") {
+            const { getDefaultClient } = await import("../cli/client/daemon-client.js");
+            const client = getDefaultClient();
+            try {
+              if (subCmd === "stop") {
+                await client.shutdown();
+                await ctx.reply(`✅ daemon 已停止 (CLI 直接执行)`);
+              } else if (subCmd === "restart") {
+                await client.shutdown();
+                await new Promise(r => setTimeout(r, 2000));
+                await client.ensureDaemon({});
+                await ctx.reply(`✅ daemon 已重启 (CLI 直接执行)`);
+              } else if (subCmd === "reset") {
+                await client.shutdown();
+                await new Promise(r => setTimeout(r, 2000));
+                await client.ensureDaemon({});
+                await ctx.reply(`✅ daemon 已重置 (CLI 直接执行，缓存已清除)`);
+              }
+            } catch (err) {
+              await ctx.reply(`❌ daemon ${subCmd} 失败: ${(err as Error).message}`);
+            }
+            return;
+          }
+
+          // Confirmation tracking (chat source only)
           const key = `${userId}:${subCmd}`;
           const now = Date.now();
           const entry = daemonConfirmations.get(key);

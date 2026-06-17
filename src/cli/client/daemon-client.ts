@@ -310,6 +310,42 @@ export class DaemonClient {
     };
   }
 
+  // ─── Wizard support ───
+
+  /**
+   * Check if a wizard session is active for a user.
+   */
+  async wizardStatus(userId: string = "cli"): Promise<{ active: boolean; wizard: string | null }> {
+    const { status, data } = await this.request<{ ok: boolean; active?: boolean; wizard?: string | null }>(
+      "GET",
+      `/wizard-status?userId=${encodeURIComponent(userId)}`,
+    );
+    if (status !== 200) return { active: false, wizard: null };
+    return { active: data.active ?? false, wizard: data.wizard ?? null };
+  }
+
+  /**
+   * Send input to an active wizard session.
+   * Returns the wizard's reply text and whether it was handled.
+   */
+  async wizardInput(text: string, userId: string = "cli"): Promise<{
+    handled: boolean;
+    replies: string[];
+    wizard: string | null;
+  }> {
+    const { status, data } = await this.request<{ ok: boolean; handled?: boolean; replies?: string[]; wizard?: string | null }>(
+      "POST",
+      "/wizard-input",
+      { text, userId },
+    );
+    if (status !== 200) return { handled: false, replies: [], wizard: null };
+    return {
+      handled: data.handled ?? false,
+      replies: data.replies ?? [],
+      wizard: data.wizard ?? null,
+    };
+  }
+
   // ─── Completion data ───
 
   async fetchCommands(): Promise<Array<{

@@ -28,6 +28,7 @@ export type RouteContext = {
   pid: number;
   port: number;
   host: string;
+  query: Record<string, string>;
   shutdown: () => void;
 };
 
@@ -65,6 +66,12 @@ export async function handleRoute(
 
     case path === "/command" && method === "POST":
       return runCommand(ctx, body);
+
+    case path === "/wizard-input" && method === "POST":
+      return wizardInput(ctx, body);
+
+    case path === "/wizard-status" && method === "GET":
+      return wizardStatus(ctx);
 
     case path === "/contacts" && method === "GET":
       return listContacts();
@@ -319,6 +326,73 @@ function completions(ctx: RouteContext): RouteResult {
   return {
     status: 200,
     body: { ok: true, contacts, groups, aliases, commands },
+  };
+}
+
+/**
+ * Handle wizard input from CLI. Checks if user has an active /init or /llm config
+ * wizard session and feeds the input to it.
+ */
+async function wizardInput(ctx: RouteContext, body: Record<string, unknown>): Promise<RouteResult> {
+  const bot = requireBot(ctx);
+  const cmdSys = bot.getCommandSystem();
+  if (!cmdSys) {
+    return { status: 500, body: { ok: false, error: "command system disabled" } };
+  }
+  const userId = typeof body.userId === "string" ? body.userId : "cli";
+  const text = typeof body.text === "string" ? body.text : "";
+
+  const cs = cmdSys as unknown as {
+    _initWizardSessions?: Map<string, unknown>;
+    _handleInitWizardInput?: (bot: unknown, uid: string, txt: string, reply: (t: string) => Promise<void>) => Promise<boolean>;
+    _llmWizardSessions?: Map<string, unknown>;
+    _handleLlmWizardInput?: (bot: unknown, uid: string, txt: string, reply: (t: string) => Promise<void>) => Promise<boolean>;
+  };
+
+  const replies: string[] = [];
+  const replyFn = async (t: string): Promise<void> => { replies.push(t); };
+
+  // Check /init wizard
+  if (cs._initWizardSessions?.has(userId) && cs._handleInitWizardInput) {
+    const handled = await cs._handleInitWizardInput(bot, userId, text, replyFn);
+    return { status: 200, body: { ok: true, handled, replies, wizard: "init" } };
+  }
+
+  // Check /llm config wizard
+  if (cs._llmWizardSessions?.has(userId) && cs._handleLlmWizardInput) {
+    const handled = await cs._handleLlmWizardInput(bot, userId, text, replyFn);
+    return { status: 200, body: { ok: true, handled, replies, wizard: "llm" } };
+  }
+
+  return { status: 200, body: { ok: true, handled: false, replies: [], wizard: null } };
+}
+
+/**
+ * Check if a user has an active wizard session.
+ */
+function wizardStatus(ctx: RouteContext): RouteResult {
+  const bot = requireBot(ctx);
+  const cmdSys = bot.getCommandSystem();
+  if (!cmdSys) {
+    return { status: 500, body: { ok: false, error: "command system disabled" } };
+  }
+  const userId = ctx.query.userId ?? "cli";
+
+  const cs = cmdSys as unknown as {
+    _initWizardSessions?: Map<string, unknown>;
+    _llmWizardSessions?: Map<string, unknown>;
+  };
+
+  const hasInit = cs._initWizardSessions?.has(userId) ?? false;
+  const hasLlm = cs._llmWizardSessions?.has(userId) ?? false;
+
+  return {
+    status: 200,
+    body: {
+      ok: true,
+      active: hasInit || hasLlm,
+      wizard: hasInit ? "init" : hasLlm ? "llm" : null,
+    },
   };
 }
 
