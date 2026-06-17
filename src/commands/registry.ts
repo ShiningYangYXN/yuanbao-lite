@@ -151,15 +151,26 @@ export class CommandSystem {
 
   /**
    * Remove per-command authorization.
+   * Non-dmOnly commands cannot be disallowed (they were never restricted).
+   * Returns { ok, reason? } for clear feedback.
    */
-  disallowCommand(cmdName: string): boolean {
+  disallowCommand(cmdName: string): { ok: boolean; reason?: string } {
     const normalized = cmdName.toLowerCase().replace(/^\//, "");
+    const def = this.get(normalized);
+    if (!def) {
+      return { ok: false, reason: `未知命令: /${normalized}` };
+    }
+    if (!def.dmOnly) {
+      return { ok: false, reason: `命令 /${normalized} 不是受限命令，无法取消授权` };
+    }
     const entry = this._allowedCommands.get(normalized);
-    if (!entry) return false;
+    if (!entry) {
+      return { ok: false, reason: `命令 /${normalized} 未被授权` };
+    }
     if (entry.timer) clearTimeout(entry.timer);
     this._allowedCommands.delete(normalized);
     this.log.info(`command /${normalized} authorization revoked`);
-    return true;
+    return { ok: true };
   }
 
   /**
@@ -364,12 +375,12 @@ export class CommandSystem {
       }
       if (isTrustedUser) {
         await this.makeContext(bot, message, commandName, args, onReply, source).reply(
-          `⚠️ 此命令仅限私聊使用。\n受信用户可在群聊中发送 /unsafe on 开启危险模式（5分钟有效），开启后可在此群聊使用 dmOnly 命令。`,
+          `⚠️ 此命令仅限私聊使用。\n受信用户可：\n  /unsafe on [分钟] — 开启全局危险模式（默认5分钟）\n  /unsafe on forever — 永久开启\n  /unsafe allow /${commandName} [分钟|forever] — 仅授权此命令（默认5分钟）\n查看状态: /unsafe status`,
         );
       } else {
         // Auto-include the user's own ID so they can forward it to the master
         await this.makeContext(bot, message, commandName, args, onReply, source).reply(
-          `⚠️ 此命令仅限私聊使用。\n你的用户ID: ${message.fromUserId}\n如需在群聊中执行，请联系主人发送: /trust add ${message.fromUserId}\n加入信任列表后，用 /unsafe on 开启危险模式。`,
+          `⚠️ 此命令仅限私聊使用。\n你的用户ID: ${message.fromUserId}\n如需在群聊中执行：\n  1. 联系主人发送: /trust add ${message.fromUserId}\n  2. 加入信任列表后，发送: /unsafe allow /${commandName}\n  或: /unsafe on 开启全局危险模式`,
         );
       }
       return { handled: true };
@@ -1554,8 +1565,8 @@ export class CommandSystem {
             await ctx.reply("用法: /unsafe disallow <命令名>");
             return;
           }
-          const ok = this.disallowCommand(ctx.args[1]);
-          await ctx.reply(ok ? `✅ 已取消授权 /${ctx.args[1]}` : `/${ctx.args[1]} 未被授权`);
+          const result = this.disallowCommand(ctx.args[1]);
+          await ctx.reply(result.ok ? `✅ 已取消授权 /${ctx.args[1]}` : `❌ ${result.reason}`);
           return;
         }
 

@@ -382,7 +382,9 @@ export class LlmTakeoverEngine {
   updateConfig(patch: Partial<LlmTakeoverConfig>): void {
     let changed = false;
     if (patch.enabled !== undefined) this.config.enabled = patch.enabled;
-    if (patch.systemPrompt !== undefined) this.config.systemPrompt = patch.systemPrompt;
+    // systemPrompt is locked to DEFAULT_SYSTEM_PROMPT — users can only set userSystemPrompt
+    // (which is appended after the default). Ignore any attempt to override systemPrompt.
+    // if (patch.systemPrompt !== undefined) this.config.systemPrompt = patch.systemPrompt;
     if (patch.model !== undefined) this.config.model = patch.model;
     if (patch.temperature !== undefined) this.config.temperature = patch.temperature;
     if (patch.maxTokens !== undefined) this.config.maxTokens = patch.maxTokens;
@@ -422,6 +424,8 @@ export class LlmTakeoverEngine {
     if (!this.persistencePath || !existsSync(this.persistencePath)) return;
     try {
       const saved = JSON.parse(readFileSync(this.persistencePath, "utf-8")) as Partial<LlmTakeoverConfig>;
+      // Never allow persisted config to override the default systemPrompt
+      delete saved.systemPrompt;
       this.config = { ...this.config, ...saved };
       this.activeProviderName = this.config.provider;
     } catch (e) { this.log.warn(`load persisted config failed: ${(e as Error).message}`); }

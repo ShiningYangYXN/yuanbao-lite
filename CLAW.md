@@ -103,11 +103,32 @@ node dist/cli/index.js send group <groupCode> "hello"
 
 ## 安全机制
 
-- **信任系统**: 主人 (bot owner) 自动受信，不可移除
-- **危险模式**: `/unsafe on [分钟]` 临时允许 dmOnly 命令在群聊使用
-- **永久危险模式**: `/unsafe on forever`
-- **单命令授权**: `/unsafe allow <命令名>` 授权单个命令
-- **插值安全**: 群聊中非 unsafe 模式自动屏蔽危险插值 (process/env/require 等)
+### 信任系统
+- 主人 (bot owner) 自动受信，不可移除
+- 受信用户才能开启危险模式或管理信任列表
+- `/trust status` — 查看信任状态（全局开放）
+- `/trust list|add|remove` — 管理信任列表（仅私聊）
+
+### 危险模式
+- `/unsafe on [分钟]` — 开启全局危险模式（默认5分钟），所有 dmOnly 命令可在群聊使用
+- `/unsafe on forever` — 永久开启
+- `/unsafe off` — 关闭
+- `/unsafe status` — 查看状态 + 已授权命令白名单 + 过期时间
+
+### 单命令授权
+- `/unsafe allow <命令名> [分钟|forever]` — 授权单个 dmOnly 命令在群聊使用（默认5分钟）
+- `/unsafe disallow <命令名>` — 取消授权（非 dmOnly 命令无法被 disallow）
+- `/unsafe allow` — 查看已授权命令列表 + 过期时间
+- 不可授权命令: unsafe, trust, config, init, daemon
+- 授权独立于全局危险模式，互不影响
+
+### 系统提示词
+- 默认系统提示词不可被用户覆盖
+- 用户可通过 `userSystemPrompt` 配置项追加自定义提示词
+- 自定义提示词以 "用户添加的系统提示词" 为标头拼接在默认提示词之后
+
+### 插值安全
+- 群聊中非 unsafe 模式自动屏蔽危险插值 (process/env/require 等)
 
 ## 日志
 
@@ -123,7 +144,7 @@ node dist/cli/index.js config set logLevel debug
 1. **连接失败**: 检查 appKey/appSecret 是否正确
 2. **daemon 不启动**: 检查端口 8992 是否被占用
 3. **LLM 不工作**: 检查 `/llm status`，确保供应商已配置且有密钥
-4. **命令不可用**: 检查 `/help <命令名>` 查看是否 dmOnly
+4. **命令不可用**: 检查 `/help <命令名>` 查看是否 dmOnly，使用 `/unsafe allow` 授权
 
 ## 快速验证
 
@@ -142,4 +163,7 @@ node dist/cli/index.js rc /calc 2+2
 
 # 测试 IP 查询
 node dist/cli/index.js rc /ip 8.8.8.8
+
+# 查看安全状态
+node dist/cli/index.js rc /unsafe status
 ```
