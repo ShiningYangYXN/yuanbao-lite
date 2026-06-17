@@ -31,21 +31,21 @@ pnpm add yuanbao-lite
 
 ```bash
 # 启动交互式配置向导
-npx yb-cli-new config init
+npx yb-cli config init
 
 # 或直接设置认证信息
-npx yb-cli-new config set appKey 你的AppKey
-npx yb-cli-new config set appSecret 你的AppSecret
+npx yb-cli config set appKey 你的AppKey
+npx yb-cli config set appSecret 你的AppSecret
 
 # 验证配置
-npx yb-cli-new config show
+npx yb-cli config show
 ```
 
 ### 3. 启动 daemon（后台运行）
 
 ```bash
 # 前台启动（开发调试）
-npx yb-cli-new daemon start
+npx yb-cli daemon start
 
 # 或通过 pnpm
 pnpm daemon
@@ -57,13 +57,13 @@ pnpm daemon
 
 ```bash
 # 交互式 REPL（shell 体验：↑↓ 历史 / Tab 补全 / \ 换行）
-npx yb-cli-new
+npx yb-cli
 
 # 非交互式命令
-npx yb-cli-new send dm <userId> "你好"
-npx yb-cli-new send group <groupCode> "群消息"
-npx yb-cli-new status
-npx yb-cli-new contacts list
+npx yb-cli send dm <userId> "你好"
+npx yb-cli send group <groupCode> "群消息"
+npx yb-cli status
+npx yb-cli contacts list
 ```
 
 ## daemon 管理
@@ -208,6 +208,81 @@ ${env.HOME}           — 环境变量（仅 unsafe 模式）
 - 供应商池：所有密钥耗尽后自动切换到下一个供应商
 - 成功调用重置失败计数
 
+## 自定义供应商管理
+
+可以添加自定义名称的供应商，每个供应商有独立的密钥池：
+
+```bash
+# 添加自定义供应商 (name, type, [model], [baseUrl])
+/llm customprovider add my-azure openai gpt-4o https://xxx.openai.azure.com
+/llm customprovider add backup-claude anthropic claude-3-5-sonnet
+
+# 为供应商添加密钥（独立密钥池）
+/llm customprovider addkey my-azure sk-key1
+/llm customprovider addkey my-azure sk-key2
+
+# 列出所有自定义供应商
+/llm customprovider list
+
+# 切换到自定义供应商
+/llm customprovider use my-azure
+
+# 移除密钥/供应商
+/llm customprovider removekey my-azure 0
+/llm customprovider remove my-azure
+```
+
+type 可选: `openai` `anthropic` `deepseek` `custom` `z-ai`
+
+## 用户信任机制
+
+机器人主人（通过 appKey 识别）自动受信，不可被移除。受信用户可在群聊开启 unsafe 模式。
+
+```bash
+# 查看信任列表
+/trust list
+
+# 添加受信用户
+/trust add <用户ID> [昵称]
+
+# 移除受信用户（主人不可移除）
+/trust remove <用户ID>
+
+# 查看自己的信任状态
+/trust status
+```
+
+**群聊受限命令流程**:
+1. 非受信用户在群聊发 dmOnly 命令 → 提示联系主人添加信任
+2. 受信用户在群聊发 dmOnly 命令 → 提示发送 `/unsafe on` 开启
+3. `/unsafe on` 后 5 分钟内可在群聊使用 dmOnly 命令
+4. `/unsafe off` 立即关闭
+
+## /init 交互式配置
+
+`/init` 启动后会阻塞当前对话，引导用户完成配置：
+
+```bash
+# 启动向导（仅私聊）
+/init
+
+# 向导流程:
+# 1. 选择认证方式: 发送 "appkey" 或 "token"
+# 2. 输入 App Key / Token
+# 3. 输入 App Secret (仅 appkey 方式)
+# 4. 配置完成，提示重启 daemon
+
+# 取消向导
+/init cancel
+
+# 直接设置字段（非交互式）
+/init appkey <值>
+/init appsecret <值>
+/init token <值>
+```
+
+向导有 5 分钟超时，超时自动取消。
+
 ## pnpm 脚本
 
 ```bash
@@ -249,7 +324,7 @@ src/
 │   ├── registry.ts             # 命令注册与分发（40+ 内置命令）
 │   ├── help-text.ts            # 帮助文本生成
 │   └── types.ts                # 命令类型定义
-├── cli-new/                    # daemon-first 现代化 CLI
+├── cli/                    # daemon-first 现代化 CLI
 │   ├── index.ts                # 入口，daemon-first 路由
 │   ├── config.ts               # 重新导出 src/cli-legacy/config.ts
 │   ├── theme.ts                # 颜色调色板 + 无边框渲染

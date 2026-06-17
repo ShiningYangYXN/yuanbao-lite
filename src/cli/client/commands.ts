@@ -45,7 +45,7 @@ export function buildProgram(): Command {
   const program = new Command();
 
   program
-    .name("yb-cli-new")
+    .name("yb-cli")
     .description("Yuanbao Lite — 现代化 CLI (daemon-first)")
     .version(getVersion())
     .option("--profile <name>", "使用指定配置档案", "default")
@@ -216,7 +216,7 @@ export function buildProgram(): Command {
               const names = store.getProfileNames();
               const active = store.getActiveProfileName();
               if (names.length === 0) {
-                printWarn("暂无配置档案。运行 yb-cli-new config init 创建");
+                printWarn("暂无配置档案。运行 yb-cli config init 创建");
                 return;
               }
               printSection("配置档案");
@@ -298,7 +298,7 @@ export function buildProgram(): Command {
           });
           const all = store.getAll("name");
           if (all.length === 0) {
-            printWarn("暂无联系人。运行 yb-cli-new contacts add <id> <name> 添加");
+            printWarn("暂无联系人。运行 yb-cli contacts add <id> <name> 添加");
             return;
           }
           printSection("联系人列表");

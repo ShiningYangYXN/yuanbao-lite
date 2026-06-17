@@ -215,9 +215,23 @@ export class CommandSystem {
 
     // Check dmOnly restriction (bypassed when unsafe mode is active)
     if (def.dmOnly && message.chatType === "group" && !this._unsafeMode) {
-      await this.makeContext(bot, message, commandName, args, onReply).reply(
-        "⚠️ 此命令仅限私聊使用，请私聊机器人发送此命令",
-      );
+      // Check if the user is trusted — trusted users get a hint to enable /unsafe
+      let isTrustedUser = false;
+      try {
+        const { isTrusted } = await import("../business/trust.js");
+        isTrustedUser = isTrusted(message.fromUserId);
+      } catch {
+        // trust module optional
+      }
+      if (isTrustedUser) {
+        await this.makeContext(bot, message, commandName, args, onReply).reply(
+          `⚠️ 此命令仅限私聊使用。\n受信用户可在群聊中发送 /unsafe on 开启危险模式（5分钟有效），开启后可在此群聊使用 dmOnly 命令。`,
+        );
+      } else {
+        await this.makeContext(bot, message, commandName, args, onReply).reply(
+          `⚠️ 此命令仅限私聊使用。\n如需在群聊中执行，请联系主人将你加入信任列表 (/trust add <你的ID>)，然后用 /unsafe on 开启。`,
+        );
+      }
       return { handled: true };
     }
 
@@ -818,14 +832,32 @@ export class CommandSystem {
     });
 
     // /unsafe — temporarily allow dmOnly commands in group chat
+    // Trusted users (incl. master) can use this in DM or group.
+    // Non-trusted users get a "contact master" message.
     this.register({
       name: "unsafe",
       aliases: ["危险模式"],
-      description: "临时允许群聊使用受限命令（私聊发送，全局生效）",
+      description: "临时允许群聊使用受限命令（需受信）",
       usage: "/unsafe [on|off|status] [分钟数]   (默认5分钟)",
       category: "system" as CommandCategory,
-      dmOnly: true, // Must be sent from DM to activate
       handler: async (ctx) => {
+        // Check trust — only trusted users can enable unsafe mode
+        let trusted: boolean;
+        try {
+          const { isTrusted } = await import("../business/trust.js");
+          trusted = isTrusted(ctx.message.fromUserId);
+        } catch {
+          // trust module optional — default to allowing if module missing
+          trusted = true;
+        }
+
+        if (!trusted) {
+          await ctx.reply(
+            `❌ 你不在信任列表中，无法开启危险模式。\n请联系主人发送: /trust add <你的ID>`,
+          );
+          return;
+        }
+
         const subCmd = ctx.args[0]?.toLowerCase();
 
         if (!subCmd || subCmd === "on") {
@@ -853,6 +885,95 @@ export class CommandSystem {
         } else {
           await ctx.reply("用法: /unsafe [on|off|status] [分钟数]\n  /unsafe       — 开启5分钟\n  /unsafe 10    — 开启10分钟\n  /unsafe off   — 关闭\n  /unsafe status — 查看状态");
         }
+      },
+    });
+
+    // /trust — manage trusted users (dmOnly: only master/trusted can manage)
+    this.register({
+      name: "trust",
+      aliases: ["信任", "受信"],
+      description: "管理受信用户列表（主人自动受信，不可移除）",
+      usage: "/trust [list|add <ID> [昵称]|remove <ID>|status]",
+      category: "system" as CommandCategory,
+      dmOnly: true,
+      handler: async (ctx) => {
+        const { isTrusted, addTrust, removeTrust, listTrust, getMasterUserId } = await import("../business/trust.js");
+        const subCmd = ctx.args[0]?.toLowerCase();
+        const userId = ctx.message.fromUserId;
+
+        // Only trusted users can manage trust (master always can)
+        if (!isTrusted(userId)) {
+          await ctx.reply("❌ 你不在信任列表中，无法管理受信用户");
+          return;
+        }
+
+        if (!subCmd || subCmd === "list") {
+          const entries = listTrust();
+          const master = getMasterUserId();
+          if (entries.length === 0) {
+            await ctx.reply("📋 信任列表为空");
+            return;
+          }
+          const lines = entries.map(e =>
+            `  ${e.isMaster || e.userId === master ? "👑" : "👤"} ${e.userId}` +
+            `${e.nickname ? ` (${e.nickname})` : ""}` +
+            `${e.isMaster ? " [主人]" : ""}` +
+            `  受信于 ${new Date(e.trustedAt).toLocaleString("zh-CN")}`,
+          );
+          await ctx.reply(`📋 信任列表 (${entries.length} 人):\n${lines.join("\n")}`);
+          return;
+        }
+
+        if (subCmd === "add") {
+          if (ctx.args.length < 2) {
+            await ctx.reply("用法: /trust add <ID> [昵称]");
+            return;
+          }
+          const targetId = ctx.args[1];
+          const nickname = ctx.args.slice(2).join(" ");
+          const added = addTrust(targetId, nickname);
+          await ctx.reply(added
+            ? `✅ 已将 ${targetId}${nickname ? ` (${nickname})` : ""} 加入信任列表`
+            : `${targetId} 已在信任列表中（昵称已更新）`,
+          );
+          return;
+        }
+
+        if (subCmd === "remove" || subCmd === "rm") {
+          if (ctx.args.length < 2) {
+            await ctx.reply("用法: /trust remove <ID>");
+            return;
+          }
+          const targetId = ctx.args[1];
+          const result = removeTrust(targetId);
+          await ctx.reply(result.ok
+            ? `✅ 已将 ${targetId} 移出信任列表`
+            : `❌ ${result.reason}`,
+          );
+          return;
+        }
+
+        if (subCmd === "status") {
+          const trusted = isTrusted(userId);
+          const master = getMasterUserId();
+          await ctx.reply(
+            `📊 信任状态:\n` +
+            `  你的ID: ${userId}\n` +
+            `  是否受信: ${trusted ? "是" : "否"}\n` +
+            `  是否主人: ${userId === master ? "是" : "否"}\n` +
+            `  主人ID: ${master ?? "(未设置)"}`,
+          );
+          return;
+        }
+
+        await ctx.reply(
+          "用法:\n" +
+          "  /trust                    查看信任列表\n" +
+          "  /trust list               同上\n" +
+          "  /trust add <ID> [昵称]    添加受信用户\n" +
+          "  /trust remove <ID>        移除受信用户（主人不可移除）\n" +
+          "  /trust status             查看自己的信任状态",
+        );
       },
     });
 
@@ -2109,16 +2230,22 @@ export class CommandSystem {
           case "供应商": {
             if (subArgs.length === 0) {
               const config = engine.getConfig();
-              await ctx.reply(`当前供应商: ${config.provider} (可选: z-ai|openai|anthropic|deepseek|custom)`);
+              const builtInProviders = ["z-ai", "openai", "anthropic", "deepseek", "custom"];
+              const customNames = Object.keys(config.customProviders ?? {});
+              const allProviders = [...builtInProviders, ...customNames.filter(n => !builtInProviders.includes(n))];
+              await ctx.reply(`当前供应商: ${config.provider}\n可选: ${allProviders.join(", ")}`);
               return;
             }
-            const validProviders: string[] = ["z-ai", "openai", "anthropic", "deepseek", "custom"];
-            if (!validProviders.includes(subArgs[0])) {
-              await ctx.reply(`无效供应商: ${subArgs[0]} (可选: ${validProviders.join("|")})`);
+            const validBuiltIn: string[] = ["z-ai", "openai", "anthropic", "deepseek", "custom"];
+            const config = engine.getConfig();
+            const customNames = Object.keys(config.customProviders ?? {});
+            const allValid = [...validBuiltIn, ...customNames];
+            if (!allValid.includes(subArgs[0])) {
+              await ctx.reply(`无效供应商: ${subArgs[0]}\n可选: ${allValid.join(", ")}\n用 /llm customprovider add 添加自定义供应商`);
               return;
             }
             try {
-              engine.updateConfig({ provider: subArgs[0] as "z-ai" | "openai" | "anthropic" | "deepseek" | "custom" });
+              engine.updateConfig({ provider: subArgs[0] as never });
               await ctx.reply(`✅ 供应商已切换为: ${subArgs[0]}`);
             } catch (err) {
               await ctx.reply(`❌ 切换供应商失败: ${(err as Error).message}`);
@@ -2236,6 +2363,140 @@ export class CommandSystem {
               await ctx.reply("用法: /llm providerpool add <provider> <model> <apiKey> [baseUrl] | clear | list");
             }
             break;
+          }
+          case "customprovider":
+          case "自定义供应商": {
+            const config = engine.getConfig();
+            const customProviders = { ...(config.customProviders ?? {}) };
+            const action = subArgs[0];
+
+            if (!action || action === "list") {
+              const names = Object.keys(customProviders);
+              if (names.length === 0) {
+                await ctx.reply("自定义供应商列表为空\n用法: /llm customprovider add <名称> <type> [model] [baseUrl]");
+                return;
+              }
+              const lines = names.map(name => {
+                const p = customProviders[name];
+                const keyCount = (p.apiKeys?.length ?? 0) || (p.apiKey ? 1 : 0);
+                return `  ${name}: type=${p.type} model=${p.model ?? "?"} keys=${keyCount}${p.baseUrl ? ` baseUrl=${p.baseUrl}` : ""}`;
+              });
+              await ctx.reply(`自定义供应商 (${names.length} 个):\n${lines.join("\n")}`);
+              return;
+            }
+
+            if (action === "add") {
+              // /llm customprovider add <name> <type> [model] [baseUrl]
+              if (subArgs.length < 3) {
+                await ctx.reply("用法: /llm customprovider add <名称> <type> [model] [baseUrl]\n  type: openai|anthropic|deepseek|custom|z-ai\n  示例: /llm customprovider add my-azure openai gpt-4o https://xxx.openai.azure.com");
+                return;
+              }
+              const name = subArgs[1];
+              const type = subArgs[2] as "openai" | "anthropic" | "deepseek" | "custom" | "z-ai";
+              const validTypes = ["openai", "anthropic", "deepseek", "custom", "z-ai"];
+              if (!validTypes.includes(type)) {
+                await ctx.reply(`❌ 无效 type: ${type}\n可选: ${validTypes.join("|")}`);
+                return;
+              }
+              const model = subArgs[3];
+              const baseUrl = subArgs[4];
+              customProviders[name] = {
+                type,
+                ...(model ? { model } : {}),
+                ...(baseUrl ? { baseUrl } : {}),
+                apiKeys: [],
+              };
+              engine.updateConfig({ customProviders });
+              await ctx.reply(`✅ 自定义供应商 "${name}" 已添加 (type=${type})\n用 /llm customprovider addkey ${name} <key> 添加密钥`);
+              return;
+            }
+
+            if (action === "remove") {
+              if (!subArgs[1]) {
+                await ctx.reply("用法: /llm customprovider remove <名称>");
+                return;
+              }
+              const name = subArgs[1];
+              if (!customProviders[name]) {
+                await ctx.reply(`未找到供应商: ${name}`);
+                return;
+              }
+              delete customProviders[name];
+              engine.updateConfig({ customProviders });
+              await ctx.reply(`✅ 自定义供应商 "${name}" 已移除`);
+              return;
+            }
+
+            if (action === "addkey") {
+              // /llm customprovider addkey <name> <key>
+              if (subArgs.length < 3) {
+                await ctx.reply("用法: /llm customprovider addkey <名称> <key>");
+                return;
+              }
+              const name = subArgs[1];
+              const key = subArgs[2];
+              if (!customProviders[name]) {
+                await ctx.reply(`未找到供应商: ${name}\n先用 /llm customprovider add ${name} <type> 创建`);
+                return;
+              }
+              const pool = customProviders[name].apiKeys ?? [];
+              if (!pool.includes(key)) pool.push(key);
+              customProviders[name].apiKeys = pool;
+              engine.updateConfig({ customProviders });
+              await ctx.reply(`✅ 密钥已添加到 "${name}" (共 ${pool.length} 个)`);
+              return;
+            }
+
+            if (action === "removekey") {
+              // /llm customprovider removekey <name> <keyIndex>
+              if (subArgs.length < 3) {
+                await ctx.reply("用法: /llm customprovider removekey <名称> <keyIndex>");
+                return;
+              }
+              const name = subArgs[1];
+              const idx = parseInt(subArgs[2], 10);
+              if (!customProviders[name]) {
+                await ctx.reply(`未找到供应商: ${name}`);
+                return;
+              }
+              const pool = customProviders[name].apiKeys ?? [];
+              if (isNaN(idx) || idx < 0 || idx >= pool.length) {
+                await ctx.reply(`无效索引: ${subArgs[2]} (范围 0-${pool.length - 1})`);
+                return;
+              }
+              pool.splice(idx, 1);
+              customProviders[name].apiKeys = pool;
+              engine.updateConfig({ customProviders });
+              await ctx.reply(`✅ 密钥已移除 (剩 ${pool.length} 个)`);
+              return;
+            }
+
+            if (action === "use") {
+              // /llm customprovider use <name>
+              if (!subArgs[1]) {
+                await ctx.reply("用法: /llm customprovider use <名称>");
+                return;
+              }
+              const name = subArgs[1];
+              if (!customProviders[name]) {
+                await ctx.reply(`未找到供应商: ${name}`);
+                return;
+              }
+              engine.updateConfig({ provider: name });
+              await ctx.reply(`✅ 已切换到自定义供应商: ${name}`);
+              return;
+            }
+
+            await ctx.reply(
+              "用法:\n" +
+              "  /llm customprovider                                    列出\n" +
+              "  /llm customprovider add <名称> <type> [model] [baseUrl] 添加\n" +
+              "  /llm customprovider remove <名称>                      移除\n" +
+              "  /llm customprovider addkey <名称> <key>                添加密钥\n" +
+              "  /llm customprovider removekey <名称> <索引>            移除密钥\n" +
+              "  /llm customprovider use <名称>                         切换到此供应商",
+            );
+            return;
           }
           case "group":
           case "群聊": {
@@ -2482,81 +2743,198 @@ export class CommandSystem {
       },
     });
 
-    // /init — interactive configuration wizard (dmOnly, via IM)
-    // Guides the user through setting up appKey/appSecret via DM prompts
-    this.register({
-      name: "init",
-      aliases: ["初始化", "setup", "配置向导"],
-      description: "交互式配置向导（通过私聊引导设置认证信息）",
-      usage: "/init [appkey|appsecret|token <值>]   (无参数显示向导)",
-      category: "system" as CommandCategory,
-      requireConnected: false,
-      dmOnly: true,
-      handler: async (ctx) => {
-        const { getGlobalConfigStore } = await import("../cli-legacy/config.js");
-        const store = getGlobalConfigStore({ autoSave: true });
-        const active = store.getActiveProfileName();
-        const pr = store.getActiveProfile();
+    // /init — interactive configuration wizard (dmOnly, blocks conversation)
+    // Uses a per-user wizard session state machine. Once started, subsequent
+    // non-slash messages from the user are captured as wizard input until
+    // completion or cancellation.
+    {
+      // Per-user wizard session state
+      type WizardSession = {
+        step: "appkey" | "appsecret" | "token" | "done";
+        authMethod: "appkey" | "token";
+        appKey?: string;
+        appSecret?: string;
+        token?: string;
+        startedAt: number;
+      };
+      const wizardSessions = new Map<string, WizardSession>();
+      const WIZARD_TIMEOUT_MS = 5 * 60 * 1000; // 5 min
 
-        // If args provided, treat as field-set operation
-        const field = ctx.args[0]?.toLowerCase();
-        const value = ctx.args.slice(1).join(" ").trim();
+      // Register a pre-dispatch hook: if user has an active wizard session,
+      // capture non-slash messages as wizard input.
+      // We do this by checking in the /init handler and exposing a helper
+      // that handleDispatch can call. For simplicity, we use a module-level
+      // Map that YuanbaoBot.handleDispatch can check.
 
-        if (field && value) {
-          const validFields: Record<string, string> = {
-            appkey: "appKey",
-            "app-key": "appKey",
-            appsecret: "appSecret",
-            "app-secret": "appSecret",
-            token: "token",
-          };
-          const configKey = validFields[field];
-          if (!configKey) {
+      this.register({
+        name: "init",
+        aliases: ["初始化", "setup", "配置向导"],
+        description: "交互式配置向导（阻塞对话，引导设置认证信息）",
+        usage: "/init [appkey|appsecret|token <值>]   (无参数启动向导，/init cancel 取消)",
+        category: "system" as CommandCategory,
+        requireConnected: false,
+        dmOnly: true,
+        handler: async (ctx) => {
+          const { getGlobalConfigStore } = await import("../cli-legacy/config.js");
+          const store = getGlobalConfigStore({ autoSave: true });
+          const active = store.getActiveProfileName();
+          const userId = ctx.message.fromUserId;
+
+          // Cancel sub-command
+          if (ctx.args[0]?.toLowerCase() === "cancel") {
+            wizardSessions.delete(userId);
+            await ctx.reply("✅ 配置向导已取消");
+            return;
+          }
+
+          // If args provided, treat as direct field-set (non-interactive)
+          const field = ctx.args[0]?.toLowerCase();
+          const value = ctx.args.slice(1).join(" ").trim();
+          if (field && value && field !== "appkey" && field !== "appsecret" && field !== "token" && field !== "app-key" && field !== "app-secret") {
             await ctx.reply(`❌ 无效字段: ${field}\n支持: appkey, appsecret, token`);
             return;
           }
-          store.set(configKey as never, value as never);
-          await ctx.reply(
-            `✅ 已设置 ${configKey} = ***${value.slice(-4)}\n` +
-            `档案: ${active}\n` +
-            `配置完成。发送 /daemon restart (3次) 让新配置生效`,
-          );
-          return;
-        }
+          if (field && value) {
+            const validFields: Record<string, string> = {
+              appkey: "appKey",
+              "app-key": "appKey",
+              appsecret: "appSecret",
+              "app-secret": "appSecret",
+              token: "token",
+            };
+            const configKey = validFields[field];
+            if (configKey) {
+              store.set(configKey as never, value as never);
+              await ctx.reply(
+                `✅ 已设置 ${configKey} = ***${value.slice(-4)}\n` +
+                `档案: ${active}\n` +
+                `配置完成。发送 /daemon restart (3次) 让新配置生效`,
+              );
+            }
+            return;
+          }
 
-        // No args — show interactive wizard
-        const hasCreds = (pr.appKey && pr.appSecret) || pr.token;
-        if (hasCreds) {
-          await ctx.reply(
-            `📋 当前档案 "${active}" 已有认证信息:\n` +
-            `  App Key: ${pr.appKey ? `***${pr.appKey.slice(-4)}` : "(未设置)"}\n` +
-            `  App Secret: ${pr.appSecret ? "***" + pr.appSecret.slice(-4) : "(未设置)"}\n` +
-            `  Token: ${pr.token ? "***" + pr.token.slice(-4) : "(未设置)"}\n\n` +
-            `重新配置请发送:\n` +
-            `  /init appkey <你的AppKey>\n` +
-            `  /init appsecret <你的AppSecret>\n` +
-            `  /init token <你的Token>   (或使用 token 代替 appKey+appSecret)\n\n` +
-            `完成后发送 /daemon restart (3次) 让新配置生效`,
-          );
-          return;
-        }
+          // Start interactive wizard
+          wizardSessions.set(userId, {
+            step: "appkey",
+            authMethod: "appkey",
+            startedAt: Date.now(),
+          });
 
-        await ctx.reply(
-          `🤖 Yuanbao Lite 配置向导\n\n` +
-          `当前档案 "${active}" 尚未配置认证信息。\n\n` +
-          `请按以下步骤配置:\n\n` +
-          `1️⃣ 设置 App Key:\n` +
-          `   /init appkey 你的AppKey\n\n` +
-          `2️⃣ 设置 App Secret:\n` +
-          `   /init appsecret 你的AppSecret\n\n` +
-          `或者使用 Token (二选一):\n` +
-          `   /init token 你的Token\n\n` +
-          `3️⃣ 配置完成后重启 daemon (发送3次):\n` +
-          `   /daemon restart\n\n` +
-          `获取认证信息: 联系元宝平台管理员或在控制台查看`,
-        );
-      },
-    });
+          await ctx.reply(
+            `🤖 配置向导已启动（阻塞模式）\n\n` +
+            `接下来的对话将被向导捕获，直到完成或取消。\n\n` +
+            `请选择认证方式:\n` +
+            `  1️⃣ 发送 "appkey" 使用 AppKey + AppSecret\n` +
+            `  2️⃣ 发送 "token" 使用 Token\n\n` +
+            `随时发送 /init cancel 取消`,
+          );
+
+          // Set a timeout to auto-cancel
+          setTimeout(() => {
+            const session = wizardSessions.get(userId);
+            if (session && Date.now() - session.startedAt > WIZARD_TIMEOUT_MS) {
+              wizardSessions.delete(userId);
+            }
+          }, WIZARD_TIMEOUT_MS);
+        },
+      });
+
+      // Register a handler that YuanbaoBot can call to check if a message
+      // should be intercepted by the wizard. We attach it to the CommandSystem
+      // instance so handleDispatch can query it.
+      // (See YuanbaoBot.handleDispatch for the interception point.)
+      (this as unknown as { _initWizardSessions: Map<string, unknown> })._initWizardSessions = wizardSessions;
+
+      // The wizard step handler is invoked by handleDispatch when a user has
+      // an active session. We register it as a method on the CommandSystem.
+      (this as unknown as { _handleInitWizardInput: (bot: unknown, userId: string, text: string, reply: (t: string) => Promise<void>) => Promise<boolean> })._handleInitWizardInput =
+        async (bot: unknown, userId: string, text: string, reply: (t: string) => Promise<void>): Promise<boolean> => {
+          const session = wizardSessions.get(userId);
+          if (!session) return false;
+
+          // Check timeout
+          if (Date.now() - session.startedAt > WIZARD_TIMEOUT_MS) {
+            wizardSessions.delete(userId);
+            await reply("⏰ 配置向导已超时（5分钟），请重新发送 /init");
+            return true;
+          }
+
+          const { getGlobalConfigStore } = await import("../cli-legacy/config.js");
+          const store = getGlobalConfigStore({ autoSave: true });
+
+          // Step: choose auth method
+          if (session.step === "appkey" && !session.appKey && text.toLowerCase() !== "token" && text.toLowerCase() !== "appkey") {
+            // First message after wizard start — expect "appkey" or "token"
+            if (text.toLowerCase() === "token") {
+              session.authMethod = "token";
+              session.step = "token";
+              await reply("📝 请发送你的 Token (格式: appKey:appSecret 或预签名token):");
+              return true;
+            }
+            // Treat any other input as starting with appkey
+            session.authMethod = "appkey";
+            session.appKey = text.trim();
+            session.step = "appsecret";
+            await reply(`✅ App Key 已接收: ***${text.trim().slice(-4)}\n📝 请发送你的 App Secret:`);
+            return true;
+          }
+
+          if (session.step === "appkey" && (text.toLowerCase() === "appkey" || text.toLowerCase() === "1")) {
+            session.step = "appsecret";
+            await reply("📝 请发送你的 App Key:");
+            return true;
+          }
+
+          if (session.step === "appkey" && (text.toLowerCase() === "token" || text.toLowerCase() === "2")) {
+            session.authMethod = "token";
+            session.step = "token";
+            await reply("📝 请发送你的 Token:");
+            return true;
+          }
+
+          // Step: collect appkey
+          if (session.step === "appkey" && !session.appKey) {
+            session.appKey = text.trim();
+            session.step = "appsecret";
+            await reply(`✅ App Key 已接收: ***${text.trim().slice(-4)}\n📝 请发送你的 App Secret:`);
+            return true;
+          }
+
+          // Step: collect appsecret
+          if (session.step === "appsecret") {
+            session.appSecret = text.trim();
+            session.step = "done";
+            // Save
+            store.set("appKey", session.appKey as never);
+            store.set("appSecret", session.appSecret as never);
+            wizardSessions.delete(userId);
+            await reply(
+              `✅ 配置完成!\n` +
+              `  App Key: ***${(session.appKey ?? "").slice(-4)}\n` +
+              `  App Secret: ***${(session.appSecret ?? "").slice(-4)}\n\n` +
+              `发送 /daemon restart (3次) 让新配置生效`,
+            );
+            return true;
+          }
+
+          // Step: collect token
+          if (session.step === "token") {
+            session.token = text.trim();
+            session.step = "done";
+            store.set("token", session.token as never);
+            wizardSessions.delete(userId);
+            await reply(
+              `✅ 配置完成!\n` +
+              `  Token: ***${session.token.slice(-4)}\n\n` +
+              `发送 /daemon restart (3次) 让新配置生效`,
+            );
+            return true;
+          }
+
+          return true; // session active but unknown step — swallow input
+        };
+    }
 
     // /daemon — daemon management via IM (dmOnly, 3x confirmation within 1 min)
     // Tracks confirmation counts per-user. Must send the same sub-command 3 times
@@ -2581,7 +2959,7 @@ export class CommandSystem {
 
           if (!subCmd || subCmd === "status") {
             // Status — no confirmation needed
-            const { getDefaultClient } = await import("../cli-new/client/daemon-client.js");
+            const { getDefaultClient } = await import("../cli/client/daemon-client.js");
             const client = getDefaultClient();
             const info = await client.ping();
             if (!info) {
@@ -2633,7 +3011,7 @@ export class CommandSystem {
 
           // Reached required confirmations — execute
           daemonConfirmations.delete(key);
-          const { getDefaultClient } = await import("../cli-new/client/daemon-client.js");
+          const { getDefaultClient } = await import("../cli/client/daemon-client.js");
           const client = getDefaultClient();
 
           try {

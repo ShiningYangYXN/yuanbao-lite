@@ -78,12 +78,12 @@ export class Daemon {
     const store = getGlobalConfigStore({ autoSave: true });
     const profile = store.getActiveProfile();
     // Daemon should be quiet by default — bot connection chatter is noisy.
-    // Users can override via `yb-cli-new config set logLevel debug`.
+    // Users can override via `yb-cli config set logLevel debug`.
     const logLevel = (profile.logLevel ?? "warn") as "debug" | "info" | "warn" | "error";
     setLogLevel(logLevel);
 
     if (!store.hasCredentials()) {
-      log.error("no credentials configured — run `yb-cli-new config init` first");
+      log.error("no credentials configured — run `yb-cli config init` first");
       process.exit(1);
     }
 
@@ -279,7 +279,7 @@ export async function runDaemon(options: DaemonOptions = {}): Promise<void> {
 
 // Re-export for callers that just want to spawn a daemon process.
 export function getDaemonEntryPath(): string {
-  // dist/cli-new/index.js — this file's compiled output
+  // dist/cli/index.js — this file's compiled output
   const here = dirname(fileURLToPath(import.meta.url));
   return join(here, "..", "index.js");
 }

@@ -29,7 +29,7 @@ import { splitTextChunks } from "./messaging/extract.js";
 // ─── Provider Types ───
 
 /** LLM provider type identifiers */
-export type LlmProviderType = "z-ai" | "openai" | "anthropic" | "deepseek" | "custom";
+export type LlmProviderType = "z-ai" | "openai" | "anthropic" | "deepseek" | "custom" | (string & {});
 
 /** LLM provider interface — all providers must implement this */
 export interface LlmProvider {
@@ -393,6 +393,33 @@ export type LlmTakeoverConfig = {
   keyCooldownMs?: number;
   /** Max consecutive failures before switching provider (default: 3) */
   maxFailuresBeforeSwitch?: number;
+
+  // ─── Custom provider registry ───
+
+  /** Custom provider definitions. Each custom provider has a name and its own
+   *  key pool. The provider type determines the underlying SDK (openai/anthropic/etc.),
+   *  while the name is a user-friendly label for management.
+   *
+   *  Example:
+   *    customProviders: {
+   *      "my-azure": { type: "openai", baseUrl: "https://xxx.openai.azure.com", apiKeys: ["sk-1","sk-2"] },
+   *      "backup-claude": { type: "anthropic", apiKeys: ["sk-3"] },
+   *    }
+   */
+  customProviders?: Record<string, {
+    /** Underlying provider type (openai/anthropic/deepseek/custom) */
+    type: "openai" | "anthropic" | "deepseek" | "custom" | "z-ai";
+    /** Default model for this provider */
+    model?: string;
+    /** Single API key (use apiKeys for a pool) */
+    apiKey?: string;
+    /** Key pool for this provider */
+    apiKeys?: string[];
+    /** Base URL override */
+    baseUrl?: string;
+    /** API version (Azure) */
+    apiVersion?: string;
+  }>;
 };
 
 export type ConversationHistory = {
@@ -839,6 +866,7 @@ export class LlmTakeoverEngine {
       autoSwitchProvider: config?.autoSwitchProvider ?? true,
       keyCooldownMs: config?.keyCooldownMs ?? 5 * 60 * 1000,
       maxFailuresBeforeSwitch: config?.maxFailuresBeforeSwitch ?? 3,
+      customProviders: config?.customProviders ?? {},
     };
 
     this.conversationManager = new ConversationManager(this.config.maxHistoryTurns);
@@ -900,6 +928,14 @@ export class LlmTakeoverEngine {
    * Falls back to [apiKey] if apiKeys[] is empty.
    */
   private getActiveKeyPool(): string[] {
+    // Check if the active provider is a custom provider
+    const activeProviderName = this.getActiveProviderName();
+    const customProvider = this.config.customProviders?.[activeProviderName];
+    if (customProvider) {
+      if (customProvider.apiKeys && customProvider.apiKeys.length > 0) return customProvider.apiKeys;
+      return customProvider.apiKey ? [customProvider.apiKey] : [];
+    }
+
     // If we're using the primary config (index 0), use config.apiKeys or [config.apiKey]
     if (this.activeProviderIndex === 0) {
       if (this.config.apiKeys.length > 0) return this.config.apiKeys;
@@ -1063,6 +1099,24 @@ export class LlmTakeoverEngine {
    */
   private createProviderFromConfig(): LlmProvider {
     try {
+      // Check if the active provider is a custom provider
+      const activeProviderName = this.getActiveProviderName();
+      const customProvider = this.config.customProviders?.[activeProviderName];
+      if (customProvider) {
+        // Use the custom provider's underlying type + key pool
+        const keys = customProvider.apiKeys ?? (customProvider.apiKey ? [customProvider.apiKey] : []);
+        const activeKey = keys.length > 0 ? keys[this.activeKeyIndex % keys.length] : "";
+        const mergedConfig: LlmTakeoverConfig = {
+          ...this.config,
+          provider: customProvider.type,
+          model: customProvider.model ?? this.config.model,
+          apiKey: activeKey,
+          baseUrl: customProvider.baseUrl ?? this.config.baseUrl,
+          apiVersion: customProvider.apiVersion ?? this.config.apiVersion,
+        };
+        return createProvider(mergedConfig);
+      }
+
       // If using a providerPool entry, merge its config
       if (this.activeProviderIndex > 0) {
         const poolEntry = this.config.providerPool[this.activeProviderIndex - 1];
@@ -1155,6 +1209,10 @@ export class LlmTakeoverEngine {
     if (patch.autoSwitchProvider !== undefined) this.config.autoSwitchProvider = patch.autoSwitchProvider;
     if (patch.keyCooldownMs !== undefined) this.config.keyCooldownMs = patch.keyCooldownMs;
     if (patch.maxFailuresBeforeSwitch !== undefined) this.config.maxFailuresBeforeSwitch = patch.maxFailuresBeforeSwitch;
+    if (patch.customProviders !== undefined) {
+      this.config.customProviders = patch.customProviders;
+      providerChanged = true;
+    }
 
     // Recreate provider if relevant config changed
     if (providerChanged) {

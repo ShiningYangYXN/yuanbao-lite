@@ -974,10 +974,17 @@ export class YuanbaoBot {
 
     // Query bot owner info (non-blocking)
     if (this.account.botId && this.client) {
-      this.client.queryBotInfo(this.account.botId).then((rsp) => {
+      this.client.queryBotInfo(this.account.botId).then(async (rsp) => {
         if (rsp.code === 0 && rsp.ownerId) {
           this.account.botOwnerId = rsp.ownerId;
           this.log.info(`bot owner cached: ownerId=${rsp.ownerId}`);
+          // Auto-trust the master (bot owner) — they can always use /unsafe
+          try {
+            const { setMasterUserId } = await import("./business/trust.js");
+            setMasterUserId(rsp.ownerId);
+          } catch {
+            // trust module optional
+          }
         }
       }).catch((err) => {
         this.log.warn(`failed to query bot owner: ${(err as Error).message}`);
@@ -1084,6 +1091,32 @@ export class YuanbaoBot {
     // Every message (including slash commands) feeds context so the LLM
     // always has full conversation awareness.
     this.feedLlmContext(chatMessage);
+
+    // ─── Step 1.5: Check for active /init wizard session ───
+    // If the user has an active wizard session, intercept non-slash messages
+    // as wizard input (blocking normal dispatch + LLM).
+    if (this.commandSystem && !chatMessage.text.trim().startsWith("/")) {
+      const cs = this.commandSystem as unknown as {
+        _initWizardSessions?: Map<string, unknown>;
+        _handleInitWizardInput?: (bot: unknown, userId: string, text: string, reply: (t: string) => Promise<void>) => Promise<boolean>;
+      };
+      const userId = chatMessage.fromUserId;
+      if (cs._initWizardSessions?.has(userId) && cs._handleInitWizardInput) {
+        const replyFn = async (text: string): Promise<void> => {
+          try {
+            if (chatMessage.chatType === "group" && chatMessage.groupCode) {
+              await this.sendGroupMessage(chatMessage.groupCode, text);
+            } else {
+              await this.sendDirectMessage(chatMessage.fromUserId, text);
+            }
+          } catch (err) {
+            this.log.error(`wizard reply failed: ${(err as Error).message}`);
+          }
+        };
+        void cs._handleInitWizardInput(this, userId, chatMessage.text, replyFn);
+        return; // don't emit events, don't try LLM
+      }
+    }
 
     // ─── Step 2: Try command dispatch ───
     const isSlashCommand = chatMessage.text.trim().startsWith("/");

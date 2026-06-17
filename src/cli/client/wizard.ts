@@ -64,10 +64,10 @@ export async function runInitWizard(): Promise<void> {
   store.switchProfile(profileName);
 
   p.log.success(chalk.green(`✓ 配置已保存到: ${store.getConfigDir()}/config.json`));
-  p.outro(chalk.dim("运行 yb-cli-new daemon start 启动后台 daemon"));
+  p.outro(chalk.dim("运行 yb-cli daemon start 启动后台 daemon"));
 
   printResult(`档案 ${profileName} 已就绪`);
   if (!process.env.YB_DAEMON_CHILD) {
-    printError("提示: 如需让新配置生效，请重启 daemon (yb-cli-new daemon stop && yb-cli-new daemon start)");
+    printError("提示: 如需让新配置生效，请重启 daemon (yb-cli daemon stop && yb-cli daemon start)");
   }
 }

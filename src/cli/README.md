@@ -17,50 +17,50 @@ daemon 持有 YuanbaoBot 单例，避免每次命令都重连 WebSocket。
 
 | 模式 | 命令 | 说明 |
 |------|------|------|
-| 交互式 REPL | `yb-cli-new` 或 `yb-cli-new interactive` | Clack 驱动，daemon 后台 |
-| 非交互式 | `yb-cli-new send dm <userId> <msg>` | 单次 HTTP 调用 daemon |
-| daemon 管理 | `yb-cli-new daemon start \| stop \| status` | 直接控制后台进程 |
+| 交互式 REPL | `yb-cli` 或 `yb-cli interactive` | Clack 驱动，daemon 后台 |
+| 非交互式 | `yb-cli send dm <userId> <msg>` | 单次 HTTP 调用 daemon |
+| daemon 管理 | `yb-cli daemon start \| stop \| status` | 直接控制后台进程 |
 
 ## 用法
 
 ```bash
 # 交互式 REPL（默认）
-yb-cli-new
-yb-cli-new interactive
-yb-cli-new repl
+yb-cli
+yb-cli interactive
+yb-cli repl
 
 # 非交互式（自动启动 daemon）
-yb-cli-new send dm <userId> "<message>"
-yb-cli-new send group <groupCode> "<message>"
-yb-cli-new status
-yb-cli-new upload <filePath>
-yb-cli-new download <url> [fileName]
-yb-cli-new contacts list
-yb-cli-new contacts add <id> <name> [tag]
-yb-cli-new contacts remove <nameOrId>
-yb-cli-new contacts dm <nameOrId> <message>
-yb-cli-new config init
-yb-cli-new config show
-yb-cli-new config set <key> <value>
-yb-cli-new config profile list
-yb-cli-new config profile switch <name>
-yb-cli-new config profile add <name> [--app-key K --app-secret S]
-yb-cli-new config profile remove <name>
+yb-cli send dm <userId> "<message>"
+yb-cli send group <groupCode> "<message>"
+yb-cli status
+yb-cli upload <filePath>
+yb-cli download <url> [fileName]
+yb-cli contacts list
+yb-cli contacts add <id> <name> [tag]
+yb-cli contacts remove <nameOrId>
+yb-cli contacts dm <nameOrId> <message>
+yb-cli config init
+yb-cli config show
+yb-cli config set <key> <value>
+yb-cli config profile list
+yb-cli config profile switch <name>
+yb-cli config profile add <name> [--app-key K --app-secret S]
+yb-cli config profile remove <name>
 
 # daemon 直接管理
-yb-cli-new daemon start [--port 9100] [--host 127.0.0.1]
-yb-cli-new daemon stop
-yb-cli-new daemon status
+yb-cli daemon start [--port 9100] [--host 127.0.0.1]
+yb-cli daemon stop
+yb-cli daemon status
 ```
 
 ## daemon-first 工作流
 
 ```text
-yb-cli-new <任意命令>
+yb-cli <任意命令>
    │
    ├─ ping GET /health
    │     ├─ 200 → 复用现有 daemon
-   │     └─ 失败 → spawn detached `yb-cli-new daemon start`
+   │     └─ 失败 → spawn detached `yb-cli daemon start`
    │                └─ 轮询 /health 直到就绪 (≤30s)
    │
    └─ 通过 HTTP 调用 daemon
@@ -87,7 +87,7 @@ daemon 启动时执行 `acquirePidFile()`：
 
 ## 命令共享（引用而非复制）
 
-`yb-cli-new` 不复制任何命令处理器。所有 `/` 命令通过
+`yb-cli` 不复制任何命令处理器。所有 `/` 命令通过
 `src/commands/registry.ts` 的 `CommandSystem.dispatch()` 分发：
 
 - daemon 的 `POST /command` 路由调用 `dispatch(bot, msg, onReply)`
@@ -99,7 +99,7 @@ daemon 启动时执行 `acquirePidFile()`：
 ## 文件结构
 
 ```text
-src/cli-new/
+src/cli/
 ├── index.ts                  # 入口，daemon-first 路由
 ├── config.ts                 # 重新导出 src/cli/config.ts (共享 ConfigStore)
 ├── theme.ts                  # 颜色调色板 + 无边框渲染辅助
@@ -129,4 +129,4 @@ src/cli-new/
 
 ## 主入口
 
-参见 `src/cli-new/index.ts`
+参见 `src/cli/index.ts`

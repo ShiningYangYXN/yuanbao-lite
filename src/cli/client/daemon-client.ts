@@ -3,7 +3,7 @@
  *
  * `ensureDaemon()` is the key entry point: every CLI mode (interactive,
  * non-interactive, daemon-start) calls it. It pings `/health`; if that
- * fails, it spawns a detached `yb-cli-new daemon start` child process and
+ * fails, it spawns a detached `yb-cli daemon start` child process and
  * polls until the daemon is ready (or times out).
  *
  * Once a daemon is alive, all higher-level helpers (`sendDm`, `sendGroup`,
@@ -341,7 +341,7 @@ function sleep(ms: number): Promise<void> {
 }
 
 function getDaemonEntryPath(): string {
-  // dist/cli-new/index.js — the daemon entry that boots Daemon
+  // dist/cli/index.js — the daemon entry that boots Daemon
   const here = dirname(fileURLToPath(import.meta.url));
   return join(here, "..", "index.js");
 }
