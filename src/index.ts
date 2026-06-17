@@ -358,10 +358,25 @@ export class YuanbaoBot {
         }
       : undefined;
 
+    // Build all-members resolver for @[所有人]() / @[](all) @all syntax
+    const allMembersResolver = (isGroup && to)
+      ? async () => {
+          try {
+            const resp = await this.getGroupMemberList(String(to));
+            const members = resp?.member_list ?? [];
+            return members.map(m => ({ userId: m.user_id, nickname: m.nick_name }));
+          } catch {
+            return [];
+          }
+        }
+      : undefined;
+
     // Use buildMentionMsgBody which interleaves TIMCustomElem at correct positions
     // (matching the original project's resolveAtMentions approach)
-    const { msgBody: mentionMsgBody, cloudCustomData, mentions: parsedMentions } =
-      await buildMentionMsgBody(interpolatedText, this.aliasStore, nicknameResolver);
+    const { msgBody: mentionMsgBody, cloudCustomData, mentions: parsedMentions, atAll: _atAll } =
+      await buildMentionMsgBody(interpolatedText, this.aliasStore, nicknameResolver, allMembersResolver);
+    // _atAll flag is already encoded in cloudCustomData via buildCloudCustomDataWithMentions
+    void _atAll;
 
     // Handle long messages by splitting if needed
     if (mentionMsgBody.length <= 2 && !parsedMentions.length) {

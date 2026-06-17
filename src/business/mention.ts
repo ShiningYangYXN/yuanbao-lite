@@ -6,6 +6,8 @@
  *   @[](id)        — mention with platform/auto-resolved nickname
  *   @[昵称]()      — auto-resolve ID by nickname in group (requires nicknameResolver)
  *                    If multiple members match, all are @mentioned
+ *   @[所有人]()    — @all: auto-expand to every group member (requires groupMembersResolver)
+ *   @[](all)       — @all: same as above, alternate syntax
  *   \@             — escaped @, not treated as mention
  *
  * Protocol: In the Tencent IM (Yuanbao) protocol, @ mentions are encoded as:
@@ -39,6 +41,12 @@ export type NicknameMatch = {
  */
 export type NicknameResolver = (nickname: string) => Promise<NicknameMatch[]>;
 
+/**
+ * Resolver function for @all syntax (@[所有人]() or @[](all)).
+ * Returns all group members for @all expansion.
+ */
+export type AllMembersResolver = () => Promise<NicknameMatch[]>;
+
 export type MentionInfo = {
   /** The resolved user ID */
   userId: string;
@@ -59,6 +67,8 @@ export type ParsedMentions = {
   mentions: MentionInfo[];
   /** List of mentioned user IDs (for cloud_custom_data) */
   mentionedUserIds: string[];
+  /** Whether @all was requested (for the bot to send groupAtInfo "ALL" flag) */
+  atAll: boolean;
 };
 
 export type GroupAtInfo = {
@@ -77,21 +87,30 @@ export type GroupAtInfo = {
  *   @[昵称](id)    — mention with explicit nickname and ID
  *   @[](id)        — mention with platform/auto-resolved nickname
  *   @[昵称]()      — auto-resolve ID by nickname (requires nicknameResolver)
+ *   @[所有人]()    — @all (requires allMembersResolver)
+ *   @[](all)       — @all (alternate syntax, requires allMembersResolver)
  *   \@             — escaped @, not treated as mention
  *
  * When @[昵称]() is used (empty parentheses), the nicknameResolver callback
  * is called to find matching user IDs. If multiple members match the nickname,
  * all of them are @mentioned. This is useful in group chats where you want to
  * @ someone by their display name without knowing their ID.
+ *
+ * When @[所有人]() or @[](all) is used, the allMembersResolver callback is
+ * called to fetch all group members, and each one is @mentioned individually.
+ * The returned `atAll` flag is also set to true so the caller can attach the
+ * "ALL" groupAtInfo flag for the IM protocol's @all notification.
  */
 export async function parseMentions(
   text: string,
   aliasStore?: AliasStore,
   nicknameResolver?: NicknameResolver,
+  allMembersResolver?: AllMembersResolver,
 ): Promise<ParsedMentions> {
   const store = aliasStore ?? getGlobalAliasStore();
   const mentions: MentionInfo[] = [];
   const mentionedUserIds: string[] = [];
+  let atAll = false;
 
   // Regex to match @[nickname](id) or @[](id) or @[nickname]()
   const mentionRegex = /(?<!\\)@\[([^\]]*)\]\(([^)]*)\)/g;
@@ -119,6 +138,66 @@ export async function parseMentions(
   // For @[昵称]() (empty id), resolve nickname to user IDs
   for (let i = matches.length - 1; i >= 0; i--) {
     const m = matches[i];
+
+    // ─── @all detection ───
+    // @[所有人]() or @[](all) → expand to all group members
+    const isAtAllSyntax =
+      (m.nickname === "所有人" && m.id === "") ||
+      (m.id === "all" && m.nickname === "") ||
+      (m.nickname === "all" && m.id === "") ||
+      (m.id === "所有人" && m.nickname === "");
+
+    if (isAtAllSyntax) {
+      if (allMembersResolver) {
+        try {
+          const allMembers = await allMembersResolver();
+          atAll = true;
+          // Expand into individual mentions for each member
+          const displayParts: string[] = [];
+          for (const user of allMembers) {
+            const mention: MentionInfo = {
+              userId: user.userId,
+              displayName: user.nickname || user.userId,
+              explicitNickname: true,
+              startIndex: m.index,
+              endIndex: m.index + m.full.length,
+            };
+            mentions.unshift(mention);
+            if (!mentionedUserIds.includes(user.userId)) {
+              mentionedUserIds.push(user.userId);
+            }
+            displayParts.push(`@${user.nickname || user.userId}`);
+          }
+          // Replace @[所有人]() / @[](all) with "@所有人" or expanded list
+          const replacement = displayParts.length > 0
+            ? `@所有人`
+            : `@所有人`;
+          text = text.slice(0, m.index) + replacement + text.slice(m.index + m.full.length);
+          const diff = replacement.length - m.full.length;
+          for (let j = 0; j < i; j++) {
+            matches[j].index += diff;
+          }
+        } catch {
+          // Resolver failed — leave as plain text
+          const replacement = `@所有人`;
+          text = text.slice(0, m.index) + replacement + text.slice(m.index + m.full.length);
+          const diff = replacement.length - m.full.length;
+          for (let j = 0; j < i; j++) {
+            matches[j].index += diff;
+          }
+        }
+      } else {
+        // No resolver — leave as plain text (still mark atAll for caller)
+        atAll = true;
+        const replacement = `@所有人`;
+        text = text.slice(0, m.index) + replacement + text.slice(m.index + m.full.length);
+        const diff = replacement.length - m.full.length;
+        for (let j = 0; j < i; j++) {
+          matches[j].index += diff;
+        }
+      }
+      continue;
+    }
 
     // Case 1: @[昵称]() — auto-resolve by nickname
     if (m.id === "" && m.nickname && nicknameResolver) {
@@ -237,6 +316,7 @@ export async function parseMentions(
     text,
     mentions,
     mentionedUserIds,
+    atAll,
   };
 }
 
@@ -306,6 +386,14 @@ export function buildCloudCustomDataWithMentions(
     customData.groupAtInfo = {
       groupAtUserIds: mergedUserIds,
       ...(mergedNicknames.some(n => n) ? { groupAtNicknames: mergedNicknames } : {}),
+      // @all flag — when true, the IM protocol notifies ALL group members
+      ...(mentionInfo.atAll ? { atAll: true } : {}),
+    };
+  } else if (mentionInfo.atAll) {
+    // @all with no individual mentions — still set the atAll flag
+    customData.groupAtInfo = {
+      ...(customData.groupAtInfo as Record<string, unknown> | undefined ?? {}),
+      atAll: true,
     };
   }
 
@@ -330,12 +418,14 @@ export async function buildMentionMsgBody(
   text: string,
   aliasStore?: AliasStore,
   nicknameResolver?: NicknameResolver,
+  allMembersResolver?: AllMembersResolver,
 ): Promise<{
   msgBody: YuanbaoMsgBodyElement[];
   cloudCustomData?: string;
   mentions: MentionInfo[];
+  atAll: boolean;
 }> {
-  const parsed = await parseMentions(text, aliasStore, nicknameResolver);
+  const parsed = await parseMentions(text, aliasStore, nicknameResolver, allMembersResolver);
 
   const msgBody: YuanbaoMsgBodyElement[] = [];
 
@@ -402,7 +492,7 @@ export async function buildMentionMsgBody(
 
   // Also set cloud_custom_data for notification triggers
   let cloudCustomData: string | undefined;
-  if (parsed.mentionedUserIds.length > 0) {
+  if (parsed.mentionedUserIds.length > 0 || parsed.atAll) {
     cloudCustomData = buildCloudCustomDataWithMentions(undefined, parsed);
   }
 
@@ -410,6 +500,7 @@ export async function buildMentionMsgBody(
     msgBody,
     cloudCustomData,
     mentions: parsed.mentions,
+    atAll: parsed.atAll,
   };
 }
 

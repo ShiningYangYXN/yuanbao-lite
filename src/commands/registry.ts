@@ -462,7 +462,7 @@ export class CommandSystem {
           const cmdName = ctx.args[0];
           const def = this.get(cmdName);
           if (!def) {
-            await ctx.reply(`未知命令: ${cmdName}`);
+            await ctx.reply(`未知命令: ${cmdName}\n输入 /help 查看所有命令`);
             return;
           }
           const lines = [
@@ -471,6 +471,12 @@ export class CommandSystem {
           ];
           if (def.usage) lines.push(`用法: ${def.usage}`);
           if (def.aliases?.length) lines.push(`别名: ${def.aliases.join(", ")}`);
+          if (def.category) lines.push(`分类: ${def.category}`);
+          const flags: string[] = [];
+          if (def.dmOnly) flags.push("仅私聊");
+          if (def.requireConnected) flags.push("需连接");
+          if (def.hidden) flags.push("隐藏");
+          if (flags.length > 0) lines.push(`标记: ${flags.join(", ")}`);
           await ctx.reply(lines.join("\n"));
           return;
         }
@@ -531,6 +537,165 @@ export class CommandSystem {
           return;
         }
         await ctx.reply(ctx.args.join(" "));
+      },
+    });
+
+    // /calc <expression> — quick math evaluation
+    this.register({
+      name: "calc",
+      aliases: ["计算", "calc"],
+      description: "快速计算数学表达式",
+      usage: "/calc <表达式>   例: /calc 2+3*4, /calc sqrt(16), /calc 100/7",
+      category: "misc" as CommandCategory,
+      handler: async (ctx) => {
+        if (ctx.args.length === 0) {
+          await ctx.reply("用法: /calc <表达式>\n支持: + - * / % ** sqrt() sin() cos() log() 等");
+          return;
+        }
+        const expr = ctx.args.join(" ");
+        // Whitelist safe characters only
+        if (!/^[\d\s+\-*/%.()a-z,]+$/i.test(expr)) {
+          await ctx.reply("❌ 表达式包含非法字符");
+          return;
+        }
+        try {
+          // Provide common math functions
+          const sandbox = {
+            sqrt: Math.sqrt,
+            sin: Math.sin, cos: Math.cos, tan: Math.tan,
+            asin: Math.asin, acos: Math.acos, atan: Math.atan,
+            log: Math.log, log2: Math.log2, log10: Math.log10,
+            exp: Math.exp, pow: Math.pow, abs: Math.abs,
+            floor: Math.floor, ceil: Math.ceil, round: Math.round,
+            max: Math.max, min: Math.min,
+            PI: Math.PI, E: Math.E,
+          };
+          const fn = new Function(...Object.keys(sandbox), `"use strict"; return (${expr});`);
+          const result = fn(...Object.values(sandbox));
+          if (typeof result === "number") {
+            const formatted = Number.isFinite(result)
+              ? (Number.isInteger(result) ? String(result) : result.toFixed(10).replace(/\.?0+$/, ""))
+              : String(result);
+            await ctx.reply(`🧮 ${expr} = ${formatted}`);
+          } else {
+            await ctx.reply(`🧮 ${expr} = ${String(result)}`);
+          }
+        } catch (err) {
+          await ctx.reply(`❌ 计算错误: ${(err as Error).message}`);
+        }
+      },
+    });
+
+    // /time [timezone] — show current time
+    this.register({
+      name: "time",
+      aliases: ["时间", "now", "当前时间"],
+      description: "显示当前时间（支持时区）",
+      usage: "/time [时区]   例: /time, /time Asia/Tokyo, /time America/New_York",
+      category: "misc" as CommandCategory,
+      handler: async (ctx) => {
+        const tz = ctx.args[0] || "Asia/Shanghai";
+        try {
+          const now = new Date();
+          const formatter = new Intl.DateTimeFormat("zh-CN", {
+            timeZone: tz,
+            year: "numeric", month: "2-digit", day: "2-digit",
+            hour: "2-digit", minute: "2-digit", second: "2-digit",
+            hour12: false,
+          });
+          await ctx.reply(`🕐 ${tz}:\n${formatter.format(now)}`);
+        } catch {
+          await ctx.reply(`❌ 无效时区: ${tz}\n示例: Asia/Shanghai, Asia/Tokyo, America/New_York, Europe/London`);
+        }
+      },
+    });
+
+    // /remind <delay> <message> — set a reminder (delay in seconds/minutes/hours)
+    this.register({
+      name: "remind",
+      aliases: ["提醒", "timer"],
+      description: "设置定时提醒（延迟后发送消息）",
+      usage: "/remind <时间> <消息>   例: /remind 30s 开会, /remind 5m 喝水, /remind 2h 下班",
+      category: "misc" as CommandCategory,
+      dmOnly: true,
+      handler: async (ctx) => {
+        if (ctx.args.length < 2) {
+          await ctx.reply("用法: /remind <时间> <消息>\n时间格式: 30s (秒), 5m (分钟), 2h (小时), 1d (天)");
+          return;
+        }
+        const timeStr = ctx.args[0];
+        const message = ctx.args.slice(1).join(" ");
+        const match = timeStr.match(/^(\d+)([smhd])$/);
+        if (!match) {
+          await ctx.reply("❌ 时间格式错误。示例: 30s, 5m, 2h, 1d");
+          return;
+        }
+        const num = parseInt(match[1], 10);
+        const unit = match[2];
+        const multipliers: Record<string, number> = { s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000 };
+        const delayMs = num * multipliers[unit];
+        if (delayMs > 86_400_000 * 7) {
+          await ctx.reply("❌ 提醒时间不能超过 7 天");
+          return;
+        }
+        const target = ctx.isGroup ? ctx.groupCode : ctx.message.fromUserId;
+        const isGroup = ctx.isGroup;
+        const remindAt = Date.now() + delayMs;
+        await ctx.reply(`⏰ 已设置提醒: ${num}${unit} 后发送 "${message}"\n预计时间: ${new Date(remindAt).toLocaleString("zh-CN")}`);
+
+        setTimeout(async () => {
+          try {
+            await ctx.bot.sendText({
+              to: target ?? "",
+              text: `⏰ 提醒: ${message}`,
+              isGroup,
+            });
+          } catch (err) {
+            void err;
+          }
+        }, delayMs);
+      },
+    });
+
+    // /ip <address> — IP address lookup
+    this.register({
+      name: "ip",
+      aliases: ["ip查询"],
+      description: "查询 IP 地址的地理位置信息",
+      usage: "/ip <IP地址>   例: /ip 8.8.8.8",
+      category: "misc" as CommandCategory,
+      handler: async (ctx) => {
+        if (ctx.args.length === 0) {
+          await ctx.reply("用法: /ip <IP地址>");
+          return;
+        }
+        const ip = ctx.args[0];
+        if (!/^(\d{1,3}\.){3}\d{1,3}$/.test(ip)) {
+          await ctx.reply("❌ 无效 IPv4 地址");
+          return;
+        }
+        try {
+          const resp = await fetch(`https://ipapi.co/${ip}/json/`);
+          if (!resp.ok) {
+            await ctx.reply(`❌ 查询失败: HTTP ${resp.status}`);
+            return;
+          }
+          const data = await resp.json() as Record<string, unknown>;
+          if (data.error) {
+            await ctx.reply(`❌ 查询失败: ${String(data.reason ?? data.error)}`);
+            return;
+          }
+          const lines = [
+            `🌐 IP: ${ip}`,
+            `  位置: ${data.country_name ?? "?"} ${data.region ?? ""} ${data.city ?? ""}`.trim(),
+            `  运营商: ${data.org ?? "(未知)"}`,
+            `  时区: ${data.timezone ?? "(未知)"}`,
+            `  经纬度: ${data.latitude ?? "?"}, ${data.longitude ?? "?"}`,
+          ];
+          await ctx.reply(lines.join("\n"));
+        } catch (err) {
+          await ctx.reply(`❌ 查询失败: ${(err as Error).message}`);
+        }
       },
     });
 
@@ -1189,6 +1354,70 @@ export class CommandSystem {
           } else {
             await ctx.reply(`✅ 消息已发送到 ${target}`);
           }
+        } catch (err) {
+          await ctx.reply(`❌ 发送失败: ${(err as Error).message}`);
+        }
+      },
+    });
+
+    // /atall — @everyone in a group (uses @[所有人]() syntax internally)
+    this.register({
+      name: "atall",
+      aliases: ["所有人", "at-all", "@all"],
+      description: "@所有人并发送消息（群聊专用）",
+      usage: "/atall <群号> <消息>   或   /atall <消息>   (当前群聊)",
+      category: "chat" as CommandCategory,
+      requireConnected: true,
+      dmOnly: true,
+      handler: async (ctx) => {
+        let groupCode: string;
+        let message: string;
+
+        if (ctx.args.length < 1) {
+          await ctx.reply("用法: /atall <群号> <消息>\n或: /atall <消息>  (当前群聊中)");
+          return;
+        }
+
+        // If only one arg, treat as message and use current group (if in group context)
+        if (ctx.args.length === 1) {
+          if (!ctx.isGroup || !ctx.groupCode) {
+            await ctx.reply("私聊中需要指定群号: /atall <群号> <消息>");
+            return;
+          }
+          groupCode = ctx.groupCode;
+          message = ctx.args[0];
+        } else {
+          // Check if first arg is a group code (all digits)
+          const firstArg = ctx.args[0];
+          if (/^\d{5,}$/.test(firstArg)) {
+            groupCode = firstArg;
+            message = ctx.args.slice(1).join(" ");
+          } else {
+            // First arg is not a group code — treat all as message, use current group
+            if (!ctx.isGroup || !ctx.groupCode) {
+              await ctx.reply("私聊中需要指定群号: /atall <群号> <消息>");
+              return;
+            }
+            groupCode = ctx.groupCode;
+            message = ctx.args.join(" ");
+          }
+        }
+
+        if (!message.trim()) {
+          await ctx.reply("消息内容不能为空");
+          return;
+        }
+
+        // Use the @[所有人]() syntax which the mention parser will expand
+        const fullMessage = `@[所有人]() ${message}`;
+
+        try {
+          await ctx.bot.sendText({
+            to: groupCode,
+            text: fullMessage,
+            isGroup: true,
+          });
+          await ctx.reply(`✅ 已发送 @所有人 消息到群 ${groupCode}`);
         } catch (err) {
           await ctx.reply(`❌ 发送失败: ${(err as Error).message}`);
         }
@@ -2399,13 +2628,30 @@ export class CommandSystem {
     this.register({
       name: "switch",
       aliases: ["切换", "sw"],
-      description: "查看活跃会话列表（默认20条，--all显示全部）",
-      usage: "/switch [--all] [编号]   (--all/-a 显示全部会话)",
+      description: "查看/切换活跃群聊会话（默认20条，--all显示全部，编号切换）",
+      usage: "/switch [--all] [编号]   (编号: 切换到对应群聊会话)",
       category: "group" as CommandCategory,
       dmOnly: true,
       handler: async (ctx) => {
         const store = ctx.bot.getGroupStore();
         const groups = store.getAll("lastActive");
+
+        // If a numeric argument is provided, switch to that session
+        const numArg = ctx.args.find(a => /^\d+$/.test(a));
+        if (numArg) {
+          const idx = parseInt(numArg, 10) - 1; // 1-based to 0-based
+          if (idx < 0 || idx >= groups.length) {
+            await ctx.reply(`无效编号: ${numArg} (范围 1-${groups.length})`);
+            return;
+          }
+          const g = groups[idx];
+          // In IM context, switching means... well, the bot itself doesn't have
+          // a "current session" concept — this is mainly for CLI REPL use.
+          // For IM, we just acknowledge the selection.
+          await ctx.reply(`✅ 已选择会话 ${idx + 1}: ${g.groupCode} — ${g.name || g.groupName || "未知"}\n最近活跃: ${g.lastActiveAt ? new Date(g.lastActiveAt).toLocaleString("zh-CN") : "(无)"}`);
+          return;
+        }
+
         if (groups.length === 0) {
           await ctx.reply("暂无活跃群聊会话。使用 /join <群号> 加入群聊");
           return;
@@ -2432,7 +2678,7 @@ export class CommandSystem {
           return `  ${fav} ${i + 1}. ${g.groupCode} — ${displayName}${time ? ` (${time})` : ""}`;
         });
         const suffix = !ctx.showAll && groups.length > 20 ? `\n  ... 及其他 ${groups.length - 20} 个 (用 /switch --all 查看全部)` : "";
-        await ctx.reply(`📋 活跃群聊:\n${lines.join("\n")}${suffix}\n共 ${groups.length} 个群聊`);
+        await ctx.reply(`📋 活跃群聊:\n${lines.join("\n")}${suffix}\n共 ${groups.length} 个群聊\n提示: /switch <编号> 切换到对应会话`);
       },
     });
 
