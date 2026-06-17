@@ -411,7 +411,124 @@ export function buildProgram(): Command {
         }),
     );
 
+  // ─── Dynamic commands from Registry ───
+  // Register a special "rc" (run-command) subcommand that delegates to the
+  // daemon's /command endpoint. Also register each registry command as a
+  // top-level alias for convenience.
+  //
+  // Usage:  yb-cli rc /help        (explicit)
+  //         yb-cli help            (dynamic alias, same effect)
+  //
+  // The dynamic aliases are fetched lazily on first invocation to avoid
+  // blocking program construction on a daemon round-trip.
+
+  program
+    .command("rc <command...>")
+    .description("通过 daemon 执行任意 / 斜杠命令 (共享 CommandSystem)")
+    .allowUnknownOption(true)
+    .action(async (cmdParts: string[]) => {
+      const client = await ensureClient(program);
+      const fullCmd = cmdParts.join(" ");
+      const text = fullCmd.startsWith("/") ? fullCmd : `/${fullCmd}`;
+      const result = await client.runCommand(text, { source: "cli" });
+      if (!result.ok) {
+        printError(`命令执行失败: ${result.error ?? "unknown"}`);
+        return;
+      }
+      if (!result.handled) {
+        printWarn(`未知命令: ${text}`);
+        return;
+      }
+      for (const reply of result.replies) {
+        console.log(reply);
+      }
+    });
+
   return program;
+}
+
+/**
+ * Fetch commands from the daemon's CommandSystem registry and register them
+ * as top-level Commander subcommands. Each dynamically-registered command
+ * delegates to `rc` (which calls the daemon's /command endpoint).
+ *
+ * This is called lazily (after ensureDaemon) so that the registry is
+ * available. Falls back gracefully if the daemon is not running.
+ */
+export async function registerDynamicCommands(program: Command): Promise<void> {
+  let commands: Array<{
+    name: string;
+    aliases: string[];
+    description: string;
+    usage: string;
+    category: string;
+    dmOnly: boolean;
+    requireConnected: boolean;
+    hidden: boolean;
+  }>;
+  try {
+    const client = getDefaultClient(
+      getProgramPort(program),
+      getProgramHost(program),
+    );
+    await client.ensureDaemon({});
+    commands = await client.fetchCommands();
+  } catch {
+    // Daemon not available — skip dynamic registration
+    return;
+  }
+
+  // Commands that are already statically registered (avoid duplicates)
+  const existingNames = new Set<string>();
+  program.commands.forEach(c => existingNames.add(c.name()));
+
+  for (const cmd of commands) {
+    if (cmd.hidden) continue;
+    if (existingNames.has(cmd.name)) continue;
+
+    // Build a dynamic command that passes all args through to the daemon
+    const dynamicCmd = new Command(cmd.name)
+      .description(cmd.description)
+      .allowUnknownOption(true)
+      .argument("[args...]", "命令参数")
+      .action(async (args: string[] | undefined) => {
+        const client = getDefaultClient(
+          getProgramPort(program),
+          getProgramHost(program),
+        );
+        const fullCmd = args && args.length > 0 ? `${cmd.name} ${args.join(" ")}` : cmd.name;
+        const result = await client.runCommand(`/${fullCmd}`, { source: "cli" });
+        if (!result.ok) {
+          printError(`命令执行失败: ${result.error ?? "unknown"}`);
+          return;
+        }
+        if (!result.handled) {
+          printWarn(`未知命令: /${cmd.name}`);
+          return;
+        }
+        for (const reply of result.replies) {
+          console.log(reply);
+        }
+      });
+
+    // Add aliases if they don't conflict
+    for (const alias of cmd.aliases) {
+      if (!existingNames.has(alias)) {
+        try {
+          dynamicCmd.alias(alias);
+        } catch {
+          // alias conflict — skip
+        }
+      }
+    }
+
+    try {
+      program.addCommand(dynamicCmd);
+      existingNames.add(cmd.name);
+    } catch {
+      // command name conflict — skip
+    }
+  }
 }
 
 // ─── Helpers ───

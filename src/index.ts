@@ -1092,29 +1092,40 @@ export class YuanbaoBot {
     // always has full conversation awareness.
     this.feedLlmContext(chatMessage);
 
-    // ─── Step 1.5: Check for active /init wizard session ───
+    // ─── Step 1.5: Check for active wizard sessions (/init or /llm config) ───
     // If the user has an active wizard session, intercept non-slash messages
     // as wizard input (blocking normal dispatch + LLM).
     if (this.commandSystem && !chatMessage.text.trim().startsWith("/")) {
       const cs = this.commandSystem as unknown as {
         _initWizardSessions?: Map<string, unknown>;
         _handleInitWizardInput?: (bot: unknown, userId: string, text: string, reply: (t: string) => Promise<void>) => Promise<boolean>;
+        _llmWizardSessions?: Map<string, unknown>;
+        _handleLlmWizardInput?: (bot: unknown, userId: string, text: string, reply: (t: string) => Promise<void>) => Promise<boolean>;
       };
       const userId = chatMessage.fromUserId;
-      if (cs._initWizardSessions?.has(userId) && cs._handleInitWizardInput) {
-        const replyFn = async (text: string): Promise<void> => {
-          try {
-            if (chatMessage.chatType === "group" && chatMessage.groupCode) {
-              await this.sendGroupMessage(chatMessage.groupCode, text);
-            } else {
-              await this.sendDirectMessage(chatMessage.fromUserId, text);
-            }
-          } catch (err) {
-            this.log.error(`wizard reply failed: ${(err as Error).message}`);
+
+      const replyFn = async (text: string): Promise<void> => {
+        try {
+          if (chatMessage.chatType === "group" && chatMessage.groupCode) {
+            await this.sendGroupMessage(chatMessage.groupCode, text);
+          } else {
+            await this.sendDirectMessage(chatMessage.fromUserId, text);
           }
-        };
+        } catch (err) {
+          this.log.error(`wizard reply failed: ${(err as Error).message}`);
+        }
+      };
+
+      // Check /init wizard
+      if (cs._initWizardSessions?.has(userId) && cs._handleInitWizardInput) {
         void cs._handleInitWizardInput(this, userId, chatMessage.text, replyFn);
-        return; // don't emit events, don't try LLM
+        return;
+      }
+
+      // Check /llm config wizard
+      if (cs._llmWizardSessions?.has(userId) && cs._handleLlmWizardInput) {
+        void cs._handleLlmWizardInput(this, userId, chatMessage.text, replyFn);
+        return;
       }
     }
 

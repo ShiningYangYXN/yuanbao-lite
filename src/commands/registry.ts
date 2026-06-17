@@ -180,6 +180,22 @@ export class CommandSystem {
    *   of sending IM messages.
    */
   async dispatch(bot: YuanbaoBot, message: ChatMessage, onReply?: (text: string) => Promise<void>): Promise<CommandResult> {
+    return this.dispatchWithSource(bot, message, onReply, "chat");
+  }
+
+  /**
+   * Dispatch a command with an explicit source ("chat" or "cli").
+   *
+   * When source is "cli", the dmOnly and requireConnected checks are relaxed
+   * (the CLI is already authorized), and command handlers can use ctx.source
+   * to decide whether to apply ANSI coloring (chat = no color, cli = color).
+   */
+  async dispatchWithSource(
+    bot: YuanbaoBot,
+    message: ChatMessage,
+    onReply?: (text: string) => Promise<void>,
+    source: "chat" | "cli" = "chat",
+  ): Promise<CommandResult> {
     // Check if commands are enabled for this chat type
     if (message.chatType === "group" && !this.config.enableInGroup) {
       return { handled: false };
@@ -208,13 +224,13 @@ export class CommandSystem {
     if (!def) {
       // Unknown command — send a hint to the user
       this.log.debug(`unknown command: ${commandName}`);
-      const ctx = this.makeContext(bot, message, commandName, args, onReply);
+      const ctx = this.makeContext(bot, message, commandName, args, onReply, source);
       await ctx.reply(`❓ 未知命令: /${commandName}\n输入 /help 查看可用命令`);
       return { handled: true };
     }
 
-    // Check dmOnly restriction (bypassed when unsafe mode is active)
-    if (def.dmOnly && message.chatType === "group" && !this._unsafeMode) {
+    // Check dmOnly restriction (bypassed when unsafe mode is active, or CLI source)
+    if (def.dmOnly && message.chatType === "group" && !this._unsafeMode && source !== "cli") {
       // Check if the user is trusted — trusted users get a hint to enable /unsafe
       let isTrustedUser = false;
       try {
@@ -224,27 +240,28 @@ export class CommandSystem {
         // trust module optional
       }
       if (isTrustedUser) {
-        await this.makeContext(bot, message, commandName, args, onReply).reply(
+        await this.makeContext(bot, message, commandName, args, onReply, source).reply(
           `⚠️ 此命令仅限私聊使用。\n受信用户可在群聊中发送 /unsafe on 开启危险模式（5分钟有效），开启后可在此群聊使用 dmOnly 命令。`,
         );
       } else {
-        await this.makeContext(bot, message, commandName, args, onReply).reply(
-          `⚠️ 此命令仅限私聊使用。\n如需在群聊中执行，请联系主人将你加入信任列表 (/trust add <你的ID>)，然后用 /unsafe on 开启。`,
+        // Auto-include the user's own ID so they can forward it to the master
+        await this.makeContext(bot, message, commandName, args, onReply, source).reply(
+          `⚠️ 此命令仅限私聊使用。\n你的用户ID: ${message.fromUserId}\n如需在群聊中执行，请联系主人发送: /trust add ${message.fromUserId}\n加入信任列表后，用 /unsafe on 开启危险模式。`,
         );
       }
       return { handled: true };
     }
 
-    // Check connected requirement
-    if (def.requireConnected && !bot.getState().connected) {
-      await this.makeContext(bot, message, commandName, args, onReply).reply(
+    // Check connected requirement (bypassed for CLI source — CLI may run config commands before bot connects)
+    if (def.requireConnected && !bot.getState().connected && source !== "cli") {
+      await this.makeContext(bot, message, commandName, args, onReply, source).reply(
         "⚠️ 机器人尚未连接，请稍后再试",
       );
       return { handled: true };
     }
 
     // Build context and execute
-    const ctx = this.makeContext(bot, message, commandName, args, onReply);
+    const ctx = this.makeContext(bot, message, commandName, args, onReply, source);
 
     try {
       this.log.info(`executing command: ${commandName} (args: ${args.join(" ")})`);
@@ -403,6 +420,7 @@ export class CommandSystem {
     command: string,
     args: string[],
     onReply?: (text: string) => Promise<void>,
+    source: "chat" | "cli" = "chat",
   ): CommandContext {
     const isGroup = message.chatType === "group";
     const groupCode = message.groupCode;
@@ -465,6 +483,7 @@ export class CommandSystem {
       isGroup,
       groupCode,
       showAll,
+      source,
     };
   }
 
@@ -853,7 +872,7 @@ export class CommandSystem {
 
         if (!trusted) {
           await ctx.reply(
-            `❌ 你不在信任列表中，无法开启危险模式。\n请联系主人发送: /trust add <你的ID>`,
+            `❌ 你不在信任列表中，无法开启危险模式。\n你的用户ID: ${ctx.message.fromUserId}\n请联系主人发送: /trust add ${ctx.message.fromUserId}`,
           );
           return;
         }
@@ -2498,6 +2517,52 @@ export class CommandSystem {
             );
             return;
           }
+          case "config":
+          case "配置": {
+            // Interactive LLM config wizard (blocking, like /init)
+            // Delegates to the same wizard session mechanism as /init
+            const llmWizardSessions = (this as unknown as { _llmWizardSessions?: Map<string, unknown> })._llmWizardSessions;
+            if (!llmWizardSessions) {
+              await ctx.reply("❌ LLM 配置向导不可用");
+              return;
+            }
+            const userId = ctx.message.fromUserId;
+
+            // Cancel
+            if (subArgs[0]?.toLowerCase() === "cancel") {
+              llmWizardSessions.delete(userId);
+              await ctx.reply("✅ LLM 配置向导已取消");
+              return;
+            }
+
+            // Start wizard
+            llmWizardSessions.set(userId, {
+              step: "provider",
+              startedAt: Date.now(),
+            });
+
+            await ctx.reply(
+              `🤖 LLM 配置向导已启动（阻塞模式）\n\n` +
+              `接下来的对话将被向导捕获。\n\n` +
+              `请选择供应商:\n` +
+              `  1. z-ai (默认)\n` +
+              `  2. openai\n` +
+              `  3. anthropic\n` +
+              `  4. deepseek\n` +
+              `  5. custom\n\n` +
+              `发送供应商名称或编号，或发送已有自定义供应商名称。\n` +
+              `随时发送 /llm config cancel 取消`,
+            );
+
+            // Auto-cancel after 5 min
+            setTimeout(() => {
+              const session = llmWizardSessions.get(userId) as { startedAt: number } | undefined;
+              if (session && Date.now() - session.startedAt > 5 * 60 * 1000) {
+                llmWizardSessions.delete(userId);
+              }
+            }, 5 * 60 * 1000);
+            return;
+          }
           case "group":
           case "群聊": {
             if (subArgs[0] === "on") {
@@ -2933,6 +2998,109 @@ export class CommandSystem {
           }
 
           return true; // session active but unknown step — swallow input
+        };
+    }
+
+    // ─── LLM interactive config wizard (blocking, like /init) ───
+    {
+      type LlmWizardSession = {
+        step: "provider" | "apikey" | "model" | "systemPrompt" | "done";
+        provider?: string;
+        apiKey?: string;
+        model?: string;
+        startedAt: number;
+      };
+      const llmWizardSessions = new Map<string, LlmWizardSession>();
+      (this as unknown as { _llmWizardSessions: Map<string, unknown> })._llmWizardSessions = llmWizardSessions;
+
+      (this as unknown as { _handleLlmWizardInput: (bot: unknown, userId: string, text: string, reply: (t: string) => Promise<void>) => Promise<boolean> })._handleLlmWizardInput =
+        async (bot: unknown, userId: string, text: string, reply: (t: string) => Promise<void>): Promise<boolean> => {
+          const session = llmWizardSessions.get(userId);
+          if (!session) return false;
+
+          if (Date.now() - session.startedAt > 5 * 60 * 1000) {
+            llmWizardSessions.delete(userId);
+            await reply("⏰ LLM 配置向导已超时（5分钟），请重新发送 /llm config");
+            return true;
+          }
+
+          const engine = (bot as { getLlmEngine?: () => unknown }).getLlmEngine?.() as
+            { updateConfig: (patch: Record<string, unknown>) => void; getConfig: () => Record<string, unknown> } | null;
+          if (!engine) {
+            llmWizardSessions.delete(userId);
+            await reply("❌ LLM 引擎未初始化");
+            return true;
+          }
+
+          const input = text.trim();
+
+          // Step: provider
+          if (session.step === "provider") {
+            const providerMap: Record<string, string> = {
+              "1": "z-ai", "z-ai": "z-ai", "zai": "z-ai",
+              "2": "openai", "openai": "openai",
+              "3": "anthropic", "anthropic": "anthropic",
+              "4": "deepseek", "deepseek": "deepseek",
+              "5": "custom", "custom": "custom",
+            };
+            const provider = providerMap[input.toLowerCase()] ?? input.toLowerCase();
+            session.provider = provider;
+            engine.updateConfig({ provider });
+            session.step = "apikey";
+            await reply(
+              `✅ 供应商已设置为: ${provider}\n\n` +
+              `📝 请发送 API Key (z-ai 可跳过发送 skip):`,
+            );
+            return true;
+          }
+
+          // Step: apikey
+          if (session.step === "apikey") {
+            if (input.toLowerCase() !== "skip") {
+              session.apiKey = input;
+              engine.updateConfig({ apiKey: input });
+            }
+            session.step = "model";
+            await reply(
+              `✅ API Key 已${input.toLowerCase() === "skip" ? "跳过" : "设置"}\n\n` +
+              `📝 请发送模型名称 (如 gpt-4o, claude-3-5-sonnet, 或 skip 使用默认):`,
+            );
+            return true;
+          }
+
+          // Step: model
+          if (session.step === "model") {
+            if (input.toLowerCase() !== "skip") {
+              session.model = input;
+              engine.updateConfig({ model: input });
+            }
+            session.step = "systemPrompt";
+            await reply(
+              `✅ 模型已${input.toLowerCase() === "skip" ? "跳过" : "设置"}\n\n` +
+              `📝 请发送系统提示词 (或 skip/done 使用默认):`,
+            );
+            return true;
+          }
+
+          // Step: systemPrompt
+          if (session.step === "systemPrompt") {
+            if (input.toLowerCase() !== "skip" && input.toLowerCase() !== "done") {
+              engine.updateConfig({ systemPrompt: input });
+            }
+            session.step = "done";
+            llmWizardSessions.delete(userId);
+            await reply(
+              `✅ LLM 配置完成!\n` +
+              `  供应商: ${session.provider}\n` +
+              `  API Key: ${session.apiKey ? "***" + session.apiKey.slice(-4) : "(未设置)"}\n` +
+              `  模型: ${session.model || "(默认)"}\n\n` +
+              `发送 /llm on 开启自动回复\n` +
+              `发送 /llm status 查看状态`,
+            );
+            return true;
+          }
+
+          return true;
         };
     }
 

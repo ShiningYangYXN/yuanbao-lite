@@ -72,6 +72,9 @@ export async function handleRoute(
     case path === "/completions" && method === "GET":
       return completions(ctx);
 
+    case path === "/commands" && method === "GET":
+      return listCommands(ctx);
+
     case path === "/version" && method === "GET":
       return { status: 200, body: { ok: true, version: getVersion() } };
 
@@ -225,6 +228,8 @@ async function runCommand(ctx: RouteContext, body: Record<string, unknown>): Pro
   // consistently regardless of which mode the caller is in.
   const chatMode = (typeof body.chatMode === "string" ? body.chatMode : "direct") as "direct" | "group";
   const chatTarget = typeof body.chatTarget === "string" ? body.chatTarget : "cli";
+  // Source: "cli" (from CLI) or "chat" (from IM). Affects coloring + dmOnly bypass.
+  const source = (typeof body.source === "string" && body.source === "cli") ? "cli" : "chat";
 
   const syntheticMsg: ChatMessage = {
     id: `cli-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -242,7 +247,7 @@ async function runCommand(ctx: RouteContext, body: Record<string, unknown>): Pro
   };
 
   try {
-    const result = await cmdSys.dispatch(bot, syntheticMsg, onReply);
+    const result = await cmdSys.dispatchWithSource(bot, syntheticMsg, onReply, source);
     return {
       status: 200,
       body: {
@@ -315,6 +320,29 @@ function completions(ctx: RouteContext): RouteResult {
     status: 200,
     body: { ok: true, contacts, groups, aliases, commands },
   };
+}
+
+/**
+ * List all registered commands for CLI dynamic command generation.
+ * Returns name, aliases, description, usage, category, dmOnly, requireConnected.
+ */
+function listCommands(ctx: RouteContext): RouteResult {
+  const bot = ctx.bot;
+  const cmdSys = bot?.getCommandSystem();
+  if (!cmdSys) {
+    return { status: 500, body: { ok: false, error: "command system disabled" } };
+  }
+  const commands = cmdSys.getVisibleCommands().map(c => ({
+    name: c.name,
+    aliases: c.aliases ?? [],
+    description: c.description,
+    usage: c.usage ?? "",
+    category: c.category ?? "misc",
+    dmOnly: c.dmOnly ?? false,
+    requireConnected: c.requireConnected ?? false,
+    hidden: c.hidden ?? false,
+  }));
+  return { status: 200, body: { ok: true, commands } };
 }
 
 // Re-exported for client defaults

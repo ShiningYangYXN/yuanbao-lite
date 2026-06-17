@@ -217,12 +217,16 @@ export class DaemonClient {
   /**
    * Run a slash-command through the daemon's CommandSystem.
    * Returns the array of reply strings the command produced.
+   *
+   * `source` defaults to "cli" — tells the CommandSystem to apply CLI-appropriate
+   * coloring and bypass dmOnly restrictions.
    */
-  async runCommand(text: string, opts?: { chatMode?: "direct" | "group"; chatTarget?: string }): Promise<CommandResult> {
+  async runCommand(text: string, opts?: { chatMode?: "direct" | "group"; chatTarget?: string; source?: "cli" | "chat" }): Promise<CommandResult> {
     const { status, data } = await this.request<CommandResult>("POST", "/command", {
       text,
       chatMode: opts?.chatMode ?? "direct",
       chatTarget: opts?.chatTarget ?? "cli",
+      source: opts?.source ?? "cli",
     });
     if (status !== 200) {
       throw new Error(`command failed: HTTP ${status}`);
@@ -307,6 +311,36 @@ export class DaemonClient {
   }
 
   // ─── Completion data ───
+
+  async fetchCommands(): Promise<Array<{
+    name: string;
+    aliases: string[];
+    description: string;
+    usage: string;
+    category: string;
+    dmOnly: boolean;
+    requireConnected: boolean;
+    hidden: boolean;
+  }>> {
+    const { status, data } = await this.request<{
+      ok: boolean;
+      commands?: Array<{
+        name: string;
+        aliases: string[];
+        description: string;
+        usage: string;
+        category: string;
+        dmOnly: boolean;
+        requireConnected: boolean;
+        hidden: boolean;
+      }>;
+      error?: string;
+    }>("GET", "/commands");
+    if (status !== 200 || !data.ok) {
+      throw new Error(data.error ?? `commands failed: HTTP ${status}`);
+    }
+    return data.commands ?? [];
+  }
 
   async fetchCompletions(): Promise<{
     contacts: Array<{ id: string; name: string; tag?: string }>;

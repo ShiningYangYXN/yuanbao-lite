@@ -23,7 +23,7 @@
 
 import chalk from "chalk";
 import { runDaemon } from "./daemon/server.js";
-import { buildProgram } from "./client/commands.js";
+import { buildProgram, registerDynamicCommands } from "./client/commands.js";
 import { runInteractive } from "./client/interactive.js";
 import { getVersion } from "../version.js";
 import {
@@ -93,6 +93,14 @@ async function main(): Promise<void> {
     .action(async () => {
       await runInteractive();
     });
+
+  // Dynamically register commands from the daemon's CommandSystem registry.
+  // This makes every / slash command available as a CLI subcommand, sharing
+  // the exact same handler code. Skipped if daemon is not available.
+  // Only do this for non-interactive invocations (when args are present).
+  if (args.length > 0 && args[0] !== "interactive" && args[0] !== "repl" && !(args[0] === "daemon" && (args[1] === "start" || args[1] === "stop" || args[1] === "status"))) {
+    await registerDynamicCommands(program);
+  }
 
   await program.parseAsync(args, { from: "user" });
 }

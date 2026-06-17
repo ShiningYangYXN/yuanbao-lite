@@ -32,6 +32,8 @@ export type CommandContext = {
   groupCode?: string;
   /** Whether --all/-a flag was specified (disable truncation for long-output commands) */
   showAll: boolean;
+  /** Where the command was invoked from — affects coloring/output format */
+  source: "chat" | "cli";
 };
 
 // ─── Command Definition ───
