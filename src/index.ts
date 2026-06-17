@@ -185,14 +185,13 @@ export class YuanbaoBot {
       }
     }
 
-    // Initialize LLM engine
-    this.llmAutoReply = config.llmAutoReply ?? true;
-    if (config.llmConfig) {
-      this.llmEngine = createLlmTakeover({
-        ...config.llmConfig,
-        persistencePath: join(homedir(), ".yuanbao-lite", "llm-config.json"),
-      });
-    }
+    // Initialize LLM engine — always create with defaults + persistence
+    // so /llm commands work even without explicit llmConfig
+    this.llmAutoReply = config.llmAutoReply ?? false; // default OFF to prevent group chat explosion
+    this.llmEngine = createLlmTakeover({
+      ...(config.llmConfig ?? {}),
+      persistencePath: join(homedir(), ".yuanbao-lite", "llm-config.json"),
+    });
   }
 
   // ─── Event subscription ───

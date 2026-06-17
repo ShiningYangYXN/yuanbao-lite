@@ -1480,11 +1480,12 @@ export class CommandSystem {
           }
 
           // Execute command in the persistent shell
-          // Write command + marker to know when output ends + capture exit code
+          // Write command + marker to know when output ends + capture exit code + prompt info
           session.outputBuffer = "";
           const marker = `__TERM_MARKER_${Date.now()}__`;
           let resolved = false;
 
+          // Promise resolves with the raw buffer (output + marker line) when marker appears
           const outputPromise = new Promise<string>((resolve) => {
             const timeout = setTimeout(() => {
               if (!resolved) {
@@ -1499,15 +1500,9 @@ export class CommandSystem {
               if (session.outputBuffer.includes(marker)) {
                 resolved = true;
                 clearTimeout(timeout);
-                const idx = session.outputBuffer.indexOf(marker);
-                const output = session.outputBuffer.slice(0, idx);
-                const afterMarker = session.outputBuffer.slice(idx + marker.length);
-                const exitMatch = afterMarker.match(/^\s*(\d+)/);
-                if (exitMatch) {
-                  session.lastExitCode = parseInt(exitMatch[1], 10);
-                }
+                const fullBuffer = session.outputBuffer;
                 session.outputBuffer = "";
-                resolve(output);
+                resolve(fullBuffer);
               } else {
                 setTimeout(checkOutput, 50);
               }
@@ -1515,24 +1510,43 @@ export class CommandSystem {
             checkOutput();
           });
 
-          // Write command to shell stdin
+          // Write command to shell stdin, then capture exit code + prompt info
           if (session.shell.stdin) {
             session.shell.stdin.write(`${cmd}\n`);
-            session.shell.stdin.write(`echo "${marker}$?"\n`);
+            // Marker line: exitcode|user|host|cwd
+            session.shell.stdin.write(`echo "${marker}$?|$(whoami)|$(hostname)|$(pwd)"\n`);
           }
 
-          let output = await outputPromise;
+          const rawBuffer = await outputPromise;
 
-          // Clean up output
-          output = output.replace(/\r\n/g, "\n").trim();
-          if (!output) output = "(无输出)";
+          // Split output and marker line
+          const markerIdx = rawBuffer.indexOf(marker);
+          const output = markerIdx >= 0
+            ? rawBuffer.slice(0, markerIdx).replace(/\r\n/g, "\n").trim()
+            : rawBuffer.replace(/\r\n/g, "\n").trim();
+          const afterMarker = markerIdx >= 0
+            ? rawBuffer.slice(markerIdx + marker.length).trim()
+            : "";
 
-          // Truncate to 3000 chars
-          if (output.length > 3000) {
-            output = output.slice(0, 3000) + `\n... (截断，共 ${output.length} 字符)`;
+          // Parse exit code + prompt info from after marker: "0|user|host|cwd"
+          const promptParts = afterMarker.split("|");
+          if (promptParts.length >= 1) {
+            session.lastExitCode = parseInt(promptParts[0], 10) || 0;
           }
+          const userInfo = promptParts.length >= 2 ? promptParts[1] : "";
+          const hostInfo = promptParts.length >= 3 ? promptParts[2] : "";
+          const cwdInfo = promptParts.length >= 4 ? promptParts[3] : "";
+          const home = process.env.HOME || "";
+          const promptStr = (userInfo && hostInfo && cwdInfo)
+            ? `${userInfo}@${hostInfo}:${home && cwdInfo.startsWith(home) ? "~" + cwdInfo.slice(home.length) : cwdInfo}$ `
+            : "$ ";
 
-          await reply(`$ ${cmd}\n${output}\n[退出码: ${session.lastExitCode ?? 0}]`);
+          const cleanOutput = output || "(无输出)";
+          const finalOutput = cleanOutput.length > 3000
+            ? cleanOutput.slice(0, 3000) + `\n... (截断，共 ${cleanOutput.length} 字符)`
+            : cleanOutput;
+
+          await reply(`${promptStr}${cmd}\n${finalOutput}\n[退出码: ${session.lastExitCode ?? 0}]`);
           return true;
         };
     }
