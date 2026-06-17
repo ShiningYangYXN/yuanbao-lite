@@ -35,7 +35,7 @@
     "daemon:start": "node dist/cli/index.js daemon start",
     "daemon:stop": "node dist/cli/index.js daemon stop",
     "daemon:status": "node dist/cli/index.js daemon status",
-    "daemon:restart": "node dist/cli/index.js daemon stop && node dist/cli/index.js daemon start",
+    "daemon:restart": "node dist/cli/index.js daemon restart",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix"
   },

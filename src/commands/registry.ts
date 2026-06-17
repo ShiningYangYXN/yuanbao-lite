@@ -3974,14 +3974,17 @@ export class CommandSystem {
                 await client.shutdown();
                 await ctx.reply(`✅ daemon 已停止 (CLI 直接执行)`);
               } else if (subCmd === "restart") {
-                await client.shutdown();
-                await new Promise(r => setTimeout(r, 2000));
-                await client.ensureDaemon({});
+                // CRITICAL: do NOT call client.shutdown() then client.ensureDaemon().
+                // When this runs INSIDE the daemon (via /command), shutdown() kills
+                // the current process before ensureDaemon() can run — the daemon
+                // dies permanently. Instead, use client.restart() which spawns a
+                // fresh detached daemon; the new daemon's acquirePidFile() will
+                // SIGTERM the old one and take over.
+                await client.restart();
                 await ctx.reply(`✅ daemon 已重启 (CLI 直接执行)`);
               } else if (subCmd === "reset") {
-                await client.shutdown();
-                await new Promise(r => setTimeout(r, 2000));
-                await client.ensureDaemon({});
+                // reset = restart + (caches cleared on boot by the new daemon)
+                await client.restart();
                 await ctx.reply(`✅ daemon 已重置 (CLI 直接执行，缓存已清除)`);
               }
             } catch (err) {
@@ -4024,16 +4027,19 @@ export class CommandSystem {
               await client.shutdown();
               await ctx.reply(`✅ daemon 已停止 (${REQUIRED_CONFIRMATIONS} 次确认完成)`);
             } else if (subCmd === "restart") {
-              await client.shutdown();
-              await new Promise(r => setTimeout(r, 2000)); // wait for daemon to die
-              await client.ensureDaemon({});
+              // CRITICAL: do NOT call client.shutdown() then client.ensureDaemon().
+              // When this runs INSIDE the daemon (via /command from chat), shutdown()
+              // kills the current process before ensureDaemon() can run — the daemon
+              // dies permanently AND the user gets no reply. Instead, use
+              // client.restart() which spawns a fresh detached daemon; the new
+              // daemon's acquirePidFile() SIGTERMs the old one and takes over.
+              // The reply is sent BEFORE the old daemon is killed (the new daemon
+              // takes a few seconds to start up and kill the old one).
+              await client.restart();
               await ctx.reply(`✅ daemon 已重启 (${REQUIRED_CONFIRMATIONS} 次确认完成)`);
             } else if (subCmd === "reset") {
-              // reset = stop + clear caches + restart
-              await client.shutdown();
-              await new Promise(r => setTimeout(r, 2000));
-              // Clear sign-token cache via a fresh start (the daemon clears on boot)
-              await client.ensureDaemon({});
+              // reset = restart + (caches cleared on boot by the new daemon)
+              await client.restart();
               await ctx.reply(`✅ daemon 已重置 (${REQUIRED_CONFIRMATIONS} 次确认完成，缓存已清除)`);
             }
           } catch (err) {

@@ -115,6 +115,34 @@ export class DaemonClient {
   }
 
   /**
+   * Restart the daemon: spawn a fresh detached daemon process, then return.
+   *
+   * The fresh daemon's `acquirePidFile()` will SIGTERM the current daemon
+   * (wait up to 3s, then SIGKILL). This is the ONLY safe way to restart —
+   * calling shutdown() + ensureDaemon() from INSIDE a /command handler is
+   * suicidal because the daemon kills itself before the handler can finish.
+   *
+   * This method:
+   *   1. Spawns `node dist/cli/index.js daemon start` with detached:true, unref'd
+   *   2. Polls /health until the NEW daemon responds (≤30s)
+   *   3. Returns the new daemon's info
+   *
+   * The caller does NOT need to call shutdown() first — the new daemon
+   * handles killing the old one via PID file contention.
+   */
+  async restart(): Promise<DaemonInfo> {
+    // Spawn a fresh daemon — it will kill the old one via acquirePidFile()
+    await this.spawnDaemon(this.port);
+    // Wait for the new daemon to come up (it may take a few seconds to
+    // SIGTERM the old one, release the port, and start listening)
+    const ready = await this.waitForReady(DAEMON_READY_TIMEOUT_MS);
+    if (!ready) {
+      throw new DaemonNotRunningError(new Error("daemon did not become ready within 30s after restart"));
+    }
+    return ready;
+  }
+
+  /**
    * Ensure a daemon is running. If `/health` already responds, return its info.
    * Otherwise spawn a detached daemon child process and poll until ready.
    *

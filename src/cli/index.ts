@@ -61,6 +61,28 @@ async function main(): Promise<void> {
     process.exit(0);
   }
 
+  // ─── `daemon restart` — spawn fresh daemon (kills old via PID file) ───
+  if (args[0] === "daemon" && args[1] === "restart") {
+    const client = getDefaultClient();
+    const oldInfo = await client.ping();
+    if (!oldInfo) {
+      // No daemon running — just start one fresh
+      console.log(chalk.yellow("daemon 未在运行，直接启动新 daemon..."));
+      const info = await client.ensureDaemon({});
+      console.log(chalk.green(`✓ daemon 已启动 (pid=${info.pid})`));
+      process.exit(0);
+    }
+    console.log(chalk.dim(`重启 daemon (旧 pid=${oldInfo.pid})...`));
+    try {
+      const newInfo = await client.restart();
+      console.log(chalk.green(`✓ daemon 已重启 (新 pid=${newInfo.pid})`));
+      process.exit(0);
+    } catch (err) {
+      console.error(chalk.red(`✗ 重启失败: ${(err as Error).message}`));
+      process.exit(1);
+    }
+  }
+
   // ─── `daemon status` — GET /health ───
   if (args[0] === "daemon" && args[1] === "status") {
     const client = getDefaultClient();
@@ -98,7 +120,7 @@ async function main(): Promise<void> {
   // This makes every / slash command available as a CLI subcommand, sharing
   // the exact same handler code. Skipped if daemon is not available.
   // Only do this for non-interactive invocations (when args are present).
-  if (args.length > 0 && args[0] !== "interactive" && args[0] !== "repl" && !(args[0] === "daemon" && (args[1] === "start" || args[1] === "stop" || args[1] === "status"))) {
+  if (args.length > 0 && args[0] !== "interactive" && args[0] !== "repl" && !(args[0] === "daemon" && (args[1] === "start" || args[1] === "stop" || args[1] === "restart" || args[1] === "status"))) {
     await registerDynamicCommands(program);
   }
 
