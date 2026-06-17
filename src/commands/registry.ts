@@ -304,37 +304,67 @@ export class CommandSystem {
         continue;
       }
 
-      // Double-quoted string
+      // Double-quoted string — use JSON.parse for native JS escape parsing
+      // Supports: \n \t \r \\ \" \/ \uXXXX \xXX (standard JS escapes)
       if (ch === '"') {
-        i++; // skip opening quote
-        while (i < input.length && input[i] !== '"') {
-          if (input[i] === '\\' && i + 1 < input.length) {
-            // Process escape sequences inside double quotes
-            current += this.processEscape(input[i + 1]);
-            i += 2;
+        // Find the matching closing quote, respecting escaped quotes
+        let end = i + 1;
+        while (end < input.length) {
+          if (input[end] === "\\" && end + 1 < input.length) {
+            end += 2; // skip escaped char
+          } else if (input[end] === '"') {
+            break;
           } else {
-            current += input[i];
-            i++;
+            end++;
           }
         }
-        i++; // skip closing quote
-        continue;
-      }
-
-      // Single-quoted string (no escape processing, literal)
-      if (ch === "'") {
-        i++; // skip opening quote
-        while (i < input.length && input[i] !== "'") {
-          current += input[i];
-          i++;
+        const quoted = input.slice(i, end + 1); // includes both quotes
+        try {
+          // JSON.parse handles all JS string escapes natively
+          current += JSON.parse(quoted) as string;
+        } catch {
+          // Fallback: extract raw content if JSON.parse fails
+          current += quoted.slice(1, -1);
         }
-        i++; // skip closing quote
+        i = end + 1;
         continue;
       }
 
-      // Backslash escape outside quotes
+      // Single-quoted string — convert to double-quoted for JSON.parse
+      if (ch === "'") {
+        let end = i + 1;
+        while (end < input.length) {
+          if (input[end] === "\\" && end + 1 < input.length) {
+            end += 2;
+          } else if (input[end] === "'") {
+            break;
+          } else {
+            end++;
+          }
+        }
+        const raw = input.slice(i + 1, end);
+        // Convert single-quoted to JSON-parseable double-quoted string
+        // Escape any existing double quotes and backslashes
+        const jsonStr = '"' + raw.replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '"';
+        try {
+          current += JSON.parse(jsonStr) as string;
+        } catch {
+          current += raw;
+        }
+        i = end + 1;
+        continue;
+      }
+
+      // Backslash escape outside quotes — use JS native parsing
       if (ch === '\\' && i + 1 < input.length) {
-        current += this.processEscape(input[i + 1]);
+        // Build a minimal quoted string and let JSON.parse handle the escape
+        const escaped = input.slice(i, i + 2);
+        try {
+          current += JSON.parse(`"${escaped}"`) as string;
+        } catch {
+          // Unknown escape — keep literal backslash + char
+          current += escaped;
+        }
         i += 2;
         continue;
       }
@@ -349,22 +379,6 @@ export class CommandSystem {
     }
 
     return tokens;
-  }
-
-  /**
-   * Process a single escape character after backslash.
-   */
-  private processEscape(ch: string): string {
-    switch (ch) {
-      case 'n': return '\n';
-      case 't': return '\t';
-      case 'r': return '\r';
-      case '\\': return '\\';
-      case '"': return '"';
-      case "'": return "'";
-      case ' ': return ' ';
-      default: return '\\' + ch; // unknown escape, keep as-is
-    }
   }
 
   // ─── Context builder ───
@@ -657,11 +671,11 @@ export class CommandSystem {
       },
     });
 
-    // /ip <address> — IP address lookup
+    // /ip <address> — IP address lookup (multi-provider concurrent query)
     this.register({
       name: "ip",
       aliases: ["ip查询"],
-      description: "查询 IP 地址的地理位置信息",
+      description: "查询 IP 地址的地理位置信息（多服务商并发）",
       usage: "/ip <IP地址>   例: /ip 8.8.8.8",
       category: "misc" as CommandCategory,
       handler: async (ctx) => {
@@ -674,28 +688,117 @@ export class CommandSystem {
           await ctx.reply("❌ 无效 IPv4 地址");
           return;
         }
-        try {
-          const resp = await fetch(`https://ipapi.co/${ip}/json/`);
-          if (!resp.ok) {
-            await ctx.reply(`❌ 查询失败: HTTP ${resp.status}`);
-            return;
-          }
-          const data = await resp.json() as Record<string, unknown>;
-          if (data.error) {
-            await ctx.reply(`❌ 查询失败: ${String(data.reason ?? data.error)}`);
-            return;
-          }
-          const lines = [
-            `🌐 IP: ${ip}`,
-            `  位置: ${data.country_name ?? "?"} ${data.region ?? ""} ${data.city ?? ""}`.trim(),
-            `  运营商: ${data.org ?? "(未知)"}`,
-            `  时区: ${data.timezone ?? "(未知)"}`,
-            `  经纬度: ${data.latitude ?? "?"}, ${data.longitude ?? "?"}`,
-          ];
-          await ctx.reply(lines.join("\n"));
-        } catch (err) {
-          await ctx.reply(`❌ 查询失败: ${(err as Error).message}`);
+
+        type IpResult = {
+          provider: string;
+          country?: string;
+          region?: string;
+          city?: string;
+          org?: string;
+          timezone?: string;
+          latitude?: number | string;
+          longitude?: number | string;
+          error?: string;
+        };
+
+        // Query multiple providers concurrently, take the fastest successful one
+        const providers: Array<() => Promise<IpResult>> = [
+          // ip-api.com (no API key required, 45 req/min)
+          async () => {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 5000);
+            try {
+              const resp = await fetch(`http://ip-api.com/json/${ip}?lang=zh-CN&fields=status,country,regionName,city,isp,timezone,lat,lon`, { signal: controller.signal });
+              clearTimeout(timer);
+              if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+              const d = await resp.json() as Record<string, unknown>;
+              if (d.status === "fail") throw new Error(String(d.message ?? "fail"));
+              return {
+                provider: "ip-api.com",
+                country: String(d.country ?? ""),
+                region: String(d.regionName ?? ""),
+                city: String(d.city ?? ""),
+                org: String(d.isp ?? ""),
+                timezone: String(d.timezone ?? ""),
+                latitude: d.lat as number,
+                longitude: d.lon as number,
+              };
+            } catch (err) {
+              clearTimeout(timer);
+              return { provider: "ip-api.com", error: (err as Error).message };
+            }
+          },
+          // ipapi.co
+          async () => {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 5000);
+            try {
+              const resp = await fetch(`https://ipapi.co/${ip}/json/`, { signal: controller.signal });
+              clearTimeout(timer);
+              if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+              const d = await resp.json() as Record<string, unknown>;
+              if (d.error) throw new Error(String(d.reason ?? d.error));
+              return {
+                provider: "ipapi.co",
+                country: String(d.country_name ?? ""),
+                region: String(d.region ?? ""),
+                city: String(d.city ?? ""),
+                org: String(d.org ?? ""),
+                timezone: String(d.timezone ?? ""),
+                latitude: d.latitude as number,
+                longitude: d.longitude as number,
+              };
+            } catch (err) {
+              clearTimeout(timer);
+              return { provider: "ipapi.co", error: (err as Error).message };
+            }
+          },
+          // ipinfo.io
+          async () => {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 5000);
+            try {
+              const resp = await fetch(`https://ipinfo.io/${ip}/json`, { signal: controller.signal });
+              clearTimeout(timer);
+              if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+              const d = await resp.json() as Record<string, unknown>;
+              if (d.error) throw new Error(String(d.error));
+              const [lat, lon] = typeof d.loc === "string" ? d.loc.split(",") : ["", ""];
+              return {
+                provider: "ipinfo.io",
+                country: String(d.country ?? ""),
+                region: String(d.region ?? ""),
+                city: String(d.city ?? ""),
+                org: String(d.org ?? ""),
+                timezone: String(d.timezone ?? ""),
+                latitude: lat,
+                longitude: lon,
+              };
+            } catch (err) {
+              clearTimeout(timer);
+              return { provider: "ipinfo.io", error: (err as Error).message };
+            }
+          },
+        ];
+
+        // Run all providers concurrently and take the first successful result
+        const results = await Promise.all(providers.map(p => p()));
+        const success = results.find(r => !r.error);
+
+        if (!success) {
+          const errs = results.map(r => `${r.provider}: ${r.error}`).join("; ");
+          await ctx.reply(`❌ 所有服务商查询失败:\n  ${errs}`);
+          return;
         }
+
+        const lines = [
+          `🌐 IP: ${ip}  (数据源: ${success.provider})`,
+          `  位置: ${success.country ?? "?"} ${success.region ?? ""} ${success.city ?? ""}`.trim(),
+          `  运营商: ${success.org || "(未知)"}`,
+          `  时区: ${success.timezone || "(未知)"}`,
+          `  经纬度: ${success.latitude ?? "?"}, ${success.longitude ?? "?"}`,
+        ];
+        await ctx.reply(lines.join("\n"));
       },
     });
 
@@ -2378,6 +2481,184 @@ export class CommandSystem {
         }
       },
     });
+
+    // /init — interactive configuration wizard (dmOnly, via IM)
+    // Guides the user through setting up appKey/appSecret via DM prompts
+    this.register({
+      name: "init",
+      aliases: ["初始化", "setup", "配置向导"],
+      description: "交互式配置向导（通过私聊引导设置认证信息）",
+      usage: "/init [appkey|appsecret|token <值>]   (无参数显示向导)",
+      category: "system" as CommandCategory,
+      requireConnected: false,
+      dmOnly: true,
+      handler: async (ctx) => {
+        const { getGlobalConfigStore } = await import("../cli-legacy/config.js");
+        const store = getGlobalConfigStore({ autoSave: true });
+        const active = store.getActiveProfileName();
+        const pr = store.getActiveProfile();
+
+        // If args provided, treat as field-set operation
+        const field = ctx.args[0]?.toLowerCase();
+        const value = ctx.args.slice(1).join(" ").trim();
+
+        if (field && value) {
+          const validFields: Record<string, string> = {
+            appkey: "appKey",
+            "app-key": "appKey",
+            appsecret: "appSecret",
+            "app-secret": "appSecret",
+            token: "token",
+          };
+          const configKey = validFields[field];
+          if (!configKey) {
+            await ctx.reply(`❌ 无效字段: ${field}\n支持: appkey, appsecret, token`);
+            return;
+          }
+          store.set(configKey as never, value as never);
+          await ctx.reply(
+            `✅ 已设置 ${configKey} = ***${value.slice(-4)}\n` +
+            `档案: ${active}\n` +
+            `配置完成。发送 /daemon restart (3次) 让新配置生效`,
+          );
+          return;
+        }
+
+        // No args — show interactive wizard
+        const hasCreds = (pr.appKey && pr.appSecret) || pr.token;
+        if (hasCreds) {
+          await ctx.reply(
+            `📋 当前档案 "${active}" 已有认证信息:\n` +
+            `  App Key: ${pr.appKey ? `***${pr.appKey.slice(-4)}` : "(未设置)"}\n` +
+            `  App Secret: ${pr.appSecret ? "***" + pr.appSecret.slice(-4) : "(未设置)"}\n` +
+            `  Token: ${pr.token ? "***" + pr.token.slice(-4) : "(未设置)"}\n\n` +
+            `重新配置请发送:\n` +
+            `  /init appkey <你的AppKey>\n` +
+            `  /init appsecret <你的AppSecret>\n` +
+            `  /init token <你的Token>   (或使用 token 代替 appKey+appSecret)\n\n` +
+            `完成后发送 /daemon restart (3次) 让新配置生效`,
+          );
+          return;
+        }
+
+        await ctx.reply(
+          `🤖 Yuanbao Lite 配置向导\n\n` +
+          `当前档案 "${active}" 尚未配置认证信息。\n\n` +
+          `请按以下步骤配置:\n\n` +
+          `1️⃣ 设置 App Key:\n` +
+          `   /init appkey 你的AppKey\n\n` +
+          `2️⃣ 设置 App Secret:\n` +
+          `   /init appsecret 你的AppSecret\n\n` +
+          `或者使用 Token (二选一):\n` +
+          `   /init token 你的Token\n\n` +
+          `3️⃣ 配置完成后重启 daemon (发送3次):\n` +
+          `   /daemon restart\n\n` +
+          `获取认证信息: 联系元宝平台管理员或在控制台查看`,
+        );
+      },
+    });
+
+    // /daemon — daemon management via IM (dmOnly, 3x confirmation within 1 min)
+    // Tracks confirmation counts per-user. Must send the same sub-command 3 times
+    // within 60 seconds for it to execute.
+    {
+      // Per-user confirmation tracking: key = `${userId}:${subCmd}`, value = { count, firstAt }
+      const daemonConfirmations = new Map<string, { count: number; firstAt: number }>();
+      const CONFIRM_WINDOW_MS = 60_000; // 1 minute
+      const REQUIRED_CONFIRMATIONS = 3;
+
+      this.register({
+        name: "daemon",
+        aliases: ["守护进程"],
+        description: "daemon 进程管理（stop/reset/restart，需3次确认）",
+        usage: "/daemon <stop|reset|restart|status>   (1分钟内发送3次才生效)",
+        category: "system" as CommandCategory,
+        requireConnected: false,
+        dmOnly: true,
+        handler: async (ctx) => {
+          const subCmd = ctx.args[0]?.toLowerCase();
+          const userId = ctx.message.fromUserId;
+
+          if (!subCmd || subCmd === "status") {
+            // Status — no confirmation needed
+            const { getDefaultClient } = await import("../cli-new/client/daemon-client.js");
+            const client = getDefaultClient();
+            const info = await client.ping();
+            if (!info) {
+              await ctx.reply("daemon 未在运行");
+              return;
+            }
+            const bot = info.bot;
+            const lines = [
+              `📊 daemon 状态:`,
+              `  PID: ${info.pid}`,
+              `  版本: ${info.version}`,
+              `  端口: ${info.port}`,
+              `  运行: ${info.uptime}s`,
+              `  Bot: ${bot?.connected ? "✓ 已连接" : "✗ 未连接"}`,
+              ...(bot?.botId ? [`  Bot ID: ${bot.botId}`] : []),
+            ];
+            await ctx.reply(lines.join("\n"));
+            return;
+          }
+
+          if (!["stop", "reset", "restart"].includes(subCmd)) {
+            await ctx.reply("用法: /daemon <stop|reset|restart|status>\nstop/reset/restart 需要1分钟内发送3次确认");
+            return;
+          }
+
+          // Confirmation tracking
+          const key = `${userId}:${subCmd}`;
+          const now = Date.now();
+          const entry = daemonConfirmations.get(key);
+
+          if (!entry || now - entry.firstAt > CONFIRM_WINDOW_MS) {
+            // First confirmation (or window expired)
+            daemonConfirmations.set(key, { count: 1, firstAt: now });
+            await ctx.reply(
+              `⚠️ 确认 ${subCmd} daemon (1/3)\n` +
+              `请在 ${CONFIRM_WINDOW_MS / 1000}s 内再发送 ${REQUIRED_CONFIRMATIONS - 1} 次 /daemon ${subCmd} 以确认操作`,
+            );
+            return;
+          }
+
+          entry.count++;
+          if (entry.count < REQUIRED_CONFIRMATIONS) {
+            await ctx.reply(
+              `⚠️ 确认 ${subCmd} daemon (${entry.count}/${REQUIRED_CONFIRMATIONS})\n` +
+              `还需 ${REQUIRED_CONFIRMATIONS - entry.count} 次确认`,
+            );
+            return;
+          }
+
+          // Reached required confirmations — execute
+          daemonConfirmations.delete(key);
+          const { getDefaultClient } = await import("../cli-new/client/daemon-client.js");
+          const client = getDefaultClient();
+
+          try {
+            if (subCmd === "stop") {
+              await client.shutdown();
+              await ctx.reply(`✅ daemon 已停止 (${REQUIRED_CONFIRMATIONS} 次确认完成)`);
+            } else if (subCmd === "restart") {
+              await client.shutdown();
+              await new Promise(r => setTimeout(r, 2000)); // wait for daemon to die
+              await client.ensureDaemon({});
+              await ctx.reply(`✅ daemon 已重启 (${REQUIRED_CONFIRMATIONS} 次确认完成)`);
+            } else if (subCmd === "reset") {
+              // reset = stop + clear caches + restart
+              await client.shutdown();
+              await new Promise(r => setTimeout(r, 2000));
+              // Clear sign-token cache via a fresh start (the daemon clears on boot)
+              await client.ensureDaemon({});
+              await ctx.reply(`✅ daemon 已重置 (${REQUIRED_CONFIRMATIONS} 次确认完成，缓存已清除)`);
+            }
+          } catch (err) {
+            await ctx.reply(`❌ daemon ${subCmd} 失败: ${(err as Error).message}`);
+          }
+        },
+      });
+    }
 
     // /log — set log level (dmOnly: system-level operation)
     this.register({

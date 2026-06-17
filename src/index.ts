@@ -336,11 +336,22 @@ export class YuanbaoBot {
 
     // Step 1: Build interpolation context (with chat context if provided)
     // Skip interpolation if caller has already resolved ${...} expressions (e.g. batch)
+    //
+    // Safety: in group chats (non-unsafe mode), sanitize interpolation to block
+    // dangerous globals (process, env, require, fetch, etc.). This prevents
+    // group members from extracting server info via ${process.env.HOME} etc.
+    // The bot owner can bypass this by enabling /unsafe mode (5 min window).
+    const isUnsafe = this.commandSystem?.isUnsafeMode() ?? false;
+    const shouldSanitize = isGroup && !isUnsafe;
     const interpolatedText = skipInterpolation
       ? text
-      : interpolate(text, buildMessageContext(
-          contextMsg ? chatContextFromMessage(contextMsg, this.account.botId) : undefined,
-        ));
+      : interpolate(
+          text,
+          buildMessageContext(
+            contextMsg ? chatContextFromMessage(contextMsg, this.account.botId) : undefined,
+          ),
+          { sanitize: shouldSanitize },
+        );
 
     // Step 2: Build @mention msg_body with interleaved TIMCustomElem elements
     // Build nickname resolver for @[昵称]() auto-matching in groups

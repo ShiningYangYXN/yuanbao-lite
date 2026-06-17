@@ -58,9 +58,64 @@ const BUILTIN_GLOBALS: Record<string, unknown> = {
   },
 };
 
-// ─── Escape marker ───
+// ─── Sanitization for non-unsafe contexts ───
 
-const ESCAPE_MARKER = "\x00ESCAPED_DOLLAR_BRACE\x00";
+/**
+ * When interpolating in a group chat (non-unsafe mode), we strip dangerous
+ * globals to prevent abuse. The bot owner can still use full interpolation
+ * by enabling unsafe mode via /unsafe.
+ */
+const SAFE_GLOBALS_FOR_GROUP: Record<string, unknown> = {
+  Date,
+  Math,
+  JSON,
+  parseInt,
+  parseFloat,
+  String,
+  Number,
+  Boolean,
+  Array,
+  Object,
+  Map,
+  Set,
+  RegExp,
+  isNaN,
+  isFinite,
+  encodeURIComponent,
+  decodeURIComponent,
+  encodeURI,
+  decodeURI,
+  // NO process, NO env, NO console — these leak server info
+};
+
+/**
+ * Expressions that are blocked entirely in non-unsafe mode.
+ * Matches even if nested inside other expressions.
+ */
+const DANGEROUS_PATTERNS = [
+  /\bprocess\b/,
+  /\brequire\b/,
+  /\bimport\b/,
+  /\beval\b/,
+  /\bFunction\b/,
+  /\bglobalThis\b/,
+  /\bwindow\b/,
+  /\bdocument\b/,
+  /\bfetch\b/,
+  /\bchild_process\b/,
+  /\bfs\b/,
+  /\bos\b/,
+  /\bpath\b/,
+  /\b__dirname\b/,
+  /\b__filename\b/,
+];
+
+/**
+ * Check if an expression contains dangerous patterns.
+ */
+function isDangerousExpression(expr: string): boolean {
+  return DANGEROUS_PATTERNS.some(p => p.test(expr));
+}
 
 // ─── Main interpolation function ───
 
@@ -72,11 +127,19 @@ const ESCAPE_MARKER = "\x00ESCAPED_DOLLAR_BRACE\x00";
  *   - `${i + 1}`         -> expression evaluation
  *   - `${new Date()}`    -> JavaScript expression
  *   - `${Math.random()}` -> built-in globals
- *   - `${env.HOME}`      -> process.env access
+ *   - `${env.HOME}`      -> process.env access (only in unsafe mode)
  *   - `\${literal}`      -> escaped, outputs `${literal}` literally
+ *
+ * Escape handling: uses JS-native `JSON.parse` for backslash escapes
+ * (e.g. `\n`, `\t`, `\\`, `\"`) rather than a hand-rolled parser.
+ *
+ * Safety: when `sanitize` is true (group chat non-unsafe mode), dangerous
+ * globals (process, env, require, fetch, etc.) are stripped and dangerous
+ * expressions return a placeholder instead of evaluating.
  *
  * @param template - The template string with `${...}` placeholders
  * @param context  - Variables available in the interpolation scope (merged with built-ins)
+ * @param options  - { sanitize?: boolean } — if true, restrict to safe globals
  * @returns The interpolated string
  *
  * @example
@@ -84,21 +147,32 @@ const ESCAPE_MARKER = "\x00ESCAPED_DOLLAR_BRACE\x00";
  * interpolate("Hello ${name}, time is ${new Date().toISOString()}", { name: "world" })
  * interpolate("${i + 1}/${total}", { i: 2, total: 10 })
  * interpolate("\\${not_interpolated}", {})  // -> "${not_interpolated}"
+ * interpolate("${process.env.HOME}", {}, { sanitize: true })  // -> "[blocked]"
  * ```
  */
 export function interpolate(
   template: string,
   context: Record<string, unknown> = {},
+  options: { sanitize?: boolean } = {},
 ): string {
-  // Step 1: Protect escaped \${...} sequences
+  const sanitize = options.sanitize ?? false;
+  const globals = sanitize ? SAFE_GLOBALS_FOR_GROUP : BUILTIN_GLOBALS;
+
+  // Step 1: Protect escaped \${...} sequences using a unique placeholder.
+  // We use a null-byte marker that cannot appear in normal text.
+  const ESCAPE_MARKER = "\x00ESC\x00";
   let processed = template.replace(/\\\$\{/g, ESCAPE_MARKER);
 
-  // Step 2: Process ${...} interpolations
+  // Step 2: Process ${...} interpolations using JS-native `new Function`
   processed = processed.replace(/\$\{([^}]+)\}/g, (_match, expr: string) => {
+    // In sanitize mode, block dangerous expressions entirely
+    if (sanitize && isDangerousExpression(expr)) {
+      return "[blocked]";
+    }
     try {
       // Build a function with context variables as parameters
-      const allKeys = [...Object.keys(BUILTIN_GLOBALS), ...Object.keys(context)];
-      const allValues = [...Object.values(BUILTIN_GLOBALS), ...Object.values(context)];
+      const allKeys = [...Object.keys(globals), ...Object.keys(context)];
+      const allValues = [...Object.values(globals), ...Object.values(context)];
 
       const fn = new Function(...allKeys, `"use strict"; return (${expr});`);
       const result = fn(...allValues);
