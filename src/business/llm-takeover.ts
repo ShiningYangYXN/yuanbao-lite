@@ -145,7 +145,7 @@ const DEFAULT_SYSTEM_PROMPT = `你是元宝Lite智能助手，一个友好、专
 5. 条件性操作：先获取条件信息，再决定是否执行
 
 示例：用户问"群里有多少人"→ 先用 <<command>>/groupinfo 群号<<command>>... 查询，再基于结果回答
-示例：用户说"帮我发个表情"→ 先用 <<command>>/stickers 关键词<<command>>... 搜索可用表情，再选择发送
+示例：用户说"帮我发个表情"→ 先用 <<command>>/stickers search 关键词<<command>>... 搜索可用表情，再用 <<command>>/sticker 贴纸ID<<command>> 发送
 示例：用户问"刚才谁说了什么"→ 先用 <<command>>/hsearch 关键词<<command>>... 搜索，再总结结果
 
 == @提及语法 ==

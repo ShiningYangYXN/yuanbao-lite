@@ -73,6 +73,10 @@ const _ALL_COMMANDS = [
   "/time", "/时间", "/now", "/当前时间",
   "/remind", "/提醒", "/timer",
   "/ip", "/ip查询",
+  "/whois", "/域名查询",
+  "/whoami", "/我是谁", "/我的信息",
+  "/myip", "/服务器ip", "/serverip",
+  "/cron", "/定时任务", "/周期提醒",
   "/exit", "/quit", "/q",
 ];
 

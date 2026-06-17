@@ -81,6 +81,10 @@ const TOP_LEVEL_COMMANDS = [
   { cmd: "/time", aliases: ["/时间", "/now", "/当前时间"] },
   { cmd: "/remind", aliases: ["/提醒", "/timer"] },
   { cmd: "/ip", aliases: ["/ip查询"] },
+  { cmd: "/whois", aliases: ["/域名查询"] },
+  { cmd: "/whoami", aliases: ["/我是谁", "/我的信息"] },
+  { cmd: "/myip", aliases: ["/服务器ip", "/serverip"] },
+  { cmd: "/cron", aliases: ["/定时任务", "/周期提醒"] },
   { cmd: "/exit", aliases: ["/quit", "/q"] },
 ];
 

@@ -657,68 +657,197 @@ export class CommandSystem {
       },
     });
 
-    // /remind <delay> <message> — set a reminder (delay in seconds/minutes/hours)
+    // /remind — persistent one-shot reminders (dmOnly, unlimited time)
     this.register({
       name: "remind",
       aliases: ["提醒", "timer"],
-      description: "设置定时提醒（延迟后发送消息）",
-      usage: "/remind <时间> <消息>   例: /remind 30s 开会, /remind 5m 喝水, /remind 2h 下班",
+      description: "设置定时提醒（支持任意时长、时间点，持久化）",
+      usage: "/remind <时间> <消息>\n/remind list|cancel <ID>\n时间: 30s|5m|2h|1d|1w|1mo|1y|14:30|2026-06-18 14:30|1d2h3m",
       category: "misc" as CommandCategory,
       dmOnly: true,
       handler: async (ctx) => {
-        if (ctx.args.length < 2) {
-          await ctx.reply("用法: /remind <时间> <消息>\n时间格式: 30s (秒), 5m (分钟), 2h (小时), 1d (天)");
+        const { addReminder, removeReminder, listReminders, parseTimeString } = await import("../business/reminders.js");
+        const subCmd = ctx.args[0]?.toLowerCase();
+
+        if (subCmd === "list") {
+          const jobs = listReminders(ctx.message.fromUserId);
+          if (jobs.length === 0) {
+            await ctx.reply("暂无提醒");
+            return;
+          }
+          const lines = jobs.map(j => {
+            const time = new Date(j.fireAt).toLocaleString("zh-CN");
+            return `  ${j.id}: ${time} — "${j.message}"`;
+          });
+          await ctx.reply(`📋 提醒列表 (${jobs.length}):\n${lines.join("\n")}`);
           return;
         }
+
+        if (subCmd === "cancel" && ctx.args[1]) {
+          const ok = removeReminder(ctx.args[1]);
+          await ctx.reply(ok ? `✅ 已取消提醒 ${ctx.args[1]}` : `未找到提醒: ${ctx.args[1]}`);
+          return;
+        }
+
+        if (ctx.args.length < 2) {
+          await ctx.reply(
+            "用法: /remind <时间> <消息>\n" +
+            "时间格式:\n" +
+            "  相对: 30s (秒), 5m (分), 2h (时), 1d (天), 1w (周), 1mo (月), 1y (年)\n" +
+            "  组合: 1d2h3m (1天2小时3分)\n" +
+            "  时间点: 14:30 (今天14:30), 09:00:00\n" +
+            "  完整: 2026-06-18 14:30\n\n" +
+            "管理: /remind list | /remind cancel <ID>",
+          );
+          return;
+        }
+
         const timeStr = ctx.args[0];
         const message = ctx.args.slice(1).join(" ");
-        const match = timeStr.match(/^(\d+)([smhd])$/);
-        if (!match) {
-          await ctx.reply("❌ 时间格式错误。示例: 30s, 5m, 2h, 1d");
+        const parsed = parseTimeString(timeStr);
+        if (parsed.error) {
+          await ctx.reply(`❌ ${parsed.error}`);
           return;
         }
-        const num = parseInt(match[1], 10);
-        const unit = match[2];
-        const multipliers: Record<string, number> = { s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000 };
-        const delayMs = num * multipliers[unit];
-        if (delayMs > 86_400_000 * 7) {
-          await ctx.reply("❌ 提醒时间不能超过 7 天");
-          return;
-        }
-        const target = ctx.isGroup ? ctx.groupCode : ctx.message.fromUserId;
-        const isGroup = ctx.isGroup;
-        const remindAt = Date.now() + delayMs;
-        await ctx.reply(`⏰ 已设置提醒: ${num}${unit} 后发送 "${message}"\n预计时间: ${new Date(remindAt).toLocaleString("zh-CN")}`);
 
-        setTimeout(async () => {
-          try {
-            await ctx.bot.sendText({
-              to: target ?? "",
-              text: `⏰ 提醒: ${message}`,
-              isGroup,
-            });
-          } catch (err) {
-            void err;
-          }
-        }, delayMs);
+        const id = addReminder({
+          type: "remind",
+          userId: ctx.message.fromUserId,
+          message,
+          fireAt: parsed.fireAt,
+          intervalMs: 0,
+        });
+
+        // Schedule the timer
+        const sendFn = async (uid: string, msg: string) => {
+          await ctx.bot.sendDirectMessage(uid, msg);
+        };
+        const { startAllJobs: _s } = await import("../business/reminders.js");
+        // Re-schedule just this job
+        const jobs = listReminders(ctx.message.fromUserId);
+        const job = jobs.find(j => j.id === id);
+        if (job) {
+          // Use the module's internal scheduler by restarting all
+          // (simpler than exposing scheduleJob)
+          _s(sendFn);
+        }
+
+        await ctx.reply(
+          `⏰ 提醒已设置 [${id}]:\n` +
+          `  消息: "${message}"\n` +
+          `  触发: ${new Date(parsed.fireAt).toLocaleString("zh-CN")}\n` +
+          `  (距现在 ${Math.round(parsed.delayMs / 1000)} 秒)\n` +
+          `取消: /remind cancel ${id}`,
+        );
       },
     });
 
-    // /ip <address> — IP address lookup (multi-provider concurrent query)
+    // /cron — persistent recurring scheduled messages (dmOnly)
+    this.register({
+      name: "cron",
+      aliases: ["定时任务", "周期提醒"],
+      description: "设置周期性定时任务（cron表达式，持久化）",
+      usage: "/cron <cron表达式> <消息>\n/cron list|cancel <ID>\n表达式: 分 时 日 月 周\n例如: \"30 9 * * 1-5\" 工作日9:30",
+      category: "misc" as CommandCategory,
+      dmOnly: true,
+      handler: async (ctx) => {
+        const { addReminder, removeReminder, listReminders, parseCronExpression, startAllJobs } = await import("../business/reminders.js");
+        const subCmd = ctx.args[0]?.toLowerCase();
+
+        if (subCmd === "list") {
+          const jobs = listReminders(ctx.message.fromUserId).filter(j => j.type === "cron");
+          if (jobs.length === 0) {
+            await ctx.reply("暂无定时任务");
+            return;
+          }
+          const lines = jobs.map(j => {
+            const next = new Date(j.fireAt).toLocaleString("zh-CN");
+            return `  ${j.id}: ${j.cronExpr} → 下次: ${next}\n    "${j.message}"`;
+          });
+          await ctx.reply(`📋 定时任务 (${jobs.length}):\n${lines.join("\n")}`);
+          return;
+        }
+
+        if (subCmd === "cancel" && ctx.args[1]) {
+          const ok = removeReminder(ctx.args[1]);
+          await ctx.reply(ok ? `✅ 已取消定时任务 ${ctx.args[1]}` : `未找到: ${ctx.args[1]}`);
+          return;
+        }
+
+        if (ctx.args.length < 6) {
+          await ctx.reply(
+            "用法: /cron <cron表达式> <消息>\n" +
+            "cron表达式: 分 时 日 月 周 (5个字段)\n" +
+            "  * — 任意值\n" +
+            "  */N — 每N个单位\n" +
+            "  N-M — 范围\n" +
+            "  N,M — 列表\n\n" +
+            "示例:\n" +
+            "  /cron \"30 9 * * 1-5\" 早安\n" +
+            "  /cron \"0 */2 * * *\" 每2小时\n" +
+            "  /cron \"0 0 1 * *\" 每月1号\n\n" +
+            "管理: /cron list | /cron cancel <ID>",
+          );
+          return;
+        }
+
+        const cronExpr = ctx.args.slice(0, 5).join(" ");
+        const message = ctx.args.slice(5).join(" ");
+        const parsed = parseCronExpression(cronExpr);
+        if (parsed.error) {
+          await ctx.reply(`❌ ${parsed.error}`);
+          return;
+        }
+
+        const nextFire = parsed.getNextFire(Date.now());
+        if (nextFire === 0) {
+          await ctx.reply("❌ 无法计算下次触发时间");
+          return;
+        }
+
+        const id = addReminder({
+          type: "cron",
+          userId: ctx.message.fromUserId,
+          message,
+          fireAt: nextFire,
+          intervalMs: 0,
+          cronExpr,
+        });
+
+        // Restart scheduler to pick up the new job
+        const sendFn = async (uid: string, msg: string) => {
+          await ctx.bot.sendDirectMessage(uid, msg);
+        };
+        startAllJobs(sendFn);
+
+        await ctx.reply(
+          `🔄 定时任务已设置 [${id}]:\n` +
+          `  表达式: ${cronExpr}\n` +
+          `  消息: "${message}"\n` +
+          `  下次触发: ${new Date(nextFire).toLocaleString("zh-CN")}\n` +
+          `取消: /cron cancel ${id}`,
+        );
+      },
+    });
+
+    // /ip <address> — IP address lookup (multi-provider concurrent, IPv4+IPv6)
     this.register({
       name: "ip",
       aliases: ["ip查询"],
-      description: "查询 IP 地址的地理位置信息（多服务商并发）",
-      usage: "/ip <IP地址>   例: /ip 8.8.8.8",
+      description: "查询 IP 地址的地理位置信息（多服务商并发，支持 IPv4/IPv6）",
+      usage: "/ip <IP地址>   例: /ip 8.8.8.8, /ip 2001:4860:4860::8888",
       category: "misc" as CommandCategory,
       handler: async (ctx) => {
         if (ctx.args.length === 0) {
-          await ctx.reply("用法: /ip <IP地址>");
+          await ctx.reply("用法: /ip <IP地址> (支持 IPv4 和 IPv6)");
           return;
         }
         const ip = ctx.args[0];
-        if (!/^(\d{1,3}\.){3}\d{1,3}$/.test(ip)) {
-          await ctx.reply("❌ 无效 IPv4 地址");
+        // Validate IPv4 or IPv6
+        const isIPv4 = /^(\d{1,3}\.){3}\d{1,3}$/.test(ip);
+        const isIPv6 = /^[0-9a-fA-F:]+$/.test(ip) && ip.includes(":");
+        if (!isIPv4 && !isIPv6) {
+          await ctx.reply("❌ 无效 IP 地址 (支持 IPv4 如 8.8.8.8 或 IPv6 如 2001:4860:4860::8888)");
           return;
         }
 
@@ -728,20 +857,20 @@ export class CommandSystem {
           region?: string;
           city?: string;
           org?: string;
+          as?: string;
           timezone?: string;
           latitude?: number | string;
           longitude?: number | string;
           error?: string;
         };
 
-        // Query multiple providers concurrently, take the fastest successful one
         const providers: Array<() => Promise<IpResult>> = [
-          // ip-api.com (no API key required, 45 req/min)
+          // ip-api.com (supports IPv6, no API key, 45 req/min)
           async () => {
             const controller = new AbortController();
             const timer = setTimeout(() => controller.abort(), 5000);
             try {
-              const resp = await fetch(`http://ip-api.com/json/${ip}?lang=zh-CN&fields=status,country,regionName,city,isp,timezone,lat,lon`, { signal: controller.signal });
+              const resp = await fetch(`http://ip-api.com/json/${encodeURIComponent(ip)}?lang=zh-CN&fields=status,message,country,regionName,city,isp,as,timezone,lat,lon`, { signal: controller.signal });
               clearTimeout(timer);
               if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
               const d = await resp.json() as Record<string, unknown>;
@@ -752,6 +881,7 @@ export class CommandSystem {
                 region: String(d.regionName ?? ""),
                 city: String(d.city ?? ""),
                 org: String(d.isp ?? ""),
+                as: String(d.as ?? ""),
                 timezone: String(d.timezone ?? ""),
                 latitude: d.lat as number,
                 longitude: d.lon as number,
@@ -761,12 +891,12 @@ export class CommandSystem {
               return { provider: "ip-api.com", error: (err as Error).message };
             }
           },
-          // ipapi.co
+          // ipapi.co (supports IPv6)
           async () => {
             const controller = new AbortController();
             const timer = setTimeout(() => controller.abort(), 5000);
             try {
-              const resp = await fetch(`https://ipapi.co/${ip}/json/`, { signal: controller.signal });
+              const resp = await fetch(`https://ipapi.co/${encodeURIComponent(ip)}/json/`, { signal: controller.signal });
               clearTimeout(timer);
               if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
               const d = await resp.json() as Record<string, unknown>;
@@ -777,6 +907,7 @@ export class CommandSystem {
                 region: String(d.region ?? ""),
                 city: String(d.city ?? ""),
                 org: String(d.org ?? ""),
+                as: String(d.asn ?? ""),
                 timezone: String(d.timezone ?? ""),
                 latitude: d.latitude as number,
                 longitude: d.longitude as number,
@@ -786,12 +917,12 @@ export class CommandSystem {
               return { provider: "ipapi.co", error: (err as Error).message };
             }
           },
-          // ipinfo.io
+          // ipinfo.io (supports IPv6)
           async () => {
             const controller = new AbortController();
             const timer = setTimeout(() => controller.abort(), 5000);
             try {
-              const resp = await fetch(`https://ipinfo.io/${ip}/json`, { signal: controller.signal });
+              const resp = await fetch(`https://ipinfo.io/${encodeURIComponent(ip)}/json`, { signal: controller.signal });
               clearTimeout(timer);
               if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
               const d = await resp.json() as Record<string, unknown>;
@@ -803,6 +934,7 @@ export class CommandSystem {
                 region: String(d.region ?? ""),
                 city: String(d.city ?? ""),
                 org: String(d.org ?? ""),
+                as: "",
                 timezone: String(d.timezone ?? ""),
                 latitude: lat,
                 longitude: lon,
@@ -814,7 +946,6 @@ export class CommandSystem {
           },
         ];
 
-        // Run all providers concurrently and take the first successful result
         const results = await Promise.all(providers.map(p => p()));
         const success = results.find(r => !r.error);
 
@@ -825,13 +956,195 @@ export class CommandSystem {
         }
 
         const lines = [
-          `🌐 IP: ${ip}  (数据源: ${success.provider})`,
+          `🌐 IP: ${ip} (${isIPv6 ? "IPv6" : "IPv4"})  数据源: ${success.provider}`,
           `  位置: ${success.country ?? "?"} ${success.region ?? ""} ${success.city ?? ""}`.trim(),
           `  运营商: ${success.org || "(未知)"}`,
+          ...(success.as ? [`  AS: ${success.as}`] : []),
           `  时区: ${success.timezone || "(未知)"}`,
           `  经纬度: ${success.latitude ?? "?"}, ${success.longitude ?? "?"}`,
         ];
         await ctx.reply(lines.join("\n"));
+      },
+    });
+
+    // /whois <domain> — whois lookup
+    this.register({
+      name: "whois",
+      aliases: ["域名查询"],
+      description: "查询域名 whois 信息",
+      usage: "/whois <域名>   例: /whois example.com",
+      category: "misc" as CommandCategory,
+      handler: async (ctx) => {
+        if (ctx.args.length === 0) {
+          await ctx.reply("用法: /whois <域名>");
+          return;
+        }
+        const domain = ctx.args[0].toLowerCase();
+        if (!/^[a-z0-9.-]+\.[a-z]{2,}$/.test(domain)) {
+          await ctx.reply("❌ 无效域名");
+          return;
+        }
+        try {
+          // Use RDAP (Registration Data Access Protocol) — modern whois
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 10000);
+          const resp = await fetch(`https://rdap.org/domain/${encodeURIComponent(domain)}`, {
+            signal: controller.signal,
+            headers: { Accept: "application/rdap+json" },
+          });
+          clearTimeout(timer);
+
+          if (!resp.ok) {
+            if (resp.status === 404) {
+              await ctx.reply(`❌ 域名 ${domain} 未找到 whois 记录`);
+              return;
+            }
+            throw new Error(`HTTP ${resp.status}`);
+          }
+
+          const data = await resp.json() as Record<string, unknown>;
+          const events = (data.events ?? []) as Array<{ eventAction: string; eventDate: string }>;
+          const status = (data.status ?? []) as string[];
+          const entities = (data.entities ?? []) as Array<{ roles?: string[]; vcardArray?: unknown[] }>;
+
+          // Extract registrar
+          let registrar = "(未知)";
+          for (const e of entities) {
+            if (e.roles?.includes("registrar")) {
+              const vcard = e.vcardArray?.[1] as Array<unknown>[] | undefined;
+              if (vcard) {
+                for (const item of vcard) {
+                  if (Array.isArray(item) && item[0] === "fn" && typeof item[3] === "string") {
+                    registrar = item[3];
+                    break;
+                  }
+                }
+              }
+            }
+          }
+
+          const registration = events.find(e => e.eventAction === "registration");
+          const expiration = events.find(e => e.eventAction === "expiration");
+          const lastChanged = events.find(e => e.eventAction === "last changed");
+
+          const lines = [
+            `📋 WHOIS: ${domain}`,
+            `  注册商: ${registrar}`,
+            ...(registration ? [`  注册时间: ${new Date(registration.eventDate).toLocaleString("zh-CN")}`] : []),
+            ...(expiration ? [`  到期时间: ${new Date(expiration.eventDate).toLocaleString("zh-CN")}`] : []),
+            ...(lastChanged ? [`  最后更新: ${new Date(lastChanged.eventDate).toLocaleString("zh-CN")}`] : []),
+            ...(status.length > 0 ? [`  状态: ${status.slice(0, 3).join(", ")}${status.length > 3 ? ` (+${status.length - 3})` : ""}`] : []),
+          ];
+          await ctx.reply(lines.join("\n"));
+        } catch (err) {
+          await ctx.reply(`❌ WHOIS 查询失败: ${(err as Error).message}`);
+        }
+      },
+    });
+
+    // /whoami — show sender's own info
+    this.register({
+      name: "whoami",
+      aliases: ["我是谁", "我的信息"],
+      description: "查看当前发送者的信息（用户ID、昵称、聊天类型等）",
+      usage: "/whoami",
+      category: "misc" as CommandCategory,
+      handler: async (ctx) => {
+        const msg = ctx.message;
+        let trusted = false;
+        try {
+          const { isTrusted } = await import("../business/trust.js");
+          trusted = isTrusted(msg.fromUserId);
+        } catch { /* ignore */ }
+
+        const lines = [
+          `👤 你的信息:`,
+          `  用户ID: ${msg.fromUserId}`,
+          `  昵称: ${msg.fromNickname || "(未知)"}`,
+          `  聊天类型: ${msg.chatType === "group" ? "群聊" : "私聊"}`,
+          ...(msg.chatType === "group" ? [
+            `  群号: ${msg.groupCode || "(未知)"}`,
+            `  群名: ${msg.groupName || "(未知)"}`,
+          ] : []),
+          `  是否受信: ${trusted ? "✅ 是" : "❌ 否"}`,
+          ...(trusted ? [`  (可使用 /unsafe on 开启危险模式)`] : []),
+        ];
+        await ctx.reply(lines.join("\n"));
+      },
+    });
+
+    // /myip — server IP info (dmOnly, dual-stack, AS + region)
+    this.register({
+      name: "myip",
+      aliases: ["服务器ip", "serverip"],
+      description: "查看服务器 IP 信息（双栈，含 AS 和地区）",
+      usage: "/myip",
+      category: "system" as CommandCategory,
+      dmOnly: true,
+      handler: async (ctx) => {
+        try {
+          // Fetch both IPv4 and IPv6 concurrently
+          const [ipv4Result, ipv6Result] = await Promise.allSettled([
+            fetch("https://api.ipify.org?format=json").then(r => r.json() as Promise<{ ip: string }>),
+            fetch("https://api64.ipify.org?format=json").then(r => r.json() as Promise<{ ip: string }>),
+          ]);
+
+          const lines = ["🖥️ 服务器 IP 信息:"];
+
+          if (ipv4Result.status === "fulfilled") {
+            const ip4 = ipv4Result.value.ip;
+            lines.push(`  IPv4: ${ip4}`);
+            // Try to get geo info
+            try {
+              const geoResp = await fetch(`http://ip-api.com/json/${ip4}?lang=zh-CN&fields=country,regionName,city,isp,as,timezone`, { signal: AbortSignal.timeout(5000) });
+              if (geoResp.ok) {
+                const geo = await geoResp.json() as Record<string, string>;
+                lines.push(`    地区: ${geo.country ?? "?"} ${geo.regionName ?? ""} ${geo.city ?? ""}`.trim());
+                lines.push(`    ISP: ${geo.isp || "(未知)"}`);
+                lines.push(`    AS: ${geo.as || "(未知)"}`);
+                lines.push(`    时区: ${geo.timezone || "(未知)"}`);
+              }
+            } catch { /* geo lookup optional */ }
+          } else {
+            lines.push("  IPv4: (获取失败)");
+          }
+
+          if (ipv6Result.status === "fulfilled") {
+            const ip6 = ipv6Result.value.ip;
+            const isV6 = ip6.includes(":");
+            if (isV6) {
+              lines.push(`  IPv6: ${ip6}`);
+            } else {
+              lines.push(`  IPv6: (无 IPv6 连接，回退到 IPv4)`);
+            }
+          } else {
+            lines.push("  IPv6: (获取失败)");
+          }
+
+          // Also check local interfaces
+          try {
+            const { networkInterfaces } = await import("node:os");
+            const nets = networkInterfaces();
+            const localV4: string[] = [];
+            const localV6: string[] = [];
+            for (const [, addrs] of Object.entries(nets)) {
+              if (!addrs) continue;
+              for (const addr of addrs) {
+                if (addr.family === "IPv4" && !addr.internal) localV4.push(addr.address);
+                else if (addr.family === "IPv6" && !addr.internal) localV6.push(addr.address);
+              }
+            }
+            if (localV4.length > 0 || localV6.length > 0) {
+              lines.push("", "本地接口:");
+              if (localV4.length > 0) lines.push(`  本地 IPv4: ${localV4.join(", ")}`);
+              if (localV6.length > 0) lines.push(`  本地 IPv6: ${localV6.join(", ")}`);
+            }
+          } catch { /* ignore */ }
+
+          await ctx.reply(lines.join("\n"));
+        } catch (err) {
+          await ctx.reply(`❌ 获取服务器 IP 失败: ${(err as Error).message}`);
+        }
       },
     });
 
@@ -851,8 +1164,7 @@ export class CommandSystem {
     });
 
     // /unsafe — temporarily allow dmOnly commands in group chat
-    // Trusted users (incl. master) can use this in DM or group.
-    // Non-trusted users get a "contact master" message.
+    // /unsafe status is globally open; on/off require trust + dmOnly
     this.register({
       name: "unsafe",
       aliases: ["危险模式"],
@@ -860,7 +1172,19 @@ export class CommandSystem {
       usage: "/unsafe [on|off|status] [分钟数]   (默认5分钟)",
       category: "system" as CommandCategory,
       handler: async (ctx) => {
-        // Check trust — only trusted users can enable unsafe mode
+        const subCmd = ctx.args[0]?.toLowerCase();
+
+        // /unsafe status is globally open — no trust check, no dmOnly
+        if (subCmd === "status") {
+          if (this.isUnsafeMode()) {
+            await ctx.reply("🔓 危险模式: 已开启（dmOnly命令可在群聊使用）");
+          } else {
+            await ctx.reply("🔒 危险模式: 已关闭（dmOnly命令仅限私聊）");
+          }
+          return;
+        }
+
+        // on/off require trust check
         let trusted: boolean;
         try {
           const { isTrusted } = await import("../business/trust.js");
@@ -877,9 +1201,9 @@ export class CommandSystem {
           return;
         }
 
-        const subCmd = ctx.args[0]?.toLowerCase();
+        const subCmd2 = ctx.args[0]?.toLowerCase();
 
-        if (!subCmd || subCmd === "on") {
+        if (!subCmd2 || subCmd2 === "on") {
           // Default: 5 minutes
           const minutes = parseInt(ctx.args[1], 10);
           const durationMs = (isNaN(minutes) || minutes <= 0) ? 5 * 60 * 1000 : minutes * 60 * 1000;
@@ -892,33 +1216,47 @@ export class CommandSystem {
             `  关闭: /unsafe off\n` +
             `⚠️ 请注意安全，用完及时关闭`
           );
-        } else if (subCmd === "off") {
+        } else if (subCmd2 === "off") {
           this.disableUnsafeMode();
           await ctx.reply("🔒 危险模式已关闭，dmOnly限制已恢复");
-        } else if (subCmd === "status") {
-          if (this.isUnsafeMode()) {
-            await ctx.reply("🔓 危险模式: 已开启（dmOnly命令可在群聊使用）");
-          } else {
-            await ctx.reply("🔒 危险模式: 已关闭（dmOnly命令仅限私聊）");
-          }
         } else {
           await ctx.reply("用法: /unsafe [on|off|status] [分钟数]\n  /unsafe       — 开启5分钟\n  /unsafe 10    — 开启10分钟\n  /unsafe off   — 关闭\n  /unsafe status — 查看状态");
         }
       },
     });
 
-    // /trust — manage trusted users (dmOnly: only master/trusted can manage)
+    // /trust — manage trusted users
+    // /trust status is globally open; list/add/remove require dmOnly
     this.register({
       name: "trust",
       aliases: ["信任", "受信"],
       description: "管理受信用户列表（主人自动受信，不可移除）",
       usage: "/trust [list|add <ID> [昵称]|remove <ID>|status]",
       category: "system" as CommandCategory,
-      dmOnly: true,
       handler: async (ctx) => {
         const { isTrusted, addTrust, removeTrust, listTrust, getMasterUserId } = await import("../business/trust.js");
         const subCmd = ctx.args[0]?.toLowerCase();
         const userId = ctx.message.fromUserId;
+
+        // /trust status is globally open — anyone can check their own status
+        if (subCmd === "status") {
+          const trusted = isTrusted(userId);
+          const master = getMasterUserId();
+          await ctx.reply(
+            `📊 信任状态:\n` +
+            `  你的ID: ${userId}\n` +
+            `  是否受信: ${trusted ? "是" : "否"}\n` +
+            `  是否主人: ${userId === master ? "是" : "否"}\n` +
+            `  主人ID: ${master ?? "(未设置)"}`,
+          );
+          return;
+        }
+
+        // list/add/remove require dmOnly (system management operations)
+        if (ctx.message.chatType === "group") {
+          await ctx.reply("⚠️ 此操作仅限私聊使用。请私聊机器人发送此命令。");
+          return;
+        }
 
         // Only trusted users can manage trust (master always can)
         if (!isTrusted(userId)) {
