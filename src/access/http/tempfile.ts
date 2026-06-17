@@ -446,7 +446,7 @@ export async function uploadAndFormatLink(
   const sizeStr = formatSize(result.fileSize);
   const expireStr = result.expireInfo ? ` [${result.expireInfo}]` : "";
 
-  let link = result.directUrl || result.pageUrl;
+  const link = result.directUrl || result.pageUrl;
 
   return `文件分享${desc}: ${result.fileName} [${sizeStr}]${expireStr}\n链接: ${link}`;
 }

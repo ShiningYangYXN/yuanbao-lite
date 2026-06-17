@@ -62,7 +62,11 @@ import {
   markdownToImText,
   createLlmTakeover,
 } from "../business/llm-takeover.js";
-import type { LlmTakeoverConfig, TakeoverResult, LlmProviderType } from "../business/llm-takeover.js";
+import type {
+  LlmTakeoverConfig,
+  TakeoverResult,
+  LlmProviderType,
+} from "../business/llm-takeover.js";
 import { AliasStore, getGlobalAliasStore } from "../business/alias.js";
 import type { AliasEntry } from "../business/alias.js";
 import { ContactStore } from "../business/contacts.js";
@@ -71,16 +75,34 @@ import { GroupStore } from "../business/groups.js";
 import type { GroupEntry } from "../business/groups.js";
 import { parseMentions, buildMentionMsgBody } from "../business/mention.js";
 import type { ParsedMentions } from "../business/mention.js";
-import { MessageHistoryStore, getGlobalHistoryStore, formatHistoryMessage, formatHistoryList } from "../business/history.js";
-import type { HistoryFilter, HistoryFormatOptions } from "../business/history.js";
-import { BatchRunner, startBatch, cancelBatch, cleanupBatch, getActiveBatch, interpolateTemplate } from "../business/batch.js";
+import {
+  MessageHistoryStore,
+  getGlobalHistoryStore,
+  formatHistoryMessage,
+  formatHistoryList,
+} from "../business/history.js";
+import type {
+  HistoryFilter,
+  HistoryFormatOptions,
+} from "../business/history.js";
+import {
+  BatchRunner,
+  startBatch,
+  cancelBatch,
+  cleanupBatch,
+  getActiveBatch,
+  interpolateTemplate,
+} from "../business/batch.js";
 import type { BatchConfig } from "../business/batch.js";
 import { MultiAccountManager } from "../business/multi-account.js";
 import type { AccountEntry } from "../business/multi-account.js";
 import { SearchEngine } from "../business/search.js";
 import { createLog, setLogLevel } from "../logger.js";
 import { ConfigStore, getGlobalConfigStore, normalizeDir } from "./config.js";
-import { generateColoredHelp, generatePlainHelp } from "../commands/help-text.js";
+import {
+  generateColoredHelp,
+  generatePlainHelp,
+} from "../commands/help-text.js";
 import { buildProgram } from "./non-interactive.js";
 
 // ─── Types ───
@@ -171,14 +193,21 @@ export class InteractiveCli {
       if (profile.appKey) config.appKey = profile.appKey;
       if (profile.appSecret) config.appSecret = profile.appSecret;
       if (profile.token) config.token = profile.token;
-      if (profile.apiDomain && !config.apiDomain) config.apiDomain = profile.apiDomain;
+      if (profile.apiDomain && !config.apiDomain)
+        config.apiDomain = profile.apiDomain;
       if (profile.wsUrl && !config.wsUrl) config.wsUrl = profile.wsUrl;
-      if (profile.logLevel && !config.logLevel) config.logLevel = profile.logLevel;
-      if (profile.stickerDir && !config.stickerDir) config.stickerDir = profile.stickerDir;
-      if (profile.downloadDir && !config.downloadDir) config.downloadDir = profile.downloadDir;
-      if (profile.llmProvider && !config.llmProvider) config.llmProvider = profile.llmProvider;
-      if (profile.llmApiKey && !config.llmApiKey) config.llmApiKey = profile.llmApiKey;
-      if (profile.llmBaseUrl && !config.llmBaseUrl) config.llmBaseUrl = profile.llmBaseUrl;
+      if (profile.logLevel && !config.logLevel)
+        config.logLevel = profile.logLevel;
+      if (profile.stickerDir && !config.stickerDir)
+        config.stickerDir = profile.stickerDir;
+      if (profile.downloadDir && !config.downloadDir)
+        config.downloadDir = profile.downloadDir;
+      if (profile.llmProvider && !config.llmProvider)
+        config.llmProvider = profile.llmProvider;
+      if (profile.llmApiKey && !config.llmApiKey)
+        config.llmApiKey = profile.llmApiKey;
+      if (profile.llmBaseUrl && !config.llmBaseUrl)
+        config.llmBaseUrl = profile.llmBaseUrl;
     }
 
     this.config = config;
@@ -205,7 +234,8 @@ export class InteractiveCli {
     };
 
     this.bot = new YuanbaoBot(botConfig);
-    this.commands = this.bot.getCommandSystem() || new CommandSystem({ prefix: "/" });
+    this.commands =
+      this.bot.getCommandSystem() || new CommandSystem({ prefix: "/" });
 
     // Initialize group store reference
     this.groupStore = this.bot.getGroupStore();
@@ -296,16 +326,24 @@ export class InteractiveCli {
     this.bot.on("directMessage", (msg: ChatMessage) => {
       // Show in current chat or as notification
       if (this.chatMode === "dm" && this.chatTarget === msg.fromUserId) {
-        this.printMessage(msg.fromNickname || msg.fromUserId, msg.text, "dm-in");
+        this.printMessage(
+          msg.fromNickname || msg.fromUserId,
+          msg.text,
+          "dm-in",
+        );
       } else {
-        this.printNotification(`[私聊] ${msg.fromNickname || msg.fromUserId}: ${msg.text}`);
+        this.printNotification(
+          `[私聊] ${msg.fromNickname || msg.fromUserId}: ${msg.text}`,
+        );
       }
 
       // Check for sticker
       if (msg.rawBody) {
         const sticker = detectSticker(msg.rawBody);
         if (sticker) {
-          this.printSystem(`  🎨 贴纸: [${sticker.type}] ${sticker.name}${sticker.source ? ` (${sticker.source.substring(0, 60)}...)` : ""}`);
+          this.printSystem(
+            `  🎨 贴纸: [${sticker.type}] ${sticker.name}${sticker.source ? ` (${sticker.source.substring(0, 60)}...)` : ""}`,
+          );
         }
       }
 
@@ -374,7 +412,9 @@ export class InteractiveCli {
     try {
       const result = await this.llmEngine.handleMessage(this.bot, msg);
       if (result.handled && result.response) {
-        this.printSystem(`🤖 LLM已回复: ${result.response.processedText.substring(0, 60)}... (${result.response.chunkCount}段)`);
+        this.printSystem(
+          `🤖 LLM已回复: ${result.response.processedText.substring(0, 60)}... (${result.response.chunkCount}段)`,
+        );
       }
     } catch (err) {
       this.printSystem(`❌ LLM回复失败: ${(err as Error).message}`);
@@ -399,7 +439,6 @@ export class InteractiveCli {
       }
       // Append to buffer
       this.multilineBuffer += "\n" + trimmed;
-      this.rl?.prompt();
       return;
     }
 
@@ -408,7 +447,6 @@ export class InteractiveCli {
       this.isInMultiline = true;
       this.multilineBuffer = trimmed.slice(0, -1); // Remove trailing backslash
       this.refreshPrompt();
-      this.rl?.prompt();
       return;
     }
 
@@ -436,7 +474,7 @@ export class InteractiveCli {
     // If in chat mode and not a command, send as message
     if (!trimmed.startsWith("/") && this.chatMode !== "none") {
       await this.sendChatMessage(trimmed);
-      this.rl?.prompt();
+      // sendChatMessage already calls rl.prompt() via printMessage
       return;
     }
 
@@ -453,7 +491,6 @@ export class InteractiveCli {
         case "/?": {
           if (args.length === 0) {
             // Brief help: categorized command list from CommandSystem
-            // Print a newline before help to separate from echoed command
             process.stdout.write("\n");
             const visible = this.commands.getVisibleCommands();
             if (visible.length === 0) {
@@ -463,7 +500,6 @@ export class InteractiveCli {
                 prefix: this.commands["config"]?.prefix ?? "/",
                 footer: this.commands["config"]?.helpFooter,
               }));
-              // Put prompt on a new line after help output
               this.rl?.prompt();
             }
           } else {
@@ -478,9 +514,9 @@ export class InteractiveCli {
             };
             const cliReply = async (text: string) => {
               console.log(`\n${text}\n`);
+              this.rl?.prompt();
             };
             await this.commands.dispatch(this.bot, chatMsg, cliReply);
-            this.rl?.prompt();
           }
           break;
         }
@@ -501,11 +537,15 @@ export class InteractiveCli {
                 unreadCount: 0,
               });
             }
-            this.printSystem(`进入群聊模式: ${this.chatTarget} (直接输入文字发送, /chat 退出)`);
+            this.printSystem(
+              `进入群聊模式: ${this.chatTarget} (直接输入文字发送, /chat 退出)`,
+            );
           } else {
             this.chatMode = "dm";
             this.chatTarget = args[0];
-            this.printSystem(`进入私聊模式: ${this.chatTarget} (直接输入文字发送, /chat 退出)`);
+            this.printSystem(
+              `进入私聊模式: ${this.chatTarget} (直接输入文字发送, /chat 退出)`,
+            );
           }
           this.refreshPrompt();
           break;
@@ -541,7 +581,6 @@ export class InteractiveCli {
           };
           await this.commands.dispatch(this.bot, chatMsg, cliReply);
           this.printSystem(`加入群聊: ${joinCode} (直接输入文字发送)`);
-          this.rl?.prompt();
           break;
         }
 
@@ -554,14 +593,18 @@ export class InteractiveCli {
           const idx = parseInt(args[0], 10) - 1;
           const groupList = [...this.groupSessions.values()];
           if (idx < 0 || idx >= groupList.length) {
-            this.printSystem(`无效编号: ${args[0]} (共 ${groupList.length} 个群组)`);
+            this.printSystem(
+              `无效编号: ${args[0]} (共 ${groupList.length} 个群组)`,
+            );
             break;
           }
           const target = groupList[idx];
           this.chatMode = "group";
           this.chatTarget = target.groupCode;
           target.unreadCount = 0;
-          this.printSystem(`切换到群聊: ${target.groupName || target.groupCode}`);
+          this.printSystem(
+            `切换到群聊: ${target.groupName || target.groupCode}`,
+          );
           this.refreshPrompt();
           break;
         }
@@ -585,20 +628,23 @@ export class InteractiveCli {
           // Use onReply to print command output to terminal instead of sending IM
           const cliReply = async (text: string) => {
             console.log(`\n${text}\n`);
+            this.rl?.prompt();
           };
-          const result = await this.commands.dispatch(this.bot, chatMsg, cliReply);
+          const result = await this.commands.dispatch(
+            this.bot,
+            chatMsg,
+            cliReply,
+          );
           if (!result.handled) {
             this.printSystem(`未知命令: ${cmd}。输入 /help 查看帮助`);
           }
-          this.rl?.prompt();
+          // Prompt already shown by cliReply or printSystem above
           break;
         }
       }
     } catch (err) {
       this.printSystem(`❌ 命令执行失败: ${(err as Error).message}`);
     }
-
-    this.rl?.prompt();
   }
 
   // ─── Group list handler ───
@@ -608,12 +654,14 @@ export class InteractiveCli {
     const groups = [...this.groupSessions.values()];
 
     if (groups.length === 0 && this.groupStore.size === 0) {
-      this.printSystem("暂无群组会话。发送 /join <群号> 加入群聊，或 /groups add <群号> 添加收藏");
+      this.printSystem(
+        "暂无群组会话。发送 /join <群号> 加入群聊，或 /groups add <群号> 添加收藏",
+      );
       return;
     }
 
     // Also include groups from the store that aren't in sessions
-    const allGroupCodes = new Set(groups.map(g => g.groupCode));
+    const allGroupCodes = new Set(groups.map((g) => g.groupCode));
     const storeGroups = this.groupStore.getAll("lastActive");
     for (const g of storeGroups) {
       if (!allGroupCodes.has(g.groupCode)) {
@@ -632,12 +680,17 @@ export class InteractiveCli {
     groups.sort((a, b) => (b.lastActiveAt || 0) - (a.lastActiveAt || 0));
 
     this.printSystem("\n📋 群组列表:");
-    this.printSystem("  编号  群号               名称/备注           未读  收藏  最后活跃");
-    this.printSystem("  ──── ────────────────── ────────────────── ──── ──── ──────────");
+    this.printSystem(
+      "  编号  群号               名称/备注           未读  收藏  最后活跃",
+    );
+    this.printSystem(
+      "  ──── ────────────────── ────────────────── ──── ──── ──────────",
+    );
 
     for (let i = 0; i < groups.length; i++) {
       const g = groups[i];
-      const active = this.chatMode === "group" && this.chatTarget === g.groupCode;
+      const active =
+        this.chatMode === "group" && this.chatTarget === g.groupCode;
       const marker = active ? "→" : " ";
       const storeEntry = this.groupStore.get(g.groupCode);
       const displayName = storeEntry?.name || g.groupName || "未知";
@@ -649,7 +702,9 @@ export class InteractiveCli {
         ? new Date(g.lastActiveAt).toLocaleTimeString("zh-CN")
         : "未知";
 
-      this.printSystem(`  ${marker}${String(i + 1).padStart(2)}  ${code} ${name} ${unread} ${favIcon} ${lastActive}`);
+      this.printSystem(
+        `  ${marker}${String(i + 1).padStart(2)}  ${code} ${name} ${unread} ${favIcon} ${lastActive}`,
+      );
       if (storeEntry?.notes) {
         this.printSystem(`      备注: ${storeEntry.notes.substring(0, 60)}`);
       }
@@ -676,7 +731,9 @@ export class InteractiveCli {
         const alias = args[2];
         const nickname = args.slice(3).join(" ") || undefined;
         store.add(id, alias, nickname);
-        this.printSystem(`✅ 别名已添加: ${alias} -> ${id}${nickname ? ` (昵称: ${nickname})` : ""}`);
+        this.printSystem(
+          `✅ 别名已添加: ${alias} -> ${id}${nickname ? ` (昵称: ${nickname})` : ""}`,
+        );
         break;
       }
       case "remove":
@@ -699,7 +756,9 @@ export class InteractiveCli {
         }
         this.printSystem("\n📋 别名列表:");
         for (const e of all) {
-          this.printSystem(`  ${e.alias} -> ${e.id}${e.nickname ? ` (${e.nickname})` : ""}`);
+          this.printSystem(
+            `  ${e.alias} -> ${e.id}${e.nickname ? ` (${e.nickname})` : ""}`,
+          );
         }
         break;
       }
@@ -720,11 +779,15 @@ export class InteractiveCli {
         }
         const resolved = store.resolve(args[1]);
         const nick = store.getNickname(args[1]);
-        this.printSystem(`解析结果: ${resolved}${nick ? ` (昵称: ${nick})` : ""}`);
+        this.printSystem(
+          `解析结果: ${resolved}${nick ? ` (昵称: ${nick})` : ""}`,
+        );
         break;
       }
       default:
-        this.printSystem("用法: /alias <add|remove|list|save|load|resolve> [参数]");
+        this.printSystem(
+          "用法: /alias <add|remove|list|save|load|resolve> [参数]",
+        );
     }
   }
 
@@ -744,7 +807,9 @@ export class InteractiveCli {
         const name = args[2];
         const tag = args.slice(3).join(" ") || undefined;
         const entry = store.add(groupCode, name, tag);
-        this.printSystem(`✅ 群聊已收藏: ${groupCode}${entry.name ? ` (${entry.name})` : ""}${tag ? ` [${tag}]` : ""}`);
+        this.printSystem(
+          `✅ 群聊已收藏: ${groupCode}${entry.name ? ` (${entry.name})` : ""}${tag ? ` [${tag}]` : ""}`,
+        );
         // Also create a session if not exists
         if (!this.groupSessions.has(groupCode)) {
           this.groupSessions.set(groupCode, {
@@ -764,7 +829,11 @@ export class InteractiveCli {
           return;
         }
         const removed = store.remove(args[1]);
-        this.printSystem(removed ? `✅ 群聊已从收藏移除: ${args[1]}` : `未找到群聊: ${args[1]}`);
+        this.printSystem(
+          removed
+            ? `✅ 群聊已从收藏移除: ${args[1]}`
+            : `未找到群聊: ${args[1]}`,
+        );
         break;
       }
       case "rename": {
@@ -773,7 +842,11 @@ export class InteractiveCli {
           return;
         }
         const ok = store.rename(args[1], args.slice(2).join(" "));
-        this.printSystem(ok ? `✅ 群聊已重命名为: ${args.slice(2).join(" ")}` : `未找到群聊: ${args[1]}`);
+        this.printSystem(
+          ok
+            ? `✅ 群聊已重命名为: ${args.slice(2).join(" ")}`
+            : `未找到群聊: ${args[1]}`,
+        );
         break;
       }
       case "note":
@@ -787,7 +860,9 @@ export class InteractiveCli {
           store.add(args[1]);
         }
         const ok = store.setNotes(args[1], args.slice(2).join(" "));
-        this.printSystem(ok ? "✅ 群聊备注已更新" : `❌ 设置备注失败: ${args[1]}`);
+        this.printSystem(
+          ok ? "✅ 群聊备注已更新" : `❌ 设置备注失败: ${args[1]}`,
+        );
         break;
       }
       case "tag": {
@@ -799,7 +874,9 @@ export class InteractiveCli {
           store.add(args[1]);
         }
         const ok = store.setTag(args[1], args.slice(2).join(" "));
-        this.printSystem(ok ? "✅ 群聊标签已更新" : `❌ 设置标签失败: ${args[1]}`);
+        this.printSystem(
+          ok ? "✅ 群聊标签已更新" : `❌ 设置标签失败: ${args[1]}`,
+        );
         break;
       }
       case "fav":
@@ -814,7 +891,11 @@ export class InteractiveCli {
         }
         const ok = store.toggleFavorite(args[1]);
         const entry = store.get(args[1]);
-        this.printSystem(ok ? `✅ ${entry?.favorite ? "已收藏" : "已取消收藏"}: ${args[1]}` : `未找到群聊: ${args[1]}`);
+        this.printSystem(
+          ok
+            ? `✅ ${entry?.favorite ? "已收藏" : "已取消收藏"}: ${args[1]}`
+            : `未找到群聊: ${args[1]}`,
+        );
         break;
       }
       case "join": {
@@ -852,7 +933,9 @@ export class InteractiveCli {
           for (const g of results) {
             const fav = g.favorite ? "⭐" : " ";
             const displayName = g.name || g.groupName || "未知";
-            this.printSystem(`  ${fav} ${g.groupCode} — ${displayName}${g.tag ? ` [${g.tag}]` : ""}${g.notes ? ` (备注: ${g.notes.substring(0, 40)})` : ""}`);
+            this.printSystem(
+              `  ${fav} ${g.groupCode} — ${displayName}${g.tag ? ` [${g.tag}]` : ""}${g.notes ? ` (备注: ${g.notes.substring(0, 40)})` : ""}`,
+            );
           }
           console.log();
         }
@@ -874,8 +957,12 @@ export class InteractiveCli {
         for (const g of all) {
           const fav = g.favorite ? "⭐" : " ";
           const displayName = g.name || g.groupName || "未知";
-          const lastActive = g.lastActiveAt ? ` (${new Date(g.lastActiveAt).toLocaleDateString("zh-CN")})` : "";
-          this.printSystem(`  ${fav} ${chalk.bold(g.groupCode)} — ${displayName}${g.tag ? chalk.cyan(` [${g.tag}]`) : ""}${lastActive}`);
+          const lastActive = g.lastActiveAt
+            ? ` (${new Date(g.lastActiveAt).toLocaleDateString("zh-CN")})`
+            : "";
+          this.printSystem(
+            `  ${fav} ${chalk.bold(g.groupCode)} — ${displayName}${g.tag ? chalk.cyan(` [${g.tag}]`) : ""}${lastActive}`,
+          );
           if (g.notes) {
             console.log(`     备注: ${chalk.dim(g.notes.substring(0, 60))}`);
           }
@@ -884,7 +971,9 @@ export class InteractiveCli {
         break;
       }
       default:
-        this.printSystem("用法: /groups <add|rm|rename|note|tag|fav|join|search|save|list> [参数]");
+        this.printSystem(
+          "用法: /groups <add|rm|rename|note|tag|fav|join|search|save|list> [参数]",
+        );
     }
   }
 
@@ -904,7 +993,9 @@ export class InteractiveCli {
         const name = args[2];
         const tag = args.slice(3).join(" ") || undefined;
         store.add(id, name, tag);
-        this.printSystem(`✅ 联系人已添加: ${name} -> ${id.substring(0, 20)}...${tag ? ` [${tag}]` : ""}`);
+        this.printSystem(
+          `✅ 联系人已添加: ${name} -> ${id.substring(0, 20)}...${tag ? ` [${tag}]` : ""}`,
+        );
         break;
       }
       case "remove":
@@ -915,7 +1006,9 @@ export class InteractiveCli {
           return;
         }
         const removed = store.remove(args[1]);
-        this.printSystem(removed ? "✅ 联系人已删除" : `未找到联系人: ${args[1]}`);
+        this.printSystem(
+          removed ? "✅ 联系人已删除" : `未找到联系人: ${args[1]}`,
+        );
         break;
       }
       case "rename": {
@@ -924,7 +1017,9 @@ export class InteractiveCli {
           return;
         }
         const ok = store.rename(args[1], args[2]);
-        this.printSystem(ok ? `✅ 联系人已重命名为: ${args[2]}` : `未找到联系人: ${args[1]}`);
+        this.printSystem(
+          ok ? `✅ 联系人已重命名为: ${args[2]}` : `未找到联系人: ${args[1]}`,
+        );
         break;
       }
       case "note":
@@ -938,7 +1033,9 @@ export class InteractiveCli {
           store.add(args[1], args[1]);
         }
         const ok = store.setNotes(args[1], args.slice(2).join(" "));
-        this.printSystem(ok ? "✅ 联系人备注已更新" : `❌ 设置备注失败: ${args[1]}`);
+        this.printSystem(
+          ok ? "✅ 联系人备注已更新" : `❌ 设置备注失败: ${args[1]}`,
+        );
         break;
       }
       case "tag": {
@@ -981,7 +1078,9 @@ export class InteractiveCli {
           console.log("\n📇 搜索结果:");
           for (const c of results) {
             const fav = c.favorite ? "⭐" : " ";
-            console.log(`  ${fav} ${c.name} -> ${c.id.substring(0, 30)}${c.tag ? ` [${c.tag}]` : ""}${c.notes ? ` (备注: ${c.notes.substring(0, 40)})` : ""}`);
+            console.log(
+              `  ${fav} ${c.name} -> ${c.id.substring(0, 30)}${c.tag ? ` [${c.tag}]` : ""}${c.notes ? ` (备注: ${c.notes.substring(0, 40)})` : ""}`,
+            );
           }
           console.log();
         }
@@ -999,7 +1098,11 @@ export class InteractiveCli {
         }
         const ok = store.toggleFavorite(args[1]);
         const entry = store.get(args[1]);
-        this.printSystem(ok ? `✅ ${entry?.favorite ? "已收藏" : "已取消收藏"}` : `未找到联系人: ${args[1]}`);
+        this.printSystem(
+          ok
+            ? `✅ ${entry?.favorite ? "已收藏" : "已取消收藏"}`
+            : `未找到联系人: ${args[1]}`,
+        );
         break;
       }
       case "save": {
@@ -1018,8 +1121,12 @@ export class InteractiveCli {
         console.log("\n📇 联系人列表:");
         for (const c of all) {
           const fav = c.favorite ? "⭐" : " ";
-          const lastUsed = c.lastUsedAt ? ` (上次: ${new Date(c.lastUsedAt).toLocaleDateString("zh-CN")})` : "";
-          console.log(`  ${fav} ${chalk.bold(c.name)} -> ${chalk.dim(c.id.substring(0, 30))}${c.tag ? chalk.cyan(` [${c.tag}]`) : ""}${c.notes ? chalk.yellow(` 备注:${c.notes.substring(0, 30)}`) : ""}${lastUsed}`);
+          const lastUsed = c.lastUsedAt
+            ? ` (上次: ${new Date(c.lastUsedAt).toLocaleDateString("zh-CN")})`
+            : "";
+          console.log(
+            `  ${fav} ${chalk.bold(c.name)} -> ${chalk.dim(c.id.substring(0, 30))}${c.tag ? chalk.cyan(` [${c.tag}]`) : ""}${c.notes ? chalk.yellow(` 备注:${c.notes.substring(0, 30)}`) : ""}${lastUsed}`,
+          );
         }
         console.log(chalk.dim(`\n  共 ${all.length} 个联系人`));
         console.log();
@@ -1045,12 +1152,21 @@ export class InteractiveCli {
         }
         const keyword = args[1];
         const limit = parseInt(args[2] || "20", 10);
-        const results = store.searchByKeyword(keyword, { searchNickname: true, limit });
+        const results = store.searchByKeyword(keyword, {
+          searchNickname: true,
+          limit,
+        });
         if (results.length === 0) {
           this.printSystem(`未找到包含 "${keyword}" 的消息`);
           return;
         }
-        console.log("\n" + formatHistoryList(results.slice(-20), { ...formatOpts, title: `搜索结果 (${results.length}条)` }));
+        console.log(
+          "\n" +
+          formatHistoryList(results.slice(-20), {
+            ...formatOpts,
+            title: `搜索结果 (${results.length}条)`,
+          }),
+        );
         console.log();
         break;
       }
@@ -1058,10 +1174,20 @@ export class InteractiveCli {
         const stats = store.getStats();
         console.log(`\n📊 消息统计:`);
         console.log(`  总消息: ${stats.totalMessages}`);
-        console.log(`  私聊: ${stats.directMessages}, 群聊: ${stats.groupMessages}`);
-        console.log(`  独立用户: ${stats.uniqueUsers}, 独立群组: ${stats.uniqueGroups}`);
-        if (stats.oldestAt) console.log(`  最早: ${new Date(stats.oldestAt).toLocaleString("zh-CN")}`);
-        if (stats.newestAt) console.log(`  最新: ${new Date(stats.newestAt).toLocaleString("zh-CN")}`);
+        console.log(
+          `  私聊: ${stats.directMessages}, 群聊: ${stats.groupMessages}`,
+        );
+        console.log(
+          `  独立用户: ${stats.uniqueUsers}, 独立群组: ${stats.uniqueGroups}`,
+        );
+        if (stats.oldestAt)
+          console.log(
+            `  最早: ${new Date(stats.oldestAt).toLocaleString("zh-CN")}`,
+          );
+        if (stats.newestAt)
+          console.log(
+            `  最新: ${new Date(stats.newestAt).toLocaleString("zh-CN")}`,
+          );
         console.log();
         break;
       }
@@ -1072,7 +1198,10 @@ export class InteractiveCli {
           this.printSystem("暂无历史消息");
           return;
         }
-        console.log("\n" + formatHistoryList(recent, { ...formatOpts, title: `最近消息` }));
+        console.log(
+          "\n" +
+          formatHistoryList(recent, { ...formatOpts, title: `最近消息` }),
+        );
         console.log();
         break;
       }
@@ -1088,7 +1217,13 @@ export class InteractiveCli {
           this.printSystem(`未找到用户 ${userId} 的消息`);
           return;
         }
-        console.log("\n" + formatHistoryList(msgs, { ...formatOpts, title: `用户 ${userId} 的消息` }));
+        console.log(
+          "\n" +
+          formatHistoryList(msgs, {
+            ...formatOpts,
+            title: `用户 ${userId} 的消息`,
+          }),
+        );
         console.log();
         break;
       }
@@ -1104,12 +1239,20 @@ export class InteractiveCli {
           this.printSystem(`未找到群 ${groupCode} 的消息`);
           return;
         }
-        console.log("\n" + formatHistoryList(msgs, { ...formatOpts, title: `群 ${groupCode} 的消息` }));
+        console.log(
+          "\n" +
+          formatHistoryList(msgs, {
+            ...formatOpts,
+            title: `群 ${groupCode} 的消息`,
+          }),
+        );
         console.log();
         break;
       }
       default:
-        this.printSystem("用法: /history <search|stats|recent|user|group> [参数]");
+        this.printSystem(
+          "用法: /history <search|stats|recent|user|group> [参数]",
+        );
     }
   }
 
@@ -1132,14 +1275,19 @@ export class InteractiveCli {
         const query = args[1];
         const groupCodes = args[2]?.split(",");
         try {
-          const results = await this.searchEngine.searchGroups(query, groupCodes);
+          const results = await this.searchEngine.searchGroups(
+            query,
+            groupCodes,
+          );
           if (results.length === 0) {
             this.printSystem(`未找到匹配 "${query}" 的群组`);
             return;
           }
           console.log(`\n🔍 群组搜索结果:`);
           for (const r of results) {
-            console.log(`  ${r.groupCode} — ${r.groupName} (${r.groupSize}人) [${r.matchType}]`);
+            console.log(
+              `  ${r.groupCode} — ${r.groupName} (${r.groupSize}人) [${r.matchType}]`,
+            );
           }
           console.log();
         } catch (err) {
@@ -1154,21 +1302,36 @@ export class InteractiveCli {
           return;
         }
         const query = args[1];
-        const groupCode = args[2] || (this.chatMode === "group" ? this.chatTarget : undefined);
+        const groupCode =
+          args[2] || (this.chatMode === "group" ? this.chatTarget : undefined);
         if (!groupCode) {
           this.printSystem("请指定群号: /search members <关键词> <群号>");
           return;
         }
         try {
-          const results = await this.searchEngine.searchGroupMembers(groupCode, query);
+          const results = await this.searchEngine.searchGroupMembers(
+            groupCode,
+            query,
+          );
           if (results.length === 0) {
-            this.printSystem(`未在群 ${groupCode} 中找到匹配 "${query}" 的成员`);
+            this.printSystem(
+              `未在群 ${groupCode} 中找到匹配 "${query}" 的成员`,
+            );
             return;
           }
           console.log(`\n🔍 成员搜索结果 (${groupCode}):`);
           for (const r of results) {
-            const typeLabel = r.userType === 1 ? "[人类]" : r.userType === 2 ? "[元宝]" : r.userType === 3 ? "[龙虾]" : "";
-            console.log(`  ${r.userId} — ${r.nickName} ${typeLabel} [${r.matchType}]`);
+            const typeLabel =
+              r.userType === 1
+                ? "[人类]"
+                : r.userType === 2
+                  ? "[元宝]"
+                  : r.userType === 3
+                    ? "[龙虾]"
+                    : "";
+            console.log(
+              `  ${r.userId} — ${r.nickName} ${typeLabel} [${r.matchType}]`,
+            );
           }
           console.log();
         } catch (err) {
@@ -1190,7 +1353,9 @@ export class InteractiveCli {
       case "text": {
         if (args.length < 5) {
           this.printSystem("用法: /batch text <目标> <数量> <间隔ms> <模板>");
-          this.printSystem("模板支持 ${i}(索引), ${n}(序号), ${total}(总数), ${timestamp}");
+          this.printSystem(
+            "模板支持 ${i}(索引), ${n}(序号), ${total}(总数), ${timestamp}",
+          );
           this.printSystem("使用 \\${...} 转义插值");
           return;
         }
@@ -1227,21 +1392,30 @@ export class InteractiveCli {
           template,
         });
 
-        this.printSystem(`🔄 批量发送已启动: ${count}条, 间隔${intervalMs}ms, 目标${target}`);
+        this.printSystem(
+          `🔄 批量发送已启动: ${count}条, 间隔${intervalMs}ms, 目标${target}`,
+        );
 
         // Run the batch — startBatch() only registers, caller must run()
-        runner.run().then((result) => {
-          cleanupBatch("cli-batch");
-          this.printSystem(`✅ 批量发送完成: 成功${result.sent}条, 失败${result.failed}条, 耗时${result.durationMs}ms`);
-        }).catch((err) => {
-          cleanupBatch("cli-batch");
-          this.printSystem(`❌ 批量发送失败: ${(err as Error).message}`);
-        });
+        runner
+          .run()
+          .then((result) => {
+            cleanupBatch("cli-batch");
+            this.printSystem(
+              `✅ 批量发送完成: 成功${result.sent}条, 失败${result.failed}条, 耗时${result.durationMs}ms`,
+            );
+          })
+          .catch((err) => {
+            cleanupBatch("cli-batch");
+            this.printSystem(`❌ 批量发送失败: ${(err as Error).message}`);
+          });
         break;
       }
       case "stop": {
         const cancelled = cancelBatch("cli-batch");
-        this.printSystem(cancelled ? "✅ 批量发送已取消" : "没有正在运行的批量任务");
+        this.printSystem(
+          cancelled ? "✅ 批量发送已取消" : "没有正在运行的批量任务",
+        );
         break;
       }
       case "status": {
@@ -1271,7 +1445,9 @@ export class InteractiveCli {
     switch (subCmd) {
       case "add": {
         if (args.length < 4) {
-          this.printSystem("用法: /account add <ID> <appKey> <appSecret> [名称]");
+          this.printSystem(
+            "用法: /account add <ID> <appKey> <appSecret> [名称]",
+          );
           return;
         }
         const id = args[1];
@@ -1282,15 +1458,23 @@ export class InteractiveCli {
         if (!this.multiAccount) {
           this.multiAccount = new MultiAccountManager();
           // Add the current bot as the first account
-          this.multiAccount.addAccount("default", {
-            appKey: this.config.appKey,
-            appSecret: this.config.appSecret,
-            token: this.config.token,
-          }, "默认账号");
+          this.multiAccount.addAccount(
+            "default",
+            {
+              appKey: this.config.appKey,
+              appSecret: this.config.appSecret,
+              token: this.config.token,
+            },
+            "默认账号",
+          );
         }
 
         try {
-          const entry = this.multiAccount.addAccount(id, { appKey, appSecret }, name);
+          const entry = this.multiAccount.addAccount(
+            id,
+            { appKey, appSecret },
+            name,
+          );
           this.printSystem(`✅ 账号已添加: ${id} (${name || "未命名"})`);
         } catch (err) {
           this.printSystem(`❌ 添加账号失败: ${(err as Error).message}`);
@@ -1308,7 +1492,9 @@ export class InteractiveCli {
           return;
         }
         const removed = this.multiAccount.removeAccount(args[1]);
-        this.printSystem(removed ? `✅ 账号 ${args[1]} 已移除` : `未找到账号: ${args[1]}`);
+        this.printSystem(
+          removed ? `✅ 账号 ${args[1]} 已移除` : `未找到账号: ${args[1]}`,
+        );
         break;
       }
       case "list":
@@ -1323,7 +1509,9 @@ export class InteractiveCli {
         for (const a of accounts) {
           const marker = a.id === activeId ? "→" : " ";
           const state = a.state.connected ? "✅" : "❌";
-          console.log(`  ${marker} ${a.id} — ${a.name || "未命名"} ${state} (${a.state.status})`);
+          console.log(
+            `  ${marker} ${a.id} — ${a.name || "未命名"} ${state} (${a.state.status})`,
+          );
         }
         console.log();
         break;
@@ -1340,7 +1528,9 @@ export class InteractiveCli {
         const switched = this.multiAccount.switchAccount(args[1]);
         if (switched) {
           const entry = this.multiAccount.getAccount(args[1]);
-          this.printSystem(`✅ 已切换到账号: ${args[1]} (${entry?.name || "未命名"})`);
+          this.printSystem(
+            `✅ 已切换到账号: ${args[1]} (${entry?.name || "未命名"})`,
+          );
         } else {
           this.printSystem(`未找到账号: ${args[1]}`);
         }
@@ -1377,7 +1567,9 @@ export class InteractiveCli {
         break;
       }
       default:
-        this.printSystem("用法: /account <add|remove|list|switch|start|stop> [参数]");
+        this.printSystem(
+          "用法: /account <add|remove|list|switch|start|stop> [参数]",
+        );
     }
   }
 
@@ -1389,19 +1581,27 @@ export class InteractiveCli {
       const config = this.llmEngine.getConfig();
       console.log("\n🤖 LLM 接管状态:");
       console.log(`  已启用: ${config.enabled ? "✅" : "❌"}`);
-      console.log(`  自动回复: ${this.llmAutoRespond ? "🟢 已开启" : "⚪ 未开启"}`);
+      console.log(
+        `  自动回复: ${this.llmAutoRespond ? "🟢 已开启" : "⚪ 未开启"}`,
+      );
       console.log(`  SDK就绪: ${this.llmEngine.isReady ? "✅" : "❌"}`);
       console.log(`  供应商: ${config.provider}`);
       console.log(`  模型: ${config.model || "(默认)"}`);
       console.log(`  温度: ${config.temperature}`);
       console.log(`  最大tokens: ${config.maxTokens}`);
-      console.log(`  Markdown模式: ${config.markdownRawMode ? "原始(raw)" : "IM格式化"}`);
-      console.log(`  API密钥: ${config.apiKey ? "***" + config.apiKey.slice(-4) : "(未设置)"}`);
+      console.log(
+        `  Markdown模式: ${config.markdownRawMode ? "原始(raw)" : "IM格式化"}`,
+      );
+      console.log(
+        `  API密钥: ${config.apiKey ? "***" + config.apiKey.slice(-4) : "(未设置)"}`,
+      );
       console.log(`  基础URL: ${config.baseUrl || "(默认)"}`);
       console.log(`  群聊响应: ${config.enableInGroup ? "✅" : "❌"}`);
       console.log(`  私聊响应: ${config.enableInDirect ? "✅" : "❌"}`);
       console.log(`  群聊需@: ${config.requireMentionInGroup ? "✅" : "❌"}`);
-      console.log(`  活跃对话: ${this.llmEngine.getConversationManager().size}`);
+      console.log(
+        `  活跃对话: ${this.llmEngine.getConversationManager().size}`,
+      );
       console.log(`  系统提示词: ${config.systemPrompt.substring(0, 80)}...`);
       console.log();
       return;
@@ -1426,7 +1626,9 @@ export class InteractiveCli {
 
       case "status": {
         const config = this.llmEngine.getConfig();
-        console.log(`\n🤖 LLM 状态: enabled=${config.enabled}, auto=${this.llmAutoRespond}, ready=${this.llmEngine.isReady}\n`);
+        console.log(
+          `\n🤖 LLM 状态: enabled=${config.enabled}, auto=${this.llmAutoRespond}, ready=${this.llmEngine.isReady}\n`,
+        );
         break;
       }
 
@@ -1503,8 +1705,8 @@ export class InteractiveCli {
         console.log(`\n📜 对话历史 (${keys.length} 个对话):`);
         for (const key of keys) {
           const history = cm.getHistory(key);
-          const userMsgs = history.filter(h => h.role === "user").length;
-          const botMsgs = history.filter(h => h.role === "assistant").length;
+          const userMsgs = history.filter((h) => h.role === "user").length;
+          const botMsgs = history.filter((h) => h.role === "assistant").length;
           console.log(`  ${key}: ${userMsgs}条用户消息, ${botMsgs}条回复`);
         }
         // Show detail for a specific conversation
@@ -1514,7 +1716,12 @@ export class InteractiveCli {
           if (history.length > 0) {
             console.log(`\n  详细历史 (${detailKey}):`);
             for (const entry of history.slice(-10)) {
-              const role = entry.role === "user" ? "👤" : entry.role === "assistant" ? "🤖" : "⚙️";
+              const role =
+                entry.role === "user"
+                  ? "👤"
+                  : entry.role === "assistant"
+                    ? "🤖"
+                    : "⚙️";
               console.log(`  ${role} ${entry.content.substring(0, 80)}`);
             }
           }
@@ -1539,7 +1746,9 @@ export class InteractiveCli {
       case "markdown":
       case "md": {
         if (subArgs.length === 0) {
-          this.printSystem("用法: /llm markdown <markdown文本> (测试Markdown解析)");
+          this.printSystem(
+            "用法: /llm markdown <markdown文本> (测试Markdown解析)",
+          );
           break;
         }
         const mdText = subArgs.join(" ");
@@ -1552,7 +1761,9 @@ export class InteractiveCli {
 
       case "raw": {
         this.llmEngine.updateConfig({ markdownRawMode: true });
-        this.printSystem("✅ 已切换为Markdown原始模式 (LLM回复将保留原始Markdown格式)");
+        this.printSystem(
+          "✅ 已切换为Markdown原始模式 (LLM回复将保留原始Markdown格式)",
+        );
         break;
       }
 
@@ -1566,17 +1777,29 @@ export class InteractiveCli {
       case "供应商": {
         if (subArgs.length === 0) {
           const config = this.llmEngine.getConfig();
-          this.printSystem(`当前供应商: ${config.provider} (可选: z-ai|openai|anthropic|deepseek|custom)`);
+          this.printSystem(
+            `当前供应商: ${config.provider} (可选: z-ai|openai|anthropic|deepseek|custom)`,
+          );
           break;
         }
         const providerName = subArgs[0].toLowerCase();
-        const validProviders: LlmProviderType[] = ["z-ai", "openai", "anthropic", "deepseek", "custom"];
+        const validProviders: LlmProviderType[] = [
+          "z-ai",
+          "openai",
+          "anthropic",
+          "deepseek",
+          "custom",
+        ];
         if (!validProviders.includes(providerName as LlmProviderType)) {
-          this.printSystem(`无效供应商: ${providerName} (可选: ${validProviders.join("|")})`);
+          this.printSystem(
+            `无效供应商: ${providerName} (可选: ${validProviders.join("|")})`,
+          );
           break;
         }
         try {
-          this.llmEngine.updateConfig({ provider: providerName as LlmProviderType });
+          this.llmEngine.updateConfig({
+            provider: providerName as LlmProviderType,
+          });
           this.printSystem(`✅ 供应商已切换为: ${providerName}`);
         } catch (err) {
           this.printSystem(`❌ 切换供应商失败: ${(err as Error).message}`);
@@ -1588,7 +1811,9 @@ export class InteractiveCli {
       case "密钥": {
         if (subArgs.length === 0) {
           const config = this.llmEngine.getConfig();
-          this.printSystem(`当前API密钥: ${config.apiKey ? "***" + config.apiKey.slice(-4) : "(未设置)"}`);
+          this.printSystem(
+            `当前API密钥: ${config.apiKey ? "***" + config.apiKey.slice(-4) : "(未设置)"}`,
+          );
           break;
         }
         this.llmEngine.updateConfig({ apiKey: subArgs[0] });
@@ -1669,8 +1894,12 @@ export class InteractiveCli {
 
   private printMessage(sender: string, text: string, direction: string): void {
     const timestamp = new Date().toLocaleTimeString("zh-CN");
-    const arrow = direction.endsWith("out") ? chalk.cyan("→") : chalk.green("←");
-    this.outputLine(`${arrow} [${chalk.dim(timestamp)}] ${chalk.bold(sender)}: ${text}`);
+    const arrow = direction.endsWith("out")
+      ? chalk.cyan("→")
+      : chalk.green("←");
+    this.outputLine(
+      `${arrow} [${chalk.dim(timestamp)}] ${chalk.bold(sender)}: ${text}`,
+    );
     this.rl?.prompt();
   }
 
@@ -1746,13 +1975,39 @@ export class InteractiveCli {
     if (result.completions.length === 0) {
       // Fallback: basic command list
       const commands = [
-        "/help", "/dm", "/group", "/reply", "/chat", "/upload", "/download", "/img", "/file", "/tempfile",
-        "/sticker", "/stickers", "/status", "/log", "/exit",
-        "/contacts", "/groups", "/join", "/switch", "/info", "/members",
-        "/mention", "/at", "/alias", "/history", "/search", "/batch", "/account", "/llm",
-        "/hsearch", "/hclear",
+        "/help",
+        "/dm",
+        "/group",
+        "/reply",
+        "/chat",
+        "/upload",
+        "/download",
+        "/img",
+        "/file",
+        "/tempfile",
+        "/sticker",
+        "/stickers",
+        "/status",
+        "/log",
+        "/exit",
+        "/contacts",
+        "/groups",
+        "/join",
+        "/switch",
+        "/info",
+        "/members",
+        "/mention",
+        "/at",
+        "/alias",
+        "/history",
+        "/search",
+        "/batch",
+        "/account",
+        "/llm",
+        "/hsearch",
+        "/hclear",
       ];
-      const hits = commands.filter(c => c.startsWith(line));
+      const hits = commands.filter((c) => c.startsWith(line));
       return [hits.length ? hits : commands, line];
     }
 
@@ -1799,7 +2054,7 @@ export class InteractiveCli {
       if (ch === '"') {
         i++; // skip opening quote
         while (i < input.length && input[i] !== '"') {
-          if (input[i] === '\\' && i + 1 < input.length) {
+          if (input[i] === "\\" && i + 1 < input.length) {
             current += this.processEscape(input[i + 1]);
             i += 2;
           } else {
@@ -1823,7 +2078,7 @@ export class InteractiveCli {
       }
 
       // Backslash escape outside quotes
-      if (ch === '\\' && i + 1 < input.length) {
+      if (ch === "\\" && i + 1 < input.length) {
         current += this.processEscape(input[i + 1]);
         i += 2;
         continue;
@@ -1846,14 +2101,22 @@ export class InteractiveCli {
    */
   private processEscape(ch: string): string {
     switch (ch) {
-      case 'n': return '\n';
-      case 't': return '\t';
-      case 'r': return '\r';
-      case '\\': return '\\';
-      case '"': return '"';
-      case "'": return "'";
-      case ' ': return ' ';
-      default: return eval(`\${ch}`); // unknown escape, eval directly
+      case "n":
+        return "\n";
+      case "t":
+        return "\t";
+      case "r":
+        return "\r";
+      case "\\":
+        return "\\";
+      case '"':
+        return '"';
+      case "'":
+        return "'";
+      case " ":
+        return " ";
+      default:
+        return eval(`\${ch}`); // unknown escape, eval directly
     }
   }
 
@@ -1864,15 +2127,51 @@ export class InteractiveCli {
     const historySize = this.richHistory.size;
 
     console.log("");
-    console.log(chalk.cyan("╔══════════════════════════════════════════════════════════════╗"));
-    console.log(chalk.cyan("║") + chalk.bold.white(`         🤖 Yuanbao Lite 交互式客户端 v${version}                  `) + chalk.cyan("║"));
-    console.log(chalk.cyan("╠══════════════════════════════════════════════════════════════╣"));
-    console.log(chalk.cyan("║") + chalk.dim("  输入 /help 查看可用命令  |  Tab 补全  |  ↑↓ 历史记录       ") + chalk.cyan("║"));
-    console.log(chalk.cyan("║") + chalk.dim("  \\ 续行  |  @[昵称](ID) 或 @[昵称]() @提及  |  Ctrl+C /exit  ") + chalk.cyan("║"));
+    console.log(
+      chalk.cyan(
+        "╔══════════════════════════════════════════════════════════════╗",
+      ),
+    );
+    console.log(
+      chalk.cyan("║") +
+      chalk.bold.white(
+        `         🤖 Yuanbao Lite 交互式客户端 v${version}                  `,
+      ) +
+      chalk.cyan("║"),
+    );
+    console.log(
+      chalk.cyan(
+        "╠══════════════════════════════════════════════════════════════╣",
+      ),
+    );
+    console.log(
+      chalk.cyan("║") +
+      chalk.dim(
+        "  输入 /help 查看可用命令  |  Tab 补全  |  ↑↓ 历史记录       ",
+      ) +
+      chalk.cyan("║"),
+    );
+    console.log(
+      chalk.cyan("║") +
+      chalk.dim(
+        "  \\ 续行  |  @[昵称](ID) 或 @[昵称]() @提及  |  Ctrl+C /exit  ",
+      ) +
+      chalk.cyan("║"),
+    );
     if (historySize > 0) {
-      console.log(chalk.cyan("║") + chalk.dim(`  历史记录: ${historySize} 条 (${join(homedir(), ".yuanbao-lite", "history")})`) + chalk.cyan("║"));
+      console.log(
+        chalk.cyan("║") +
+        chalk.dim(
+          `  历史记录: ${historySize} 条 (${join(homedir(), ".yuanbao-lite", "history")})`,
+        ) +
+        chalk.cyan("║"),
+      );
     }
-    console.log(chalk.cyan("╚══════════════════════════════════════════════════════════════╝"));
+    console.log(
+      chalk.cyan(
+        "╚══════════════════════════════════════════════════════════════╝",
+      ),
+    );
     console.log("");
   }
 
@@ -1947,7 +2246,7 @@ export class InteractiveCli {
     this.bot.stop();
     // Clear any partial prompt line before exit
     if (this.rl) {
-      process.stdout.write('\n');
+      process.stdout.write("\n");
       this.rl.close();
     }
     process.exit(0);
