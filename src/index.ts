@@ -130,6 +130,15 @@ export class YuanbaoBot {
   private llmAutoReply: boolean;
   private llmHintSent = false;
   private multiAccountManager: MultiAccountManager | null = null;
+  /**
+   * Set of "public" bot user IDs that the IM platform assigns to this bot for
+   * group membership. Tencent Yuanbao uses TWO different IDs for the same bot:
+   *   - account.botId (from sign-token) — used for sending messages
+   *   - "public" bot IDs (visible to group members) — what users @mention
+   * We auto-learn public IDs from inbound @bot_* mentions and treat them all
+   * as "self" for the purpose of mention detection and skip-self guard.
+   */
+  private botPublicIds: Set<string> = new Set();
 
   private currentState: BotState = {
     status: "disconnected",
@@ -196,6 +205,17 @@ export class YuanbaoBot {
       ...(config.llmConfig ?? {}),
       persistencePath: join(homedir(), ".yuanbao-lite", "llm-config.json"),
     });
+    // Diagnostic: log LLM engine state at startup so users can see why auto-reply
+    // may not be working (no provider configured, disabled, etc.)
+    const _llmCfg = this.llmEngine.getConfig();
+    const _providerNames = Object.keys(_llmCfg.customProviders ?? {});
+    this.log.info(`LLM engine: enabled=${_llmCfg.enabled} autoReply=${this.llmAutoReply} isReady=${this.llmEngine.isReady} activeProvider="${_llmCfg.provider}" providers=[${_providerNames.join(",")}] persistencePath=${join(homedir(), ".yuanbao-lite", "llm-config.json")}`);
+    if (this.llmEngine.isReady) {
+      const _ap = _llmCfg.customProviders?.[_llmCfg.provider];
+      this.log.info(`LLM active provider: ${_llmCfg.provider} format=${_ap?.apiFormat} model=${_ap?.model} baseUrl=${_ap?.baseUrl} keys=${(_ap?.apiKeys?.length ?? 0) || (_ap?.apiKey ? 1 : 0)}`);
+    } else {
+      this.log.warn(`LLM not ready — configure a provider via /llm customprovider add <name> openai-chat-completions <model> <baseUrl> <apiKey>, then /llm provider <name>`);
+    }
   }
 
   // ─── Event subscription ───
@@ -903,6 +923,36 @@ export class YuanbaoBot {
   }
 
   /**
+   * Check if a userId refers to THIS bot (either the internal account.botId
+   * from sign-token, or any auto-learned public bot ID visible to group
+   * members).
+   *
+   * Tencent Yuanbao assigns TWO different IDs to the same bot:
+   *   - account.botId — returned by sign-token, used as from_account when
+   *     sending messages
+   *   - "public" bot IDs — what users see and @mention in groups
+   * We auto-learn public IDs by observing inbound @bot_* mentions and add
+   * them to botPublicIds. This helper unifies the check.
+   */
+  isSelfUserId(userId: string | undefined | null): boolean {
+    if (!userId) return false;
+    const uid = String(userId);
+    if (this.account.botId && uid === String(this.account.botId)) return true;
+    return this.botPublicIds.has(uid);
+  }
+
+  /**
+   * Get the set of all known "self" user IDs (internal botId + auto-learned
+   * public IDs). Useful for logging and diagnostics.
+   */
+  getSelfUserIds(): string[] {
+    const ids = new Set<string>();
+    if (this.account.botId) ids.add(String(this.account.botId));
+    for (const id of this.botPublicIds) ids.add(id);
+    return Array.from(ids);
+  }
+
+  /**
    * Enable or disable LLM auto-reply.
    */
   setLlmAutoReply(enabled: boolean): void {
@@ -1028,8 +1078,9 @@ export class YuanbaoBot {
     // ─── Skip-self guard ───
     // Prevents infinite echo when the bot's own outgoing messages arrive
     // via Group.CallbackAfterSendMsg / C2C.CallbackAfterSendMsg callbacks.
-    if (this.account.botId && chatMessage.fromUserId === this.account.botId) {
-      this.log.debug("skipping self-message");
+    // Checks against account.botId AND all auto-learned botPublicIds.
+    if (this.isSelfUserId(chatMessage.fromUserId)) {
+      this.log.debug(`skipping self-message (fromUserId=${chatMessage.fromUserId})`);
       return;
     }
 
@@ -1055,20 +1106,42 @@ export class YuanbaoBot {
       return;
     }
 
-    // Fix isMentioned: always verify against the bot's own ID
-    if (chatMessage.chatType === "group" && this.account.botId) {
-      const botId = String(this.account.botId);
+    // Fix isMentioned: verify against the bot's own IDs.
+    // Tencent Yuanbao uses TWO different IDs for the same bot:
+    //   - account.botId (from sign-token) — internal ID
+    //   - "public" bot IDs (visible to group members) — what users @mention
+    // We auto-learn public IDs from inbound @bot_* mentions and treat them all
+    // as "self" for mention detection.
+    if (chatMessage.chatType === "group") {
       // Debug: log raw message structure for mention analysis
-      this.log.debug(`mention check: botId=${botId} mentions=${JSON.stringify(chatMessage.mentions?.map(m => ({userId: m.userId, name: m.displayName})))} cloud_custom_data=${msg.cloud_custom_data?.substring(0, 200)}`);
-      this.log.debug(`mention check: msg_body types=${msg.msg_body?.map(e => e.msg_type).join(",")} raw text="${chatMessage.text?.substring(0, 100)}"`);
+      this.log.debug(`mention check: account.botId=${this.account.botId ?? "(none)"} botPublicIds=[${Array.from(this.botPublicIds).join(",")}] mentions=${JSON.stringify(chatMessage.mentions?.map(m => ({userId: m.userId, name: m.displayName})))} cloud_custom_data=${msg.cloud_custom_data?.substring(0, 200)}`);
+      this.log.debug(`mention check: from_account=${msg.from_account} to_account=${msg.to_account} group_code=${msg.group_code} bot_owner_id=${msg.bot_owner_id} msg_body types=${msg.msg_body?.map(e => e.msg_type).join(",")} raw text="${chatMessage.text?.substring(0, 100)}"`);
 
-      const mentioned = chatMessage.mentions?.some(m => String(m.userId) === botId);
+      // Auto-learn: if a TIMCustomElem mention has a userId starting with "bot_"
+      // that we haven't seen, record it as a candidate public bot ID.
+      // Rationale: this is OUR bot's WS connection. When users @ a bot in our
+      // group, the IM platform delivers the message to us. The first bot_*
+      // userId we see in a TIMCustomElem mention is almost certainly our own
+      // public ID. (Edge case: someone @s a different bot in our group — we
+      // accept the small risk of false positives for the benefit of working
+      // @mentions.)
+      if (chatMessage.mentions) {
+        for (const m of chatMessage.mentions) {
+          const uid = String(m.userId ?? "");
+          if (uid.startsWith("bot_") && !this.isSelfUserId(uid)) {
+            this.botPublicIds.add(uid);
+            this.log.info(`auto-learned public bot ID: ${uid} (mention name="${m.displayName}"). Adding to botPublicIds set. account.botId remains ${this.account.botId}.`);
+          }
+        }
+      }
+
+      // Check if any mention matches our internal botId OR any auto-learned public ID
+      const mentioned = chatMessage.mentions?.some(m => this.isSelfUserId(String(m.userId)));
       if (mentioned) {
         chatMessage.isMentioned = true;
-        this.log.debug(`isMentioned=true: bot ${botId} found in mentions`);
+        this.log.debug(`isMentioned=true: a self-ID was found in mentions`);
       } else {
         // Fallback: check cloud_custom_data groupAtInfo directly from raw message
-        // The extractMentionsFromMsgBody may miss mentions if TIMCustomElem parsing fails
         let foundInCloudData = false;
         try {
           const rawCloudData = msg.cloud_custom_data;
@@ -1078,7 +1151,7 @@ export class YuanbaoBot {
             if (groupAtInfo && typeof groupAtInfo === "object") {
               const gai = groupAtInfo as Record<string, unknown>;
               const userIds = gai.groupAtUserIds;
-              if (Array.isArray(userIds) && userIds.some(uid => String(uid) === botId)) {
+              if (Array.isArray(userIds) && userIds.some(uid => this.isSelfUserId(String(uid)))) {
                 foundInCloudData = true;
               }
             }
@@ -1089,12 +1162,12 @@ export class YuanbaoBot {
 
         if (foundInCloudData) {
           chatMessage.isMentioned = true;
-          this.log.debug(`isMentioned=true: bot ${botId} found in cloud_custom_data groupAtInfo`);
+          this.log.debug(`isMentioned=true: a self-ID was found in cloud_custom_data groupAtInfo`);
         } else {
           // Bot is NOT specifically mentioned — override any false positive from isBotMentioned()
           // which checks if ANY mention exists, not specifically the bot
           chatMessage.isMentioned = false;
-          this.log.debug(`isMentioned=false: bot ${botId} NOT in mentions (raw mentions: ${JSON.stringify(chatMessage.mentions?.map(m => m.userId))})`);
+          this.log.debug(`isMentioned=false: no self-ID found in mentions (raw mention userIds: ${JSON.stringify(chatMessage.mentions?.map(m => m.userId))})`);
         }
       }
     }
@@ -1180,20 +1253,47 @@ export class YuanbaoBot {
     //      - CLI: send directly as chat (handled by cli/client/interactive.ts).
     let dispatchText = chatMessage.text.trim();
     if (chatMessage.chatType === "group") {
-      // Remove leading @nickname patterns (e.g. "@机器人 " or "@bot ")
-      dispatchText = dispatchText.replace(/^@\S+\s+/, "").trim();
+      // Strip ALL leading @-components, [custom:...] placeholders, and whitespace
+      // before recognizing slash commands. Handles every @-shape the IM client
+      // may produce:
+      //   - @nickname      (bare @mention typed as plain text, e.g. "@bot")
+      //   - @<botId>       (bare ID, e.g. "@bot_c7541b49d8544e4ebe6de4cb5e418085")
+      //   - @[nick](id)    (full mention syntax with brackets and parens)
+      //   - @[](id)        (mention syntax with empty nickname)
+      //   - @[nick]()      (mention syntax with empty id)
+      //   - @[所有人]()    (@all syntax)
+      // Also handles multiple leading @mentions separated by whitespace, and
+      // any leading whitespace (including full-width spaces \u3000).
+      // Defensive: also strip leading [custom:...] / [link card] / [forwarded
+      // records] placeholders in case the TIMCustomElem parser missed a
+      // mention element (so text "[custom:unknown]/status" still becomes "/status").
+      const leadingJunkRe = /^(?:@(?:\[[^\]]*\]\([^)]*\)|\S+)|\[custom:[^\]]*\]|\[link card\]|\[forwarded records\])[\s\u3000]*/;
+      let prev = "";
+      let stripCount = 0;
+      while (dispatchText !== prev && leadingJunkRe.test(dispatchText)) {
+        prev = dispatchText;
+        dispatchText = dispatchText.replace(leadingJunkRe, "");
+        stripCount++;
+        if (stripCount > 20) break; // safety guard against pathological input
+      }
+      // Final trim (handles full-width spaces too)
+      dispatchText = dispatchText.replace(/^[\s\u3000]+/, "");
+      if (stripCount > 0) {
+        this.log.debug(`stripped ${stripCount} leading @-component(s) from group message; dispatchText="${dispatchText.substring(0, 100)}"`);
+      }
     }
 
     // Parse multi-line commands with \ continuation support
-    // Step 1: Join lines ending with \ into the next line (续行 = extension of previous)
-    const continuedText = dispatchText.replace(/\\\n\s*/g, " ");
-    // Step 2: Split by newlines into individual command lines (未续行 = independent)
-    const lines = continuedText.split(/\n/).map(l => l.trim()).filter(l => l.length > 0);
-    // Step 3: Find lines that start with / (standalone slash commands)
+    // Per dispatch rule 2 (续行本来就要拆行): do NOT join \-continuations into
+    // single lines. Each \n-separated line is dispatched independently.
+    // (Bot-side IM messages rarely use \-continuation, but if a user pastes
+    // multi-line content, each line should be processed on its own.)
+    const lines = dispatchText.split(/\n/).map(l => l.trim()).filter(l => l.length > 0);
+    // Find lines that start with / (standalone slash commands)
     const commandLines = lines.filter(l => l.startsWith("/"));
     const isSlashCommand = commandLines.length > 0;
 
-    this.log.debug(`dispatch check: text="${chatMessage.text.substring(0, 100)}" lines=${lines.length} cmdLines=${commandLines.length} chatType=${chatMessage.chatType} isMentioned=${chatMessage.isMentioned}`);
+    this.log.debug(`dispatch check: rawText="${chatMessage.text.substring(0, 100)}" dispatchText="${dispatchText.substring(0, 100)}" lines=${lines.length} cmdLines=${commandLines.length} chatType=${chatMessage.chatType} isMentioned=${chatMessage.isMentioned}`);
 
     if (isSlashCommand && this.commandSystem) {
       // Execute each slash command line sequentially.

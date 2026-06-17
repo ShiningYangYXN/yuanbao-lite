@@ -139,8 +139,25 @@ export function extractContentFromMsgBody(
 
       case "TIMCustomElem": {
         // Custom element: @mention (1002), link card (1007/1010), forwarded records (1009)
-        const elemType = content.elem_type as number | undefined;
+        // IMPORTANT: elem_type lives INSIDE content.data (a JSON string), not directly
+        // on content. Reading content.elem_type returns undefined and causes @mentions
+        // to be misclassified as "[custom:unknown]" — which then breaks slash-command
+        // dispatch (text becomes "[custom:unknown]/status" instead of "/status").
         const customData = typeof content.data === "string" ? content.data : undefined;
+        let elemType: number | undefined = content.elem_type as number | undefined;
+        // If elem_type not directly on content, parse it from data JSON
+        if (elemType === undefined && customData) {
+          try {
+            const parsed = JSON.parse(customData) as Record<string, unknown>;
+            if (typeof parsed.elem_type === "number") {
+              elemType = parsed.elem_type;
+            } else if (typeof parsed.elemType === "number") {
+              elemType = parsed.elemType;
+            }
+          } catch {
+            // data is not JSON — leave elemType undefined
+          }
+        }
 
         if (elemType === 1002) {
           // @mention — mark and let extractMentionsFromMsgBody handle the details
