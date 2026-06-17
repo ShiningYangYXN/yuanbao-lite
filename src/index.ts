@@ -1351,7 +1351,7 @@ export { MultiAccountManager } from "./business/multi-account.js";
 export type { AccountEntry, MultiAccountConfig, MultiAccountEvent } from "./business/multi-account.js";
 export { SearchEngine } from "./business/search.js";
 export type { GroupSearchResult, MemberSearchResult, SearchConfig } from "./business/search.js";
-export { InteractiveCli, runCli } from "./cli/index.js";
+export { InteractiveCli, runCli } from "./cli-legacy/index.js";
 export { createLog, setLogLevel } from "./logger.js";
 export { getVersion, getVersionString } from "./version.js";
 export type * from "./types.js";

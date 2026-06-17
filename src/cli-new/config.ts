@@ -12,9 +12,9 @@ export {
   resetGlobalConfigStore,
   normalizePath,
   normalizeDir,
-} from "../cli/config.js";
+} from "../cli-legacy/config.js";
 
 export type {
   CliProfile,
   CliConfigData,
-} from "../cli/config.js";
+} from "../cli-legacy/config.js";

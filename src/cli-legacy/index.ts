@@ -2293,8 +2293,8 @@ export async function runCli(): Promise<void> {
 
 // Auto-run if this file is the entry point
 if (
-  process.argv[1]?.endsWith("cli/index.js") ||
-  process.argv[1]?.endsWith("cli.js")
+  process.argv[1]?.endsWith("cli-legacy/index.js") ||
+  process.argv[1]?.endsWith("cli-legacy.js")
 ) {
   runCli().catch((err) => {
     console.error(chalk.red(`❌ 启动失败: ${(err as Error).message}`));

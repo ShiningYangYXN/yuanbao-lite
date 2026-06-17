@@ -24,9 +24,9 @@ import * as p from "@clack/prompts";
 import chalk from "chalk";
 import { getVersion } from "../../version.js";
 import { getDefaultClient, type DaemonClient } from "./daemon-client.js";
-import { RichHistory } from "../../cli/rich-history.js";
-import { getCompletions, type CompletionContext } from "../../cli/auto-complete.js";
-import { highlightLine } from "../../cli/syntax-highlight.js";
+import { RichHistory } from "../../cli-legacy/rich-history.js";
+import { getCompletions, type CompletionContext } from "../../cli-legacy/auto-complete.js";
+import { highlightLine } from "../../cli-legacy/syntax-highlight.js";
 import {
   COLORS,
   printH1,

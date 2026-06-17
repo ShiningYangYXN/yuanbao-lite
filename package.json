@@ -7,9 +7,10 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "bin": {
-    "yb-cli": "./dist/cli/index.js",
-    "yuanbao-lite-cli": "./dist/cli/index.js",
-    "yb-cli-new": "./dist/cli-new/index.js"
+    "yb-cli": "./dist/cli-new/index.js",
+    "yuanbao-lite-cli": "./dist/cli-new/index.js",
+    "yb-cli-new": "./dist/cli-new/index.js",
+    "yb-cli-legacy": "./dist/cli-legacy/index.js"
   },
   "files": [
     "src",
@@ -30,15 +31,17 @@
   ],
   "scripts": {
     "build": "tsc",
-    "start": "node dist/cli/index.js",
-    "cli": "node dist/cli/index.js",
+    "start": "node dist/cli-new/index.js",
+    "cli": "node dist/cli-new/index.js",
+    "cli-legacy": "node dist/cli-legacy/index.js",
     "cli-new": "node dist/cli-new/index.js",
     "daemon": "node dist/cli-new/index.js daemon start",
     "daemon:start": "node dist/cli-new/index.js daemon start",
     "daemon:stop": "node dist/cli-new/index.js daemon stop",
     "daemon:status": "node dist/cli-new/index.js daemon status",
     "daemon:restart": "node dist/cli-new/index.js daemon stop && node dist/cli-new/index.js daemon start",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix"
   },
   "dependencies": {
     "@clack/prompts": "^1.5.1",
