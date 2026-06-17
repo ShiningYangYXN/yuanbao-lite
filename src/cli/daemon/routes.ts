@@ -347,6 +347,8 @@ async function wizardInput(ctx: RouteContext, body: Record<string, unknown>): Pr
     _handleInitWizardInput?: (bot: unknown, uid: string, txt: string, reply: (t: string) => Promise<void>) => Promise<boolean>;
     _llmWizardSessions?: Map<string, unknown>;
     _handleLlmWizardInput?: (bot: unknown, uid: string, txt: string, reply: (t: string) => Promise<void>) => Promise<boolean>;
+    _termSessions?: Map<string, unknown>;
+    _handleTermInput?: (bot: unknown, uid: string, txt: string, reply: (t: string) => Promise<void>) => Promise<boolean>;
   };
 
   const replies: string[] = [];
@@ -362,6 +364,12 @@ async function wizardInput(ctx: RouteContext, body: Record<string, unknown>): Pr
   if (cs._llmWizardSessions?.has(userId) && cs._handleLlmWizardInput) {
     const handled = await cs._handleLlmWizardInput(bot, userId, text, replyFn);
     return { status: 200, body: { ok: true, handled, replies, wizard: "llm" } };
+  }
+
+  // Check /term interactive terminal
+  if (cs._termSessions?.has(userId) && cs._handleTermInput) {
+    const handled = await cs._handleTermInput(bot, userId, text, replyFn);
+    return { status: 200, body: { ok: true, handled, replies, wizard: "term" } };
   }
 
   return { status: 200, body: { ok: true, handled: false, replies: [], wizard: null } };

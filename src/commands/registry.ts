@@ -1341,8 +1341,7 @@ export class CommandSystem {
     });
 
     // /term — interactive terminal (dmOnly, blocking, 5min timeout)
-    // Enters an interactive shell session. Each subsequent non-slash message
-    // is executed as a shell command. Output is sent back. /term exit to quit.
+    // Uses a persistent shell process (spawn) so cd/export persist across commands.
     this.register({
       name: "term",
       aliases: ["终端", "terminal", "shell-session"],
@@ -1352,36 +1351,98 @@ export class CommandSystem {
       dmOnly: true,
       handler: async (ctx) => {
         if (ctx.args[0]?.toLowerCase() === "exit") {
-          // Exit is handled by the wizard session mechanism
           const sessions = (this as unknown as { _termSessions?: Map<string, unknown> })._termSessions;
           if (sessions) {
-            sessions.delete(ctx.message.fromUserId);
+            const session = sessions.get(ctx.message.fromUserId) as { shell: { kill: (sig: string) => void } } | undefined;
+            if (session) {
+              session.shell.kill("SIGTERM");
+              sessions.delete(ctx.message.fromUserId);
+            }
             await ctx.reply("🖥️ 终端已退出");
           }
           return;
         }
 
         // Start terminal session
-        const sessions = (this as unknown as { _termSessions?: Map<string, { lastActivity: number; exitCode: number | null }> })._termSessions;
+        const sessions = (this as unknown as { _termSessions?: Map<string, { shell: { kill: (sig: string) => void; killed: boolean; exitCode: number | null; stdout: { on: (e: string, cb: (d: Buffer) => void) => void }; stderr: { on: (e: string, cb: (d: Buffer) => void) => void }; on: (e: string, cb: (code: number | null) => void) => void; stdin: { write: (s: string) => boolean } | null } }> })._termSessions;
         if (!sessions) {
           await ctx.reply("❌ 终端会话管理不可用");
           return;
         }
 
-        sessions.set(ctx.message.fromUserId, { lastActivity: Date.now(), exitCode: null });
+        // Kill existing session if re-entering
+        const existing = sessions.get(ctx.message.fromUserId);
+        if (existing) {
+          existing.shell.kill("SIGTERM");
+          sessions.delete(ctx.message.fromUserId);
+        }
+
+        // Spawn a persistent shell process
+        const { spawn } = await import("node:child_process");
+        const shell = spawn("bash", ["--noprofile", "--norc"], {
+          cwd: process.env.HOME || process.cwd(),
+          env: { ...process.env, PS1: "", PS2: "" },
+          stdio: ["pipe", "pipe", "pipe"],
+        }) as unknown as {
+          kill: (sig: string) => void;
+          killed: boolean;
+          exitCode: number | null;
+          stdout: { on: (e: string, cb: (d: Buffer) => void) => void };
+          stderr: { on: (e: string, cb: (d: Buffer) => void) => void };
+          on: (e: string, cb: (code: number | null) => void) => void;
+          stdin: { write: (s: string) => boolean } | null;
+        };
+
+        const session = {
+          shell,
+          lastActivity: Date.now(),
+          lastExitCode: null as number | null,
+          outputBuffer: "",
+          commandResolve: null as (() => void) | null,
+          idleTimer: null as ReturnType<typeof setInterval> | null,
+        };
+
+        // Collect output
+        shell.stdout.on("data", (data: Buffer) => {
+          session.outputBuffer += data.toString();
+        });
+        shell.stderr.on("data", (data: Buffer) => {
+          session.outputBuffer += data.toString();
+        });
+        shell.on("exit", (code: number | null) => {
+          session.lastExitCode = code ?? 0;
+          if (session.commandResolve) {
+            session.commandResolve();
+            session.commandResolve = null;
+          }
+        });
+
+        // Set up idle timeout check
+        session.idleTimer = setInterval(() => {
+          if (Date.now() - session.lastActivity > 5 * 60 * 1000) {
+            if (session.idleTimer) clearInterval(session.idleTimer);
+            shell.kill("SIGTERM");
+            sessions.delete(ctx.message.fromUserId);
+            ctx.bot.sendDirectMessage(ctx.message.fromUserId, "⏰ 终端已超时（5分钟无操作），自动退出").catch(() => {});
+          }
+        }, 30_000);
+
+        sessions.set(ctx.message.fromUserId, session);
+
         await ctx.reply(
           "🖥️ 交互式终端已启动\n\n" +
           "接下来的消息将作为 shell 命令执行。\n" +
+          "工作目录和环境变量变更会保留。\n" +
           "发送 /term exit 退出终端。\n" +
           "5分钟无操作自动退出。\n\n" +
-          "示例: ls -la, echo hello, whoami",
+          "示例: cd /tmp, export FOO=bar, ls -la",
         );
       },
     });
 
-    // Register terminal session handler (similar to wizard sessions)
+    // Register terminal session handler
     {
-      const termSessions = new Map<string, { lastActivity: number; exitCode: number | null }>();
+      const termSessions = new Map<string, { shell: { kill: (sig: string) => void; killed: boolean; exitCode: number | null; stdout: { on: (e: string, cb: (d: Buffer) => void) => void }; stderr: { on: (e: string, cb: (d: Buffer) => void) => void }; on: (e: string, cb: (code: number | null) => void) => void; stdin: { write: (s: string) => boolean } | null }; lastActivity: number; lastExitCode: number | null; outputBuffer: string; commandResolve: (() => void) | null; idleTimer: ReturnType<typeof setInterval> | null }>();
       (this as unknown as { _termSessions: Map<string, unknown> })._termSessions = termSessions;
 
       (this as unknown as { _handleTermInput: (bot: unknown, userId: string, text: string, reply: (t: string) => Promise<void>) => Promise<boolean> })._handleTermInput =
@@ -1389,8 +1450,18 @@ export class CommandSystem {
           const session = termSessions.get(userId);
           if (!session) return false;
 
+          // Check if shell has exited
+          if (session.shell.killed || session.shell.exitCode !== null) {
+            termSessions.delete(userId);
+            if (session.idleTimer) clearInterval(session.idleTimer);
+            await reply(`🖥️ 终端进程已退出 (退出码: ${session.lastExitCode ?? 0})`);
+            return true;
+          }
+
           // Check 5-minute timeout
           if (Date.now() - session.lastActivity > 5 * 60 * 1000) {
+            session.shell.kill("SIGTERM");
+            if (session.idleTimer) clearInterval(session.idleTimer);
             termSessions.delete(userId);
             await reply("⏰ 终端已超时（5分钟无操作），自动退出");
             return true;
@@ -1400,47 +1471,68 @@ export class CommandSystem {
           const cmd = text.trim();
 
           // Check for exit command
-          if (cmd === "exit" || cmd === "quit" || cmd === "/term exit") {
+          if (cmd === "exit" || cmd === "quit" || cmd === "/term exit" || cmd === "/term") {
+            session.shell.kill("SIGTERM");
+            if (session.idleTimer) clearInterval(session.idleTimer);
             termSessions.delete(userId);
-            const exitCode = session.exitCode;
-            await reply(`🖥️ 终端已退出${exitCode !== null ? ` (最后退出码: ${exitCode})` : ""}`);
+            await reply(`🖥️ 终端已退出${session.lastExitCode !== null ? ` (最后退出码: ${session.lastExitCode})` : ""}`);
             return true;
           }
 
-          // Execute shell command
-          try {
-            const { exec } = await import("node:child_process");
-            const result = await new Promise<{ stdout: string; stderr: string; code: number }>((resolve) => {
-              exec(cmd, {
-                timeout: 30_000,
-                maxBuffer: 1024 * 1024,
-                cwd: process.env.HOME || process.cwd(),
-              }, (err, stdout, stderr) => {
-                resolve({
-                  stdout: stdout?.toString() ?? "",
-                  stderr: stderr?.toString() ?? "",
-                  code: err ? 1 : 0,
-                });
-              });
-            });
+          // Execute command in the persistent shell
+          // Write command + marker to know when output ends + capture exit code
+          session.outputBuffer = "";
+          const marker = `__TERM_MARKER_${Date.now()}__`;
+          let resolved = false;
 
-            session.exitCode = result.code;
+          const outputPromise = new Promise<string>((resolve) => {
+            const timeout = setTimeout(() => {
+              if (!resolved) {
+                resolved = true;
+                resolve(session.outputBuffer);
+                session.outputBuffer = "";
+              }
+            }, 30_000);
 
-            let output = "";
-            if (result.stdout) output += result.stdout;
-            if (result.stderr) output += (output ? "\n" : "") + result.stderr;
-            if (!output) output = "(无输出)";
+            const checkOutput = () => {
+              if (resolved) return;
+              if (session.outputBuffer.includes(marker)) {
+                resolved = true;
+                clearTimeout(timeout);
+                const idx = session.outputBuffer.indexOf(marker);
+                const output = session.outputBuffer.slice(0, idx);
+                const afterMarker = session.outputBuffer.slice(idx + marker.length);
+                const exitMatch = afterMarker.match(/^\s*(\d+)/);
+                if (exitMatch) {
+                  session.lastExitCode = parseInt(exitMatch[1], 10);
+                }
+                session.outputBuffer = "";
+                resolve(output);
+              } else {
+                setTimeout(checkOutput, 50);
+              }
+            };
+            checkOutput();
+          });
 
-            // Truncate to 3000 chars
-            if (output.length > 3000) {
-              output = output.slice(0, 3000) + `\n... (截断，共 ${output.length} 字符)`;
-            }
-
-            await reply(`$ ${cmd}\n${output}\n[退出码: ${result.code}]`);
-          } catch (err) {
-            await reply(`$ ${cmd}\n❌ 执行失败: ${(err as Error).message}`);
+          // Write command to shell stdin
+          if (session.shell.stdin) {
+            session.shell.stdin.write(`${cmd}\n`);
+            session.shell.stdin.write(`echo "${marker}$?"\n`);
           }
 
+          let output = await outputPromise;
+
+          // Clean up output
+          output = output.replace(/\r\n/g, "\n").trim();
+          if (!output) output = "(无输出)";
+
+          // Truncate to 3000 chars
+          if (output.length > 3000) {
+            output = output.slice(0, 3000) + `\n... (截断，共 ${output.length} 字符)`;
+          }
+
+          await reply(`$ ${cmd}\n${output}\n[退出码: ${session.lastExitCode ?? 0}]`);
           return true;
         };
     }
@@ -4053,24 +4145,26 @@ export class CommandSystem {
         const cmd = ctx.args.join(" ");
         const { exec } = await import("node:child_process");
         try {
-          const output = await new Promise<string>((resolve, reject) => {
+          const result = await new Promise<{ output: string; code: number }>((resolve) => {
             exec(cmd, { timeout: 30000, maxBuffer: 1024 * 1024 }, (err, stdout, stderr) => {
-              if (err && !stdout && !stderr) {
-                reject(err);
-                return;
-              }
               const parts: string[] = [];
               if (stdout) parts.push(stdout.trim());
               if (stderr) parts.push(`[stderr] ${stderr.trim()}`);
-              resolve(parts.join("\n") || "(无输出)");
+              // exec sets err for non-zero exit codes — extract the code
+              const exitCode = err ? (err as NodeJS.ErrnoException).errno ?? (err as { code?: number }).code ?? 1 : 0;
+              // If the error is just a non-zero exit code, don't treat as failure
+              if (err && !stdout && !stderr && err.message) {
+                parts.push(err.message);
+              }
+              resolve({ output: parts.join("\n") || "(无输出)", code: exitCode });
             });
           });
           // Truncate output if too long for IM (unless --all/-a was the first arg)
           const maxLen = ctx.showAll ? Infinity : 2000;
-          const truncated = output.length > maxLen
-            ? output.substring(0, maxLen) + `\n... (输出被截断，共 ${output.length} 字符，用 /shell --all ${cmd} 查看全部)`
-            : output;
-          await ctx.reply(`💻 $ ${cmd}\n${truncated}`);
+          const truncated = result.output.length > maxLen
+            ? result.output.substring(0, maxLen) + `\n... (输出被截断，共 ${result.output.length} 字符，用 /shell --all ${cmd} 查看全部)`
+            : result.output;
+          await ctx.reply(`$ ${cmd}\n${truncated}\n[退出码: ${result.code}]`);
         } catch (err) {
           await ctx.reply(`❌ 命令执行失败: ${(err as Error).message}`);
         }
