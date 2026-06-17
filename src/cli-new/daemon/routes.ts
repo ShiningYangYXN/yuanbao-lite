@@ -69,6 +69,9 @@ export async function handleRoute(
     case path === "/contacts" && method === "GET":
       return listContacts();
 
+    case path === "/completions" && method === "GET":
+      return completions(ctx);
+
     case path === "/version" && method === "GET":
       return { status: 200, body: { ok: true, version: getVersion() } };
 
@@ -276,6 +279,41 @@ function listContacts(): RouteResult {
       })),
       total: all.length,
     },
+  };
+}
+
+/**
+ * Return raw contact/group/alias data for CLI Tab completion.
+ * Saves a round-trip vs. parsing /command output.
+ */
+function completions(ctx: RouteContext): RouteResult {
+  const bot = ctx.bot;
+  const contacts = getGlobalContactStore({
+    persistencePath: join(homedir(), ".yuanbao-lite", "contacts.json"),
+    autoSave: true,
+  }).getAll("name").map(c => ({ id: c.id, name: c.name, tag: c.tag }));
+
+  const groups = bot
+    ? bot.getGroupStore().getAll("lastActive").map(g => ({
+        groupCode: g.groupCode,
+        name: g.name ?? g.groupName ?? "",
+        tag: g.tag,
+      }))
+    : [];
+
+  const aliases = bot
+    ? bot.getAliasStore().getAll().map(a => ({ alias: a.alias, id: a.id, nickname: a.nickname }))
+    : [];
+
+  const commands = bot?.getCommandSystem()?.getVisibleCommands().map(c => ({
+    name: c.name,
+    aliases: c.aliases ?? [],
+    description: c.description,
+  })) ?? [];
+
+  return {
+    status: 200,
+    body: { ok: true, contacts, groups, aliases, commands },
   };
 }
 

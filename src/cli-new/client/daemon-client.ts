@@ -305,6 +305,33 @@ export class DaemonClient {
       controller?.abort();
     };
   }
+
+  // ─── Completion data ───
+
+  async fetchCompletions(): Promise<{
+    contacts: Array<{ id: string; name: string; tag?: string }>;
+    groups: Array<{ groupCode: string; name: string; tag?: string }>;
+    aliases: Array<{ alias: string; id: string; nickname?: string }>;
+    commands: Array<{ name: string; aliases: string[]; description: string }>;
+  }> {
+    const { status, data } = await this.request<{
+      ok: boolean;
+      contacts?: Array<{ id: string; name: string; tag?: string }>;
+      groups?: Array<{ groupCode: string; name: string; tag?: string }>;
+      aliases?: Array<{ alias: string; id: string; nickname?: string }>;
+      commands?: Array<{ name: string; aliases: string[]; description: string }>;
+      error?: string;
+    }>("GET", "/completions");
+    if (status !== 200 || !data.ok) {
+      throw new Error(data.error ?? `completions failed: HTTP ${status}`);
+    }
+    return {
+      contacts: data.contacts ?? [],
+      groups: data.groups ?? [],
+      aliases: data.aliases ?? [],
+      commands: data.commands ?? [],
+    };
+  }
 }
 
 // ─── Module-level helpers ───
