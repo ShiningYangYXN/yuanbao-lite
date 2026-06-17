@@ -973,6 +973,36 @@ export class YuanbaoBot {
     const { msg, chatType } = converted;
     const chatMessage = toChatMessage(msg);
 
+    // ─── Skip-self guard ───
+    // Prevents infinite echo when the bot's own outgoing messages arrive
+    // via Group.CallbackAfterSendMsg / C2C.CallbackAfterSendMsg callbacks.
+    if (this.account.botId && chatMessage.fromUserId === this.account.botId) {
+      this.log.debug("skipping self-message");
+      return;
+    }
+
+    // ─── Skip-placeholder guard ───
+    // Abort if the message body is empty (group: only when not @bot) or
+    // is a single bracket placeholder like "[image]" with no actual content.
+    // Allows "[EMOJI: ...]" since that carries semantic meaning.
+    const trimmedText = chatMessage.text.trim();
+    if (!trimmedText) {
+      // Empty message — only process if bot is mentioned (so /commands with
+      // media attachments still work) or it's a DM
+      if (chatMessage.chatType === "group" && !chatMessage.isMentioned) {
+        this.log.debug("skipping empty group message (not @bot)");
+        return;
+      }
+    } else if (
+      /^\[[a-z]+\]$/.test(trimmedText) &&
+      !trimmedText.startsWith("[EMOJI:")
+    ) {
+      // Single bracket placeholder like [image], [file], [video], [voice]
+      // with no additional text — skip to avoid wasting LLM calls
+      this.log.debug(`skipping placeholder message: ${trimmedText}`);
+      return;
+    }
+
     // Fix isMentioned: always verify against the bot's own ID
     // The default isBotMentioned() checks if ANY mention exists (not bot-specific),
     // so we always override based on whether the bot is specifically mentioned.
