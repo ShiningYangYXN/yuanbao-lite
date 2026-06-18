@@ -1,0 +1,47 @@
+/**
+ * /commands command handler — extracted from registry.ts (lossless split).
+ * Category: misc
+ *
+ * Handler logic is copied verbatim from the original registerBuiltinCommands()
+ * method, with only `this.X` → `cmdSys.X` substitutions and relative import
+ * path fixes.
+ */
+
+import type { CommandSystem } from "../../registry.js";
+import type { CommandCategory } from "../../types.js";
+import { generateColoredHelp } from "../../help-text.js";
+import {
+  searchStickers,
+  getStickerPacks,
+  loadStickerPacksFromDir,
+  getBuiltinEmojis,
+} from "../../../business/sticker.js";
+import {
+  uploadToLitterbox,
+  uploadAndFormatLink as tempfileFormatLink,
+} from "../../../access/http/tempfile.js";
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
+
+export function register(cmdSys: CommandSystem): void {
+  cmdSys.register({
+        name: "commands",
+        aliases: ["cmdlist", "命令列表"],
+        description: "列出所有命令和别名（紧凑格式，无描述）",
+        usage: "/commands   (列出所有命令名和别名)",
+        category: "misc" as CommandCategory,
+        handler: async (ctx) => {
+          const visible = cmdSys.getAll().filter(c => !c.hidden);
+          if (visible.length === 0) {
+            await ctx.reply("暂无可用命令");
+            return;
+          }
+          const lines: string[] = [`📋 所有命令 (${visible.length} 个):`];
+          for (const cmd of visible) {
+            const aliases = cmd.aliases?.length ? ` (${cmd.aliases.join(", ")})` : "";
+            lines.push(`  ${cmdSys.config.prefix}${cmd.name}${aliases}`);
+          }
+          await ctx.reply(lines.join("\n"));
+        },
+      });
+}

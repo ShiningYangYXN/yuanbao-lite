@@ -8,21 +8,20 @@
  *     the trust list.
  *
  * Block scopes (per user, multiple can be combined — additive):
- *   - "all"      — deny ALL bot interaction (commands + LLM auto-reply)
- *   - "llm"      — deny LLM auto-reply (slash commands still work, unless
- *                  "all" or the specific command is also blocked)
- *   - "command"  — deny ALL slash commands (LLM still works, unless "llm"
- *                  or "all" is also blocked)
- *   - "<cmd>"    — deny a specific slash command (e.g. "shell", "unsafe").
+ *   - "[all]"      — deny ALL bot interaction (commands + LLM auto-reply)
+ *   - "[llm]"      — deny LLM auto-reply (slash commands still work, unless
+ *                  "[all]" or the specific command is also blocked)
+ *   - "[command]"  — deny ALL slash commands (LLM still works, unless "[llm]"
+ *                  or "[all]" is also blocked)
+ *   - "<cmd>"      — deny a specific slash command (e.g. "shell", "unsafe").
  *                  Can be any command name, including non-dmOnly commands.
  *                  This is more granular than /unsafe allow (which only
  *                  lifts dmOnly restriction).
  *
- * Special values for /block add:
- *   - "all"     → blocks everything
- *   - "llm"     → blocks LLM auto-reply
- *   - "command" → blocks all slash commands
- *   - any other string → treated as a command name to block specifically
+ * IMPORTANT: The three permission groups ([all], [llm], [command]) MUST be
+ * written with square brackets to distinguish them from command names.
+ * For example, a command literally named "all" would be blocked as "all"
+ * (no brackets), while the "block everything" group is "[all]".
  *
  * Multiple /block add operations on the same user APPEND to the block list
  * (do not replace). Use /block remove <user> [scope] to remove.
@@ -89,14 +88,34 @@ function save(): void {
   }
 }
 
-/** Valid special scope values. Any other string is treated as a command name. */
-export const SPECIAL_SCOPES = new Set(["all", "llm", "command"]);
+/** Valid special scope values (stored WITH brackets). Any other string is a command name. */
+export const SPECIAL_SCOPES = new Set(["[all]", "[llm]", "[command]"]);
 
 /**
- * Normalize a scope string: lowercase, strip leading "/".
+ * Normalize a scope string from user input.
+ * Permission groups (all/llm/command) MUST be wrapped in [] — if the user
+ * types "all", "llm", or "command" without brackets, we auto-wrap them.
+ * Command names are returned as-is (lowercase, no leading "/").
+ *
+ * Examples:
+ *   "all"      → "[all]"       (auto-wrapped permission group)
+ *   "[all]"    → "[all]"       (already correct)
+ *   "llm"      → "[llm]"
+ *   "command"  → "[command]"
+ *   "shell"    → "shell"       (command name, no brackets)
+ *   "/shell"   → "shell"       (strip leading /)
  */
 function normalizeScope(scope: string): string {
-  return scope.toLowerCase().replace(/^\//, "");
+  const trimmed = scope.trim();
+  const lower = trimmed.toLowerCase().replace(/^\//, "");
+  // Auto-wrap permission groups if user forgot brackets
+  if (lower === "all") return "[all]";
+  if (lower === "llm") return "[llm]";
+  if (lower === "command") return "[command]";
+  // Already has brackets — keep as-is (lowercased)
+  if (lower === "[all]" || lower === "[llm]" || lower === "[command]") return lower;
+  // Otherwise it's a command name
+  return lower;
 }
 
 /**
@@ -113,10 +132,11 @@ export function isBlocked(userId: string): boolean {
  * @param userId - The user ID to check
  * @param action - One of: "llm", "command:<cmdName>", or "all"
  *
- * Logic:
- *   - If user has "all" scope → blocked from everything
- *   - If action is "llm" and user has "llm" scope → blocked
- *   - If action is "command:X" and user has "command" scope → blocked
+ * Logic (scopes are stored as "[all]", "[llm]", "[command]", or command names):
+ *   - If action is "all": returns true if user has "[all]" scope (blocked from everything)
+ *   - If user has "[all]" scope → blocked from everything
+ *   - If action is "llm" and user has "[llm]" scope → blocked
+ *   - If action is "command:X" and user has "[command]" scope → blocked
  *   - If action is "command:X" and user has "X" scope → blocked
  *   - Wildcard "*" entries apply to ALL users
  */
@@ -127,11 +147,14 @@ export function isBlockedFrom(userId: string, action: string): boolean {
     // Match this user OR the wildcard "*"
     if (entry.userId !== userId && entry.userId !== "*") continue;
     for (const scope of entry.scopes) {
-      if (scope === "all") return true;
-      if (normalizedAction === "llm" && scope === "llm") return true;
+      // "[all]" scope blocks everything
+      if (scope === "[all]") return true;
+      // action="all" checks specifically for "[all]" scope (already handled above)
+      if (normalizedAction === "all") continue;
+      if (normalizedAction === "llm" && scope === "[llm]") return true;
       if (normalizedAction.startsWith("command:")) {
         const cmdName = normalizedAction.slice("command:".length);
-        if (scope === "command") return true;
+        if (scope === "[command]") return true;
         if (scope === cmdName) return true;
       }
     }

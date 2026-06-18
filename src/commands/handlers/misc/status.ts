@@ -1,0 +1,52 @@
+/**
+ * /status command handler — extracted from registry.ts (lossless split).
+ * Category: misc
+ *
+ * Handler logic is copied verbatim from the original registerBuiltinCommands()
+ * method, with only `this.X` → `cmdSys.X` substitutions and relative import
+ * path fixes.
+ */
+
+import type { CommandSystem } from "../../registry.js";
+import type { CommandCategory } from "../../types.js";
+import { generateColoredHelp } from "../../help-text.js";
+import {
+  searchStickers,
+  getStickerPacks,
+  loadStickerPacksFromDir,
+  getBuiltinEmojis,
+} from "../../../business/sticker.js";
+import {
+  uploadToLitterbox,
+  uploadAndFormatLink as tempfileFormatLink,
+} from "../../../access/http/tempfile.js";
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
+
+export function register(cmdSys: CommandSystem): void {
+  cmdSys.register({
+        name: "status",
+        aliases: ["state", "状态"],
+        description: "查看机器人连接状态和账号信息",
+        usage: "/status   (显示连接状态、Bot ID、名称等)",
+        category: "misc" as CommandCategory,
+        requireConnected: false,
+        handler: async (ctx) => {
+          const state = ctx.bot.getState();
+          const account = ctx.bot.getAccount();
+          const lines = [
+            "📊 机器人状态",
+            `  连接: ${state.connected ? "✅ 已连接" : "❌ 未连接"}`,
+            `  状态: ${state.status}`,
+          ];
+          if (state.connectId) lines.push(`  连接ID: ${state.connectId}`);
+          if (state.botId) lines.push(`  Bot ID: ${state.botId}`);
+          if (state.lastConnectedAt) {
+            lines.push(`  上次连接: ${new Date(state.lastConnectedAt).toLocaleString("zh-CN")}`);
+          }
+          if (state.lastError) lines.push(`  最近错误: ${state.lastError}`);
+          if (account.name) lines.push(`  名称: ${account.name}`);
+          await ctx.reply(lines.join("\n"));
+        },
+      });
+}

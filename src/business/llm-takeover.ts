@@ -129,18 +129,18 @@ const DEFAULT_SYSTEM_PROMPT = `你是元宝Lite智能助手，一个友好、专
 
 你收到的每条用户消息都按以下格式呈现（位于对话历史中）：
 
-  [HH:MM:SS] [昵称](用户ID)@群名或DM: 消息文本 [引用: #消息ID尾号]
+  [YYYY-MM-DD HH:MM:SS] [昵称](用户ID)@群名或DM: 消息文本 [引用: #消息ID尾号]
 
 字段说明：
-- HH:MM:SS — 消息发送的本地时间（24小时制）
+- YYYY-MM-DD HH:MM:SS — 消息发送的本地日期和时间（年-月-日 时:分:秒）
 - [昵称](用户ID) — 发送者的昵称和稳定用户ID。你可以用 @[昵称](用户ID) 语法在回复中@该用户
 - @群名或DM — 群聊时显示群名，私聊显示 DM
 - 消息文本 — 用户发送的实际内容（非文本元素以 [image:uuid]、[file:name] 等占位符表示）
 - [引用: #消息ID尾号] — 仅当用户引用了某条消息时出现，尾号是该消息ID的最后8位字符
 
 示例：
-  [14:23:05] [小明](u_abc123)@技术交流群: 你好
-  [14:23:18] [小红](u_def456)@技术交流群: 看看这个 [引用: #a1b2c3d4]
+  [2026-06-19 14:23:05] [小明](u_abc123)@技术交流群: 你好
+  [2026-06-19 14:23:18] [小红](u_def456)@技术交流群: 看看这个 [引用: #a1b2c3d4]
 
 ## 命令执行
 
@@ -281,9 +281,10 @@ export function markdownToImText(markdown: string): string {
  * Format a ChatMessage into the canonical context string injected into LLM
  * conversation history.
  *
- * Format: [HH:MM:SS] [昵称](用户ID)@群名或DM: 文本 [引用: #消息ID尾号]
+ * Format: [YYYY-MM-DD HH:MM:SS] [昵称](用户ID)@群名或DM: 文本 [引用: #消息ID尾号]
  *
- * - Timestamp (HH:MM:SS, 24h local) gives the LLM temporal awareness
+ * - Timestamp (YYYY-MM-DD HH:MM:SS, local timezone) gives the LLM full date
+ *   + time awareness (useful for "yesterday", "last week" references)
  * - [昵称](用户ID) lets the LLM @mention the user via @[昵称](id) syntax
  * - @群名 (group) or @DM (direct) identifies the conversation scope
  * - [引用: #尾号] suffix appears only when the user quoted a message
@@ -292,8 +293,8 @@ export function markdownToImText(markdown: string): string {
  * internal formatMessageForLlm fallback, ensuring consistent formatting.
  */
 export function formatChatMessageForContext(msg: ChatMessage): string {
-  // Timestamp: HH:MM:SS (24h, local timezone)
-  const ts = msg.timestamp > 0 ? formatTimeOfDay(msg.timestamp) : "??:??:??";
+  // Timestamp: YYYY-MM-DD HH:MM:SS (local timezone, full date + time)
+  const ts = msg.timestamp > 0 ? formatDateTime(msg.timestamp) : "????-??-?? ??:??:??";
 
   // Sender label: [昵称](用户ID) or [用户ID] when no nickname
   const nick = msg.fromNickname;
@@ -315,11 +316,11 @@ export function formatChatMessageForContext(msg: ChatMessage): string {
   return `[${ts}] ${senderLabel}${scope}: ${msg.text ?? ""}${quoteSuffix}`;
 }
 
-/** Format a Unix-ms timestamp as HH:MM:SS (24-hour, local timezone). */
-function formatTimeOfDay(ms: number): string {
+/** Format a Unix-ms timestamp as YYYY-MM-DD HH:MM:SS (local timezone). */
+function formatDateTime(ms: number): string {
   const d = new Date(ms);
   const pad = (n: number) => n < 10 ? `0${n}` : String(n);
-  return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
 // ─── Conversation Manager ───
