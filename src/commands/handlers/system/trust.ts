@@ -9,19 +9,6 @@
 
 import { CommandSystem } from "../../registry.js";
 import type { CommandCategory } from "../../types.js";
-import { generateColoredHelp } from "../../help-text.js";
-import {
-  searchStickers,
-  getStickerPacks,
-  loadStickerPacksFromDir,
-  getBuiltinEmojis,
-} from "../../../business/sticker.js";
-import {
-  uploadToLitterbox,
-  uploadAndFormatLink as tempfileFormatLink,
-} from "../../../access/http/tempfile.js";
-import { existsSync } from "node:fs";
-import { resolve } from "node:path";
 
 export function register(cmdSys: CommandSystem): void {
   cmdSys.register({
@@ -42,7 +29,7 @@ export function register(cmdSys: CommandSystem): void {
             const master = getMasterUserId();
             const grants = listCommandGrants(userId);
             const grantLines = grants.length > 0
-              ? grants.map(g => `    /${g.command} — ${g.forever ? "永久" : `${Math.ceil((g.expiresAt - Date.now()) / 60000)}分钟后过期`}`).join("\n")
+              ? grants.map(g => `    ${g.command} — ${g.forever ? "永久" : `${Math.ceil((g.expiresAt - Date.now()) / 60000)}分钟后过期`}`).join("\n")
               : "    (无)";
             await ctx.reply(
               `📊 信任状态:\n` +
@@ -55,14 +42,16 @@ export function register(cmdSys: CommandSystem): void {
             return;
           }
 
-          // list/add/remove/grant/revoke require dmOnly (system management operations)
-          if (ctx.message.chatType === "group") {
+          // list/add/remove/grant/revoke require dmOnly (system management operations).
+          // CLI source bypasses dmOnly + trust check (CLI is global highest privilege).
+          if (ctx.source !== "cli" && ctx.message.chatType === "group") {
             await ctx.reply("⚠️ 此操作仅限私聊使用。请私聊机器人发送此命令。");
             return;
           }
 
-          // Only trusted users can manage trust (master always can)
-          if (!isTrusted(userId)) {
+          // Only trusted users can manage trust (master always can).
+          // CLI source bypasses trust check.
+          if (ctx.source !== "cli" && !isTrusted(userId)) {
             await ctx.reply("❌ 你不在信任列表中，无法管理受信用户");
             return;
           }
@@ -138,17 +127,17 @@ export function register(cmdSys: CommandSystem): void {
             // Check command exists and is dmOnly (only dmOnly commands need grants)
             const cmdDef = cmdSys.get(cmdName);
             if (!cmdDef) {
-              await ctx.reply(`❌ 未知命令: /${cmdName}`);
+              await ctx.reply(`❌ 未知命令: ${cmdName}`);
               return;
             }
             if (CommandSystem.UNAUTHORIZABLE_COMMANDS.has(cmdName.toLowerCase())) {
-              await ctx.reply(`❌ 命令 /${cmdName} 不支持被授权`);
+              await ctx.reply(`❌ 命令 ${cmdName} 不支持被授权`);
               return;
             }
             const result = await grantCommand(targetId, cmdName, durationMs);
             const expiryStr = durationMs === 0 ? "永久" : `${durationMs / 60000}分钟`;
             await ctx.reply(result.ok
-              ? `✅ 已授权 /${cmdName} 给 ${targetId} (${expiryStr})`
+              ? `✅ 已授权 ${cmdName} 给 ${targetId} (${expiryStr})`
               : `❌ ${result.reason}`,
             );
             return;
@@ -164,7 +153,7 @@ export function register(cmdSys: CommandSystem): void {
             const cmdName = ctx.args[2].replace(/^\//, "");
             const result = revokeCommand(targetId, cmdName);
             await ctx.reply(result.ok
-              ? `✅ 已撤销 ${targetId} 的 /${cmdName} 授权`
+              ? `✅ 已撤销 ${targetId} 的 ${cmdName} 授权`
               : `❌ ${result.reason}`,
             );
             return;
@@ -180,7 +169,7 @@ export function register(cmdSys: CommandSystem): void {
               await ctx.reply(`📋 ${name} 的单命令授权: (无)`);
               return;
             }
-            const lines = grants.map(g => `  /${g.command} — ${g.forever ? "永久" : `${Math.ceil((g.expiresAt - Date.now()) / 60000)}分钟后过期`}`);
+            const lines = grants.map(g => `  ${g.command} — ${g.forever ? "永久" : `${Math.ceil((g.expiresAt - Date.now()) / 60000)}分钟后过期`}`);
             await ctx.reply(`📋 ${name} 的单命令授权 (${grants.length} 个):\n${lines.join("\n")}`);
             return;
           }

@@ -9,19 +9,6 @@
 
 import type { CommandSystem } from "../../registry.js";
 import type { CommandCategory } from "../../types.js";
-import { generateColoredHelp } from "../../help-text.js";
-import {
-  searchStickers,
-  getStickerPacks,
-  loadStickerPacksFromDir,
-  getBuiltinEmojis,
-} from "../../../business/sticker.js";
-import {
-  uploadToLitterbox,
-  uploadAndFormatLink as tempfileFormatLink,
-} from "../../../access/http/tempfile.js";
-import { existsSync } from "node:fs";
-import { resolve } from "node:path";
 
 export function register(cmdSys: CommandSystem): void {
   cmdSys.register({
@@ -49,11 +36,14 @@ export function register(cmdSys: CommandSystem): void {
             return;
           }
 
-          // Only trusted users can manage blocks (master always can)
-          const { isTrusted } = await import("../../../business/trust.js");
-          if (!isTrusted(ctx.message.fromUserId)) {
-            await ctx.reply("❌ 你不在信任列表中，无法管理封禁列表");
-            return;
+          // Only trusted users can manage blocks (master always can).
+          // CLI source bypasses trust check (CLI is global highest privilege).
+          if (ctx.source !== "cli") {
+            const { isTrusted } = await import("../../../business/trust.js");
+            if (!isTrusted(ctx.message.fromUserId)) {
+              await ctx.reply("❌ 你不在信任列表中，无法管理封禁列表");
+              return;
+            }
           }
 
           if (!subCmd || subCmd === "list") {
@@ -73,16 +63,17 @@ export function register(cmdSys: CommandSystem): void {
             return;
           }
 
-          // /block add <ID|*> <all|llm|command|命令名> [昵称]
+          // /block add <ID|*> <[all]|[llm]|[command]|命令名> [昵称]
           if (subCmd === "add") {
             if (ctx.args.length < 3) {
               await ctx.reply(
                 "用法: /block add <用户ID|*> <范围> [昵称]\n" +
                 "范围可选值:\n" +
-                "  all      — 封禁所有功能（命令+LLM）\n" +
-                "  llm      — 封禁LLM自动回复\n" +
-                "  command  — 封禁所有斜杠命令\n" +
-                "  <命令名> — 封禁特定命令（如 shell, unsafe, send 等，可禁用非受限命令）\n" +
+                "  [all]      — 封禁所有功能（命令+LLM）\n" +
+                "  [llm]      — 封禁LLM自动回复\n" +
+                "  [command]  — 封禁所有斜杠命令\n" +
+                "  <命令名>   — 封禁特定命令（如 shell, unsafe, send 等，可禁用非受限命令，无需加/）\n" +
+                "权限组必须加方括号以区分命令名\n" +
                 "用 * 作为用户ID可封禁所有用户（全局）\n" +
                 "多次对同一用户操作会附加范围",
               );
@@ -122,7 +113,8 @@ export function register(cmdSys: CommandSystem): void {
             "  /block add <ID|*> <范围> [昵称] 添加封禁（附加到已有范围）\n" +
             "  /block remove <ID|*> [范围]     移除封禁（不指定范围则全部移除）\n" +
             "  /block status                   查看自己的封禁状态\n" +
-            "范围: all | llm | command | <命令名>\n" +
+            "范围: [all] | [llm] | [command] | <命令名>\n" +
+            "权限组必须加方括号；命令名无需加/\n" +
             "优先级: block > trust > unsafe（被封禁用户不能被添加到信任列表）",
           );
         },

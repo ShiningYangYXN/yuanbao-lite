@@ -9,18 +9,7 @@
 
 import type { CommandSystem } from "../../registry.js";
 import type { CommandCategory } from "../../types.js";
-import { generateColoredHelp } from "../../help-text.js";
-import {
-  searchStickers,
-  getStickerPacks,
-  loadStickerPacksFromDir,
-  getBuiltinEmojis,
-} from "../../../business/sticker.js";
-import {
-  uploadToLitterbox,
-  uploadAndFormatLink as tempfileFormatLink,
-} from "../../../access/http/tempfile.js";
-import { existsSync } from "node:fs";
+import { searchStickers, getStickerPacks, loadStickerPacksFromDir, getBuiltinEmojis } from "../../../business/sticker.js";
 import { resolve } from "node:path";
 
 export function register(cmdSys: CommandSystem): void {

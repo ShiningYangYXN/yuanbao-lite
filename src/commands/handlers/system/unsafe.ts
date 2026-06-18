@@ -9,19 +9,6 @@
 
 import type { CommandSystem } from "../../registry.js";
 import type { CommandCategory } from "../../types.js";
-import { generateColoredHelp } from "../../help-text.js";
-import {
-  searchStickers,
-  getStickerPacks,
-  loadStickerPacksFromDir,
-  getBuiltinEmojis,
-} from "../../../business/sticker.js";
-import {
-  uploadToLitterbox,
-  uploadAndFormatLink as tempfileFormatLink,
-} from "../../../access/http/tempfile.js";
-import { existsSync } from "node:fs";
-import { resolve } from "node:path";
 
 export function register(cmdSys: CommandSystem): void {
   cmdSys.register({
@@ -53,7 +40,7 @@ export function register(cmdSys: CommandSystem): void {
               lines.push("", `📋 已授权命令 (${allowed.length}):`);
               for (const a of allowed) {
                 const expiry = a.forever ? "永久" : `${Math.ceil((a.expiresAt - now) / 60000)}分钟后过期`;
-                lines.push(`  /${a.name} — ${expiry}`);
+                lines.push(`  ${a.name} — ${expiry}`);
               }
             } else {
               lines.push("", "📋 已授权命令: (无)");
@@ -63,14 +50,19 @@ export function register(cmdSys: CommandSystem): void {
             return;
           }
 
-          // on/off require trust check
+          // on/off require trust check.
+          // CLI source bypasses trust check (CLI is global highest privilege).
           let trusted: boolean;
-          try {
-            const { isTrusted } = await import("../../../business/trust.js");
-            trusted = isTrusted(ctx.message.fromUserId);
-          } catch {
-            // trust module optional — default to allowing if module missing
+          if (ctx.source === "cli") {
             trusted = true;
+          } else {
+            try {
+              const { isTrusted } = await import("../../../business/trust.js");
+              trusted = isTrusted(ctx.message.fromUserId);
+            } catch {
+              // trust module optional — default to allowing if module missing
+              trusted = true;
+            }
           }
 
           if (!trusted) {
@@ -90,19 +82,21 @@ export function register(cmdSys: CommandSystem): void {
               const now = Date.now();
               const lines = allowed.map(a => {
                 const expiry = a.forever ? "永久" : `${Math.ceil((a.expiresAt - now) / 60000)}分钟后过期`;
-                return `  /${a.name} — ${expiry}`;
+                return `  ${a.name} — ${expiry}`;
               });
               await ctx.reply(
                 `📋 已授权命令 (${allowed.length}):\n${lines.length > 0 ? lines.join("\n") : "  (无)"}\n\n` +
                 `用法: /unsafe allow <命令名> [分钟数|forever]\n` +
+                `命令名无需加/ (如 shell, 不是 /shell)\n` +
                 `默认: 5分钟, forever=永久\n` +
                 `/unsafe disallow <命令名> — 取消授权\n` +
-                `不可授权: unsafe, trust, config, init, daemon`,
+                `不可授权: unsafe, trust, block, config, init, daemon`,
               );
               return;
             }
-            // Parse duration: minutes number, "forever", or default 5min
-            const cmdName = ctx.args[1];
+            // Parse duration: minutes number, "forever", or default 5min.
+            // Command name is given WITHOUT leading "/" — tolerate it if user adds one.
+            const cmdName = ctx.args[1].replace(/^\//, "");
             let durationMs = 5 * 60 * 1000; // default 5 min
             if (ctx.args[2]?.toLowerCase() === "forever") {
               durationMs = 0;
@@ -115,7 +109,7 @@ export function register(cmdSys: CommandSystem): void {
             const result = cmdSys.allowCommand(cmdName, durationMs);
             const expiryStr = durationMs === 0 ? "永久" : `${durationMs / 60000}分钟`;
             await ctx.reply(result.ok
-              ? `✅ 已授权 /${cmdName} 在群聊中使用 (${expiryStr})`
+              ? `✅ 已授权 ${cmdName} 在群聊中使用 (${expiryStr})`
               : `❌ ${result.reason}`,
             );
             return;
@@ -124,11 +118,11 @@ export function register(cmdSys: CommandSystem): void {
           if (subCmd2 === "disallow") {
             // /unsafe disallow <command> — revoke authorization
             if (!ctx.args[1]) {
-              await ctx.reply("用法: /unsafe disallow <命令名>");
+              await ctx.reply("用法: /unsafe disallow <命令名>\n命令名无需加/ (如 shell, 不是 /shell)");
               return;
             }
             const result = cmdSys.disallowCommand(ctx.args[1]);
-            await ctx.reply(result.ok ? `✅ 已取消授权 /${ctx.args[1]}` : `❌ ${result.reason}`);
+            await ctx.reply(result.ok ? `✅ 已取消授权 ${ctx.args[1]}` : `❌ ${result.reason}`);
             return;
           }
 

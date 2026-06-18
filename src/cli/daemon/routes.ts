@@ -237,11 +237,15 @@ async function runCommand(ctx: RouteContext, body: Record<string, unknown>): Pro
   const chatTarget = typeof body.chatTarget === "string" ? body.chatTarget : "cli";
   // Source: "cli" (from CLI) or "chat" (from IM). Affects coloring + dmOnly bypass.
   const source = (typeof body.source === "string" && body.source === "cli") ? "cli" : "chat";
+  // Optional: override fromUserId (for testing trust-gated commands as master).
+  // Defaults to "cli" for normal CLI usage.
+  const fromUserId = typeof body.fromUserId === "string" && body.fromUserId.trim() ? body.fromUserId.trim() : "cli";
+  const fromNickname = typeof body.fromNickname === "string" && body.fromNickname.trim() ? body.fromNickname.trim() : fromUserId;
 
   const syntheticMsg: ChatMessage = {
     id: `cli-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    fromUserId: "cli",
-    fromNickname: "cli",
+    fromUserId,
+    fromNickname,
     chatType: chatMode,
     text,
     timestamp: Date.now(),
