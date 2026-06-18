@@ -52,7 +52,7 @@ export class CommandSystem {
   /** Per-command authorization with expiry: command name → { expiresAt (0=forever), timer } */
   private _allowedCommands = new Map<string, { expiresAt: number; timer: ReturnType<typeof setTimeout> | null }>();
   /** Commands that cannot be authorized via /unsafe allow */
-  private static UNAUTHORIZABLE_COMMANDS = new Set(["unsafe", "trust", "config", "init", "daemon"]);
+  private static UNAUTHORIZABLE_COMMANDS = new Set(["unsafe", "trust", "block", "config", "init", "daemon"]);
 
   constructor(config?: CommandSystemConfig) {
     this.config = {
@@ -333,6 +333,32 @@ export class CommandSystem {
       return { handled: true };
     }
 
+    // ─── Block check (HIGHEST priority — overrides unsafe + trust) ───
+    // Blocked users cannot execute commands. The block module supports
+    // per-user, per-command, and wildcard ("*") blocks. This check runs
+    // BEFORE the dmOnly check so blocked commands are denied even in DM.
+    // CLI source bypasses block (CLI is pre-authorized).
+    if (source !== "cli") {
+      try {
+        const { isBlockedFromCommand, isBlockedFrom } = await import("../business/block.js");
+        // Check if the user is blocked from this specific command, OR from
+        // all commands, OR from everything ("all" scope).
+        if (isBlockedFromCommand(message.fromUserId, commandName) || isBlockedFrom(message.fromUserId, "all")) {
+          const ctx = this.makeContext(bot, message, commandName, args, onReply, source);
+          await ctx.reply(`🚫 你被封禁，无法使用 /${commandName}。如有疑问请联系主人。`);
+          return { handled: true };
+        }
+        // Also check wildcard "*" blocks (apply to all users)
+        if (isBlockedFromCommand("*", commandName) || isBlockedFrom("*", "all")) {
+          const ctx = this.makeContext(bot, message, commandName, args, onReply, source);
+          await ctx.reply(`🚫 此命令已被全局封禁，无法使用。`);
+          return { handled: true };
+        }
+      } catch {
+        // block module optional — proceed if not available
+      }
+    }
+
     // Check for --help/-h/-? flag BEFORE executing the command
     // For /shell and /sh: only check if the flag is the FIRST argument
     // (flags after the actual command are passed through to the shell)
@@ -370,27 +396,40 @@ export class CommandSystem {
     }
 
     // Check dmOnly restriction (bypassed when unsafe mode is active, CLI source,
-    // or the specific command is authorized via /unsafe allow)
+    // the specific command is authorized via /unsafe allow, OR the user has a
+    // per-user command grant from /trust grant)
     if (def.dmOnly && message.chatType === "group" && !this._unsafeMode && source !== "cli" && !this.isCommandAllowed(commandName)) {
-      // Check if the user is trusted — trusted users get a hint to enable /unsafe
-      let isTrustedUser = false;
+      // Check if the user has a per-user command grant (from /trust grant)
+      let hasUserGrant = false;
       try {
-        const { isTrusted } = await import("../business/trust.js");
-        isTrustedUser = isTrusted(message.fromUserId);
+        const { hasCommandGrant } = await import("../business/trust.js");
+        hasUserGrant = hasCommandGrant(message.fromUserId, commandName);
       } catch {
         // trust module optional
       }
-      if (isTrustedUser) {
-        await this.makeContext(bot, message, commandName, args, onReply, source).reply(
-          `⚠️ 此命令仅限私聊使用。\n受信用户可：\n  /unsafe on [分钟] — 开启全局危险模式（默认5分钟）\n  /unsafe on forever — 永久开启\n  /unsafe allow /${commandName} [分钟|forever] — 仅授权此命令（默认5分钟）\n查看状态: /unsafe status`,
-        );
+      if (hasUserGrant) {
+        // User has a grant — proceed past the dmOnly check
       } else {
-        // Auto-include the user's own ID so they can forward it to the master
-        await this.makeContext(bot, message, commandName, args, onReply, source).reply(
-          `⚠️ 此命令仅限私聊使用。\n你的用户ID: ${message.fromUserId}\n如需在群聊中执行：\n  1. 联系主人发送: /trust add ${message.fromUserId}\n  2. 加入信任列表后，发送: /unsafe allow /${commandName}\n  或: /unsafe on 开启全局危险模式`,
-        );
+        // Check if the user is trusted — trusted users get a hint to enable /unsafe
+        let isTrustedUser = false;
+        try {
+          const { isTrusted } = await import("../business/trust.js");
+          isTrustedUser = isTrusted(message.fromUserId);
+        } catch {
+          // trust module optional
+        }
+        if (isTrustedUser) {
+          await this.makeContext(bot, message, commandName, args, onReply, source).reply(
+            `⚠️ 此命令仅限私聊使用。\n受信用户可：\n  /unsafe on [分钟] — 开启全局危险模式（默认5分钟）\n  /unsafe on forever — 永久开启\n  /unsafe allow /${commandName} [分钟|forever] — 全局授权此命令（默认5分钟）\n  /trust grant <你的ID> /${commandName} [分钟|forever] — 仅授权给你（需主人执行）\n查看状态: /unsafe status`,
+          );
+        } else {
+          // Auto-include the user's own ID so they can forward it to the master
+          await this.makeContext(bot, message, commandName, args, onReply, source).reply(
+            `⚠️ 此命令仅限私聊使用。\n你的用户ID: ${message.fromUserId}\n如需在群聊中执行：\n  1. 联系主人发送: /trust add ${message.fromUserId}\n  2. 加入信任列表后，发送: /unsafe allow /${commandName}\n  或: /unsafe on 开启全局危险模式\n  或请主人执行: /trust grant ${message.fromUserId} /${commandName}`,
+          );
+        }
+        return { handled: true };
       }
-      return { handled: true };
     }
 
     // Check connected requirement (bypassed for CLI source — CLI may run config commands before bot connects)
@@ -727,6 +766,115 @@ export class CommandSystem {
           lines.push(`  ${this.config.prefix}${cmd.name}${aliases}`);
         }
         await ctx.reply(lines.join("\n"));
+      },
+    });
+
+    // /new — clear conversation context (LLM history) for the current or specified session
+    // Restricted command (dmOnly): clearing context affects LLM behavior, so only
+    // the master or trusted users can clear. In group chat, only @bot user can clear
+    // the group's context. Default: clears the CURRENT session's context.
+    this.register({
+      name: "new",
+      aliases: ["clear", "清空", "新对话"],
+      description: "清空当前或指定会话的LLM上下文历史（受限命令）",
+      usage: "/new [dm <用户ID> | group <群号>]   (无参数=当前会话)",
+      category: "llm" as CommandCategory,
+      handler: async (ctx) => {
+        const engine = ctx.bot.getLlmEngine();
+        if (!engine) {
+          await ctx.reply("❌ LLM 引擎未初始化");
+          return;
+        }
+        // Determine target conversation key
+        let targetKey: string;
+        const subArg = ctx.args[0]?.toLowerCase();
+        if (!subArg) {
+          // Default: current session
+          targetKey = engine.getConversationManager().getKey(ctx.message);
+        } else if (subArg === "dm" && ctx.args[1]) {
+          targetKey = `dm:${ctx.args[1]}`;
+        } else if (subArg === "group" && ctx.args[1]) {
+          targetKey = `group:${ctx.args[1]}`;
+        } else {
+          await ctx.reply("用法: /new [dm <用户ID> | group <群号>]\n无参数=清空当前会话上下文");
+          return;
+        }
+        const sizeBefore = engine.getConversationManager().getHistory(targetKey).length;
+        engine.getConversationManager().clearHistory(targetKey);
+        await ctx.reply(`✅ 已清空会话上下文 (${targetKey})\n清除了 ${sizeBefore} 条历史消息`);
+      },
+    });
+
+    // /inspect — output a message's internal Bot-context representation (escaped)
+    // Accepts: message ID, message ID suffix (last 8 chars), or no args (uses the
+    // message that THIS command message quoted/referenced). Output is wrapped in
+    // a ```yuanbao-lite code block for clarity.
+    this.register({
+      name: "inspect",
+      aliases: ["检查", "inspect-msg"],
+      description: "输出消息在Bot上下文内部的表示法（escape过）",
+      usage: "/inspect [消息ID或#尾号]   (无参数=使用被引用的消息)",
+      category: "misc" as CommandCategory,
+      handler: async (ctx) => {
+        // Determine target message ID
+        let targetMsgId: string | undefined;
+        const arg = ctx.args[0];
+        if (arg) {
+          // Strip leading # if present
+          targetMsgId = arg.replace(/^#/, "");
+        } else {
+          // No args — use the message that THIS command message quoted
+          targetMsgId = ctx.message.quoteMsgId;
+          if (!targetMsgId) {
+            await ctx.reply("用法: /inspect [消息ID或#尾号]\n无参数时需要引用一条消息（回复该消息后执行 /inspect）");
+            return;
+          }
+        }
+
+        // Search history for the message by full ID or suffix (last 8 chars)
+        const historyStore = ctx.bot.getHistoryStore();
+        const allHistory = historyStore.getHistory();
+        let foundMsg = allHistory.find(m => m.id === targetMsgId);
+        if (!foundMsg) {
+          // Try suffix match (last 8 chars)
+          const suffix = targetMsgId.slice(-8);
+          foundMsg = allHistory.find(m => m.id && m.id.endsWith(suffix));
+        }
+        if (!foundMsg) {
+          await ctx.reply(`❌ 未找到消息: ${targetMsgId}\n提示: 消息ID可在历史记录中查看（/history）`);
+          return;
+        }
+
+        // Build the internal representation (same format as feedLlmContext)
+        const { formatChatMessageForContext } = await import("../business/llm-takeover.js");
+        const internalRep = formatChatMessageForContext(foundMsg);
+        // Also include raw field dump for debugging
+        const rawDump = JSON.stringify({
+          id: foundMsg.id,
+          fromUserId: foundMsg.fromUserId,
+          fromNickname: foundMsg.fromNickname,
+          chatType: foundMsg.chatType,
+          groupCode: foundMsg.groupCode,
+          groupName: foundMsg.groupName,
+          timestamp: foundMsg.timestamp,
+          isMentioned: foundMsg.isMentioned,
+          mentions: foundMsg.mentions,
+          quoteMsgId: foundMsg.quoteMsgId,
+          quoteMsgSeq: foundMsg.quoteMsgSeq,
+          text: foundMsg.text,
+        }, null, 2);
+
+        // Escape the output so @mention syntax in the message is not interpreted
+        const { escapeMentionSyntax } = await import("../business/mention.js");
+        const escapedRep = escapeMentionSyntax(internalRep);
+        const escapedDump = escapeMentionSyntax(rawDump);
+
+        // Wrap in ```yuanbao-lite code block
+        const output = "```yuanbao-lite\n" +
+          `# 内部表示法 (context format)\n${escapedRep}\n\n` +
+          `# 原始字段 dump\n${escapedDump}\n` +
+          "```";
+        await ctx.reply(output);
       },
     });
 
@@ -1771,16 +1919,17 @@ export class CommandSystem {
       },
     });
 
-    // /trust — manage trusted users
-    // /trust status is globally open; list/add/remove require dmOnly
+    // /trust — manage trusted users + per-user command grants
+    // /trust status is globally open; list/add/remove/grant/revoke require dmOnly
     this.register({
       name: "trust",
       aliases: ["信任", "受信"],
-      description: "管理受信用户列表（主人自动受信，不可移除）",
-      usage: "/trust [list|add <ID> [昵称]|remove <ID>|status]",
+      description: "管理受信用户列表和单命令授权（主人自动受信，不可移除）",
+      usage: "/trust [list|add <ID> [昵称]|remove <ID>|grant <ID> /命令 [分钟|forever]|revoke <ID> /命令|status]",
       category: "system" as CommandCategory,
       handler: async (ctx) => {
-        const { isTrusted, addTrust, removeTrust, listTrust, getMasterUserId } = await import("../business/trust.js");
+        const trust = await import("../business/trust.js");
+        const { isTrusted, addTrust, removeTrust, listTrust, getMasterUserId, grantCommand, revokeCommand, listCommandGrants, getTrustEntry } = trust;
         const subCmd = ctx.args[0]?.toLowerCase();
         const userId = ctx.message.fromUserId;
 
@@ -1788,17 +1937,22 @@ export class CommandSystem {
         if (subCmd === "status") {
           const trusted = isTrusted(userId);
           const master = getMasterUserId();
+          const grants = listCommandGrants(userId);
+          const grantLines = grants.length > 0
+            ? grants.map(g => `    /${g.command} — ${g.forever ? "永久" : `${Math.ceil((g.expiresAt - Date.now()) / 60000)}分钟后过期`}`).join("\n")
+            : "    (无)";
           await ctx.reply(
             `📊 信任状态:\n` +
             `  你的ID: ${userId}\n` +
             `  是否受信: ${trusted ? "是" : "否"}\n` +
             `  是否主人: ${userId === master ? "是" : "否"}\n` +
-            `  主人ID: ${master ?? "(未设置)"}`,
+            `  主人ID: ${master ?? "(未设置)"}\n` +
+            `  单命令授权:\n${grantLines}`,
           );
           return;
         }
 
-        // list/add/remove require dmOnly (system management operations)
+        // list/add/remove/grant/revoke require dmOnly (system management operations)
         if (ctx.message.chatType === "group") {
           await ctx.reply("⚠️ 此操作仅限私聊使用。请私聊机器人发送此命令。");
           return;
@@ -1817,12 +1971,14 @@ export class CommandSystem {
             await ctx.reply("📋 信任列表为空");
             return;
           }
-          const lines = entries.map(e =>
-            `  ${e.isMaster || e.userId === master ? "👑" : "👤"} ${e.userId}` +
-            `${e.nickname ? ` (${e.nickname})` : ""}` +
-            `${e.isMaster ? " [主人]" : ""}` +
-            `  受信于 ${new Date(e.trustedAt).toLocaleString("zh-CN")}`,
-          );
+          const lines = entries.map(e => {
+            const crown = e.isMaster || e.userId === master ? "👑" : "👤";
+            const nick = e.nickname ? ` (${e.nickname})` : "";
+            const masterTag = e.isMaster ? " [主人]" : "";
+            const grantCount = e.commandGrants ? Object.keys(e.commandGrants).length : 0;
+            const grantTag = grantCount > 0 ? ` [${grantCount}个授权]` : "";
+            return `  ${crown} ${e.userId}${nick}${masterTag}${grantTag}  受信于 ${new Date(e.trustedAt).toLocaleString("zh-CN")}`;
+          });
           await ctx.reply(`📋 信任列表 (${entries.length} 人):\n${lines.join("\n")}`);
           return;
         }
@@ -1834,11 +1990,14 @@ export class CommandSystem {
           }
           const targetId = ctx.args[1];
           const nickname = ctx.args.slice(2).join(" ");
-          const added = addTrust(targetId, nickname);
-          await ctx.reply(added
-            ? `✅ 已将 ${targetId}${nickname ? ` (${nickname})` : ""} 加入信任列表`
-            : `${targetId} 已在信任列表中（昵称已更新）`,
-          );
+          const result = await addTrust(targetId, nickname);
+          if (result.ok) {
+            await ctx.reply(`✅ 已将 ${targetId}${nickname ? ` (${nickname})` : ""} 加入信任列表`);
+          } else if (result.reason === "already") {
+            await ctx.reply(`${targetId} 已在信任列表中（昵称已更新）`);
+          } else {
+            await ctx.reply(`❌ ${result.reason}`);
+          }
           return;
         }
 
@@ -1856,29 +2015,194 @@ export class CommandSystem {
           return;
         }
 
+        // /trust grant <userID> /command [minutes|forever]
+        // Grants a specific command to a specific user (time-limited or forever).
+        // The user does NOT need to be trusted first — this is a standalone grant.
+        if (subCmd === "grant") {
+          if (ctx.args.length < 3) {
+            await ctx.reply("用法: /trust grant <用户ID> /命令名 [分钟|forever]\n默认: 5分钟, forever=永久\n不可授权命令: unsafe, trust, block, config, init, daemon");
+            return;
+          }
+          const targetId = ctx.args[1];
+          const cmdName = ctx.args[2].replace(/^\//, "");
+          let durationMs = 5 * 60 * 1000;
+          if (ctx.args[3]?.toLowerCase() === "forever") {
+            durationMs = 0;
+          } else {
+            const minutes = parseInt(ctx.args[3], 10);
+            if (!isNaN(minutes) && minutes > 0) durationMs = minutes * 60 * 1000;
+          }
+          // Check command exists and is dmOnly (only dmOnly commands need grants)
+          const cmdDef = this.get(cmdName);
+          if (!cmdDef) {
+            await ctx.reply(`❌ 未知命令: /${cmdName}`);
+            return;
+          }
+          if (CommandSystem.UNAUTHORIZABLE_COMMANDS.has(cmdName.toLowerCase())) {
+            await ctx.reply(`❌ 命令 /${cmdName} 不支持被授权`);
+            return;
+          }
+          const result = await grantCommand(targetId, cmdName, durationMs);
+          const expiryStr = durationMs === 0 ? "永久" : `${durationMs / 60000}分钟`;
+          await ctx.reply(result.ok
+            ? `✅ 已授权 /${cmdName} 给 ${targetId} (${expiryStr})`
+            : `❌ ${result.reason}`,
+          );
+          return;
+        }
+
+        // /trust revoke <userID> /command
+        if (subCmd === "revoke") {
+          if (ctx.args.length < 3) {
+            await ctx.reply("用法: /trust revoke <用户ID> /命令名");
+            return;
+          }
+          const targetId = ctx.args[1];
+          const cmdName = ctx.args[2].replace(/^\//, "");
+          const result = revokeCommand(targetId, cmdName);
+          await ctx.reply(result.ok
+            ? `✅ 已撤销 ${targetId} 的 /${cmdName} 授权`
+            : `❌ ${result.reason}`,
+          );
+          return;
+        }
+
+        // /trust grants <userID> — list a user's command grants
+        if (subCmd === "grants") {
+          const targetId = ctx.args[1] ?? userId;
+          const grants = listCommandGrants(targetId);
+          const entry = getTrustEntry(targetId);
+          const name = entry?.nickname ?? targetId;
+          if (grants.length === 0) {
+            await ctx.reply(`📋 ${name} 的单命令授权: (无)`);
+            return;
+          }
+          const lines = grants.map(g => `  /${g.command} — ${g.forever ? "永久" : `${Math.ceil((g.expiresAt - Date.now()) / 60000)}分钟后过期`}`);
+          await ctx.reply(`📋 ${name} 的单命令授权 (${grants.length} 个):\n${lines.join("\n")}`);
+          return;
+        }
+
+        await ctx.reply(
+          "用法:\n" +
+          "  /trust                          查看信任列表\n" +
+          "  /trust list                     同上\n" +
+          "  /trust add <ID> [昵称]          添加受信用户\n" +
+          "  /trust remove <ID>              移除受信用户（主人不可移除）\n" +
+          "  /trust grant <ID> /命令 [分钟]  授权单命令给单用户（默认5分钟）\n" +
+          "  /trust revoke <ID> /命令        撤销单用户单命令授权\n" +
+          "  /trust grants [ID]              查看单命令授权（默认自己）\n" +
+          "  /trust status                   查看自己的信任状态",
+        );
+      },
+    });
+
+    // /block — block users from all or partial features
+    // Priority: BLOCK > TRUST > UNSAFE. Blocked users cannot be trusted.
+    // /block cannot be temporarily authorized via /unsafe allow.
+    this.register({
+      name: "block",
+      aliases: ["封禁", "ban"],
+      description: "封禁用户使用全部或部分功能（优先级高于unsafe，可禁用非受限命令）",
+      usage: "/block [list|add <ID|*> <all|llm|command|命令名> [昵称]|remove <ID|*> [范围]|status]",
+      category: "system" as CommandCategory,
+      dmOnly: true,
+      handler: async (ctx) => {
+        const block = await import("../business/block.js");
+        const { addBlock, removeBlock, listBlocks, getBlockEntry } = block;
+        const subCmd = ctx.args[0]?.toLowerCase();
+
+        // /block status — anyone can check their own block status
         if (subCmd === "status") {
-          const trusted = isTrusted(userId);
-          const master = getMasterUserId();
-          await ctx.reply(
-            `📊 信任状态:\n` +
-            `  你的ID: ${userId}\n` +
-            `  是否受信: ${trusted ? "是" : "否"}\n` +
-            `  是否主人: ${userId === master ? "是" : "否"}\n` +
-            `  主人ID: ${master ?? "(未设置)"}`,
+          const userId = ctx.message.fromUserId;
+          const entry = getBlockEntry(userId);
+          if (!entry) {
+            await ctx.reply(`📊 封禁状态:\n  你的ID: ${userId}\n  是否被封禁: 否`);
+          } else {
+            const scopeLines = entry.scopes.map(s => `  - ${s}`).join("\n");
+            await ctx.reply(`📊 封禁状态:\n  你的ID: ${userId}\n  是否被封禁: 是\n  封禁范围:\n${scopeLines}`);
+          }
+          return;
+        }
+
+        // Only trusted users can manage blocks (master always can)
+        const { isTrusted } = await import("../business/trust.js");
+        if (!isTrusted(ctx.message.fromUserId)) {
+          await ctx.reply("❌ 你不在信任列表中，无法管理封禁列表");
+          return;
+        }
+
+        if (!subCmd || subCmd === "list") {
+          const entries = listBlocks();
+          if (entries.length === 0) {
+            await ctx.reply("📋 封禁列表为空");
+            return;
+          }
+          const lines = entries.map(e =>
+            `  ${e.userId === "*" ? "🌟" : "🚫"} ${e.userId}` +
+            `${e.nickname ? ` (${e.nickname})` : ""}` +
+            `${e.userId === "*" ? " [全局]" : ""}` +
+            `  范围: ${e.scopes.join(", ")}` +
+            `  封禁于 ${new Date(e.blockedAt).toLocaleString("zh-CN")}`,
+          );
+          await ctx.reply(`📋 封禁列表 (${entries.length} 条):\n${lines.join("\n")}`);
+          return;
+        }
+
+        // /block add <ID|*> <all|llm|command|命令名> [昵称]
+        if (subCmd === "add") {
+          if (ctx.args.length < 3) {
+            await ctx.reply(
+              "用法: /block add <用户ID|*> <范围> [昵称]\n" +
+              "范围可选值:\n" +
+              "  all      — 封禁所有功能（命令+LLM）\n" +
+              "  llm      — 封禁LLM自动回复\n" +
+              "  command  — 封禁所有斜杠命令\n" +
+              "  <命令名> — 封禁特定命令（如 shell, unsafe, send 等，可禁用非受限命令）\n" +
+              "用 * 作为用户ID可封禁所有用户（全局）\n" +
+              "多次对同一用户操作会附加范围",
+            );
+            return;
+          }
+          const targetId = ctx.args[1];
+          const scope = ctx.args[2];
+          const nickname = ctx.args.slice(3).join(" ");
+          const result = await addBlock(targetId, scope, nickname);
+          await ctx.reply(result.ok
+            ? `✅ 已封禁 ${targetId} (${scope})${nickname ? ` 昵称: ${nickname}` : ""}`
+            : `❌ ${result.reason}`,
+          );
+          return;
+        }
+
+        // /block remove <ID|*> [范围]
+        if (subCmd === "remove" || subCmd === "rm") {
+          if (ctx.args.length < 2) {
+            await ctx.reply("用法: /block remove <用户ID|*> [范围]\n不指定范围则移除该用户的所有封禁");
+            return;
+          }
+          const targetId = ctx.args[1];
+          const scope = ctx.args[2];
+          const result = removeBlock(targetId, scope);
+          await ctx.reply(result.ok
+            ? `✅ 已移除 ${targetId} 的封禁${scope ? ` (${scope})` : "（全部）"}`
+            : `❌ ${result.reason}`,
           );
           return;
         }
 
         await ctx.reply(
           "用法:\n" +
-          "  /trust                    查看信任列表\n" +
-          "  /trust list               同上\n" +
-          "  /trust add <ID> [昵称]    添加受信用户\n" +
-          "  /trust remove <ID>        移除受信用户（主人不可移除）\n" +
-          "  /trust status             查看自己的信任状态",
+          "  /block                          查看封禁列表\n" +
+          "  /block list                     同上\n" +
+          "  /block add <ID|*> <范围> [昵称] 添加封禁（附加到已有范围）\n" +
+          "  /block remove <ID|*> [范围]     移除封禁（不指定范围则全部移除）\n" +
+          "  /block status                   查看自己的封禁状态\n" +
+          "范围: all | llm | command | <命令名>\n" +
+          "优先级: block > trust > unsafe（被封禁用户不能被添加到信任列表）",
         );
       },
     });
+
 
     // /version
     this.register({
@@ -4341,61 +4665,101 @@ export class CommandSystem {
       },
     });
 
-    // /switch — list/switch active conversations
+    // /switch — blocking temporary context switch (allows nested blocking)
+    // When active, the user's subsequent messages are dispatched in the switched
+    // context's view (group or DM). /switch exit returns to the previous context.
+    // Multiple /switch calls push onto a stack; /switch exit pops one level.
+    // Without args: shows the current stack. /switch <group|dm> <target> enters.
     this.register({
       name: "switch",
       aliases: ["切换", "sw"],
-      description: "查看/切换活跃群聊会话（默认20条，--all显示全部，编号切换）",
-      usage: "/switch [--all] [编号]   (编号: 切换到对应群聊会话)",
+      description: "阻塞式临时切换上下文（允许嵌套，/switch exit 返回上层）",
+      usage: "/switch [group <群号> | dm <用户ID> | exit]   (无参数=查看当前栈)",
       category: "group" as CommandCategory,
       dmOnly: true,
       handler: async (ctx) => {
-        const store = ctx.bot.getGroupStore();
-        const groups = store.getAll("lastActive");
+        const userId = ctx.message.fromUserId;
+        // Ensure the switch session map exists on the CommandSystem
+        const cs = this as unknown as {
+          _switchSessions?: Map<string, Array<{ chatType: "group" | "direct"; target: string; label: string }>>;
+        };
+        if (!cs._switchSessions) cs._switchSessions = new Map();
+        const stack = cs._switchSessions.get(userId) ?? [];
 
-        // If a numeric argument is provided, switch to that session
-        const numArg = ctx.args.find(a => /^\d+$/.test(a));
-        if (numArg) {
-          const idx = parseInt(numArg, 10) - 1; // 1-based to 0-based
-          if (idx < 0 || idx >= groups.length) {
-            await ctx.reply(`无效编号: ${numArg} (范围 1-${groups.length})`);
+        const subArg = ctx.args[0]?.toLowerCase();
+
+        // /switch exit — pop one level
+        if (subArg === "exit" || subArg === "退出") {
+          if (stack.length === 0) {
+            await ctx.reply("⚠️ 当前不在任何切换上下文中");
             return;
           }
-          const g = groups[idx];
-          // In IM context, switching means... well, the bot itself doesn't have
-          // a "current session" concept — this is mainly for CLI REPL use.
-          // For IM, we just acknowledge the selection.
-          await ctx.reply(`✅ 已选择会话 ${idx + 1}: ${g.groupCode} — ${g.name || g.groupName || "未知"}\n最近活跃: ${g.lastActiveAt ? new Date(g.lastActiveAt).toLocaleString("zh-CN") : "(无)"}`);
+          const popped = stack.pop()!;
+          if (stack.length === 0) {
+            cs._switchSessions.delete(userId);
+          } else {
+            cs._switchSessions.set(userId, stack);
+          }
+          const current = stack.length > 0 ? stack[stack.length - 1] : null;
+          await ctx.reply(
+            `↩️ 已退出切换上下文: ${popped.label}\n` +
+            (current ? `当前上下文: ${current.label}` : `已回到原始上下文`),
+          );
           return;
         }
 
-        if (groups.length === 0) {
-          await ctx.reply("暂无活跃群聊会话。使用 /join <群号> 加入群聊");
+        // /switch group <群号> — push group context
+        if (subArg === "group" && ctx.args[1]) {
+          const groupCode = ctx.args[1];
+          // Try to resolve group name
+          let label = `群聊 ${groupCode}`;
+          try {
+            const info = await ctx.bot.queryGroupInfo(groupCode);
+            if (info.code === 0 && info.group_info?.group_name) {
+              label = `群聊 ${info.group_info.group_name} (${groupCode})`;
+            }
+          } catch {
+            // ignore
+          }
+          stack.push({ chatType: "group", target: groupCode, label });
+          cs._switchSessions.set(userId, stack);
+          await ctx.reply(
+            `✅ 已切换到 ${label}\n` +
+            `层级: ${stack.length}\n` +
+            `后续消息将在该上下文中处理\n` +
+            `退出: /switch exit`,
+          );
           return;
         }
-        // Try to resolve group names for entries that don't have one
-        for (const g of groups) {
-          if (!g.name && !g.groupName) {
-            try {
-              const info = await ctx.bot.queryGroupInfo(g.groupCode);
-              if (info.code === 0 && info.group_info?.group_name) {
-                store.setGroupName(g.groupCode, info.group_info.group_name);
-                g.groupName = info.group_info.group_name;
-              }
-            } catch {
-              // Ignore query errors
-            }
-          }
+
+        // /switch dm <用户ID> — push DM context
+        if (subArg === "dm" && ctx.args[1]) {
+          const targetUserId = ctx.args[1];
+          stack.push({ chatType: "direct", target: targetUserId, label: `私聊 ${targetUserId}` });
+          cs._switchSessions.set(userId, stack);
+          await ctx.reply(
+            `✅ 已切换到 私聊 ${targetUserId}\n` +
+            `层级: ${stack.length}\n` +
+            `后续消息将在该上下文中处理\n` +
+            `退出: /switch exit`,
+          );
+          return;
         }
-        const maxGroups = ctx.showAll ? groups.length : 20;
-        const lines = groups.slice(0, maxGroups).map((g, i) => {
-          const fav = g.favorite ? "⭐" : " ";
-          const displayName = g.name || g.groupName || "未知";
-          const time = g.lastActiveAt ? new Date(g.lastActiveAt).toLocaleString("zh-CN") : "";
-          return `  ${fav} ${i + 1}. ${g.groupCode} — ${displayName}${time ? ` (${time})` : ""}`;
-        });
-        const suffix = !ctx.showAll && groups.length > 20 ? `\n  ... 及其他 ${groups.length - 20} 个 (用 /switch --all 查看全部)` : "";
-        await ctx.reply(`📋 活跃群聊:\n${lines.join("\n")}${suffix}\n共 ${groups.length} 个群聊\n提示: /switch <编号> 切换到对应会话`);
+
+        // No args — show current stack
+        if (stack.length === 0) {
+          await ctx.reply(
+            "📋 当前无切换上下文\n\n" +
+            "用法:\n" +
+            "  /switch group <群号>  — 切换到群聊上下文\n" +
+            "  /switch dm <用户ID>   — 切换到私聊上下文\n" +
+            "  /switch exit          — 退出当前切换（返回上层）\n" +
+            "  /switch               — 查看当前栈",
+          );
+          return;
+        }
+        const lines = stack.map((s, i) => `  ${i + 1}. ${s.label}`);
+        await ctx.reply(`📋 切换上下文栈 (层级 ${stack.length}):\n${lines.join("\n")}\n\n当前: ${stack[stack.length - 1].label}\n退出: /switch exit`);
       },
     });
 

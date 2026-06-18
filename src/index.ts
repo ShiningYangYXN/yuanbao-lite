@@ -1102,6 +1102,35 @@ export class YuanbaoBot {
       return;
     }
 
+    // ─── /switch context override ───
+    // If the user has an active /switch session, override the chatMessage's
+    // chatType/groupCode/fromUserId so subsequent dispatch (commands + LLM)
+    // runs in the switched context. The original sender is preserved in
+    // a private field for logging. /switch exit (handled by the command)
+    // pops the stack and restores the previous context.
+    if (this.commandSystem) {
+      const cs = this.commandSystem as unknown as {
+        _switchSessions?: Map<string, Array<{ chatType: "group" | "direct"; target: string; label: string }>>;
+      };
+      const stack = cs._switchSessions?.get(chatMessage.fromUserId);
+      if (stack && stack.length > 0) {
+        const current = stack[stack.length - 1];
+        // Override the chatMessage fields to the switched context
+        // Preserve original fromUserId so replies go back to the user
+        const originalFromUserId = chatMessage.fromUserId;
+        if (current.chatType === "group") {
+          (chatMessage as { chatType: "group" | "direct" }).chatType = "group";
+          (chatMessage as { groupCode?: string }).groupCode = current.target;
+          // isMentioned is forced true so commands work in the switched group context
+          (chatMessage as { isMentioned?: boolean }).isMentioned = true;
+        } else {
+          (chatMessage as { chatType: "group" | "direct" }).chatType = "direct";
+          (chatMessage as { groupCode?: string }).groupCode = undefined;
+        }
+        this.log.debug(`switch context active: user ${originalFromUserId} → ${current.label}`);
+      }
+    }
+
     // ─── Skip-placeholder guard ───
     // Abort if the message body is empty (group: only when not @bot) or
     // is a single bracket placeholder like "[image]" with no actual content.
@@ -1196,7 +1225,7 @@ export class YuanbaoBot {
     // ─── Step 1: Store ALL messages in LLM conversation context ───
     // Every message (including slash commands) feeds context so the LLM
     // always has full conversation awareness.
-    this.feedLlmContext(chatMessage);
+    void this.feedLlmContext(chatMessage);
 
     // ─── Step 1.5: Check for active wizard sessions (/init or /llm config) ───
     // If the user has an active wizard session, intercept non-slash messages
@@ -1353,21 +1382,23 @@ export class YuanbaoBot {
    * has full conversation awareness. The API call is only triggered when
    * the user @mentions the bot in a group or sends a DM.
    *
-   * The formatted context includes BOTH the sender's nickname AND user ID
-   * so the LLM can identify users consistently (nicknames may change, IDs
-   * are stable). Format: [昵称(userId)]: text  or  [userId]: text (when no nickname).
+   * Format (shared with formatMessageForLlm in llm-takeover.ts):
+   *   [HH:MM:SS] [昵称](用户ID)@群名或DM: 文本 [引用: #消息ID尾号]
+   *
+   * - Timestamp gives the LLM temporal awareness
+   * - [昵称](用户ID) lets the LLM @mention the user via @[昵称](id) syntax
+   * - Quote suffix shows when the user is replying to a specific message
    */
-  private feedLlmContext(chatMessage: ChatMessage): void {
+  private async feedLlmContext(chatMessage: ChatMessage): Promise<void> {
     if (!this.llmEngine) return;
     const text = chatMessage.text?.trim();
     if (!text) return;
-    // Build sender label with both nickname and ID for full context.
-    // The LLM can use the ID to track users across nickname changes and
-    // to @mention specific users via @[昵称](id) syntax in replies.
-    const nick = chatMessage.fromNickname;
-    const uid = chatMessage.fromUserId;
-    const sender = nick ? `${nick}(${uid})` : uid;
-    this.llmEngine.addContextMessage(chatMessage, `[${sender}]: ${text}`);
+    // Use the shared formatter so feedLlmContext and the engine's fallback
+    // produce identical output. The formatted text includes timestamp,
+    // sender nickname+ID, scope (group/DM), and quote suffix.
+    const { formatChatMessageForContext } = await import("./business/llm-takeover.js");
+    const formatted = formatChatMessageForContext(chatMessage);
+    this.llmEngine.addContextMessage(chatMessage, formatted);
   }
 
   /**
@@ -1397,6 +1428,22 @@ export class YuanbaoBot {
     if (chatMessage.text.trim().startsWith("/")) {
       this.log.debug("tryLlmAutoReply: skipping slash command");
       return;
+    }
+
+    // Check if the user is blocked from LLM auto-reply (block > trust > unsafe)
+    try {
+      const { isBlockedFromLlm, isBlockedFrom } = await import("./business/block.js");
+      if (isBlockedFromLlm(chatMessage.fromUserId) || isBlockedFrom(chatMessage.fromUserId, "all")) {
+        this.log.info(`tryLlmAutoReply: user ${chatMessage.fromUserId} is blocked from LLM, skipping`);
+        return;
+      }
+      // Also check wildcard "*" blocks
+      if (isBlockedFromLlm("*") || isBlockedFrom("*", "all")) {
+        this.log.info(`tryLlmAutoReply: global LLM block active, skipping`);
+        return;
+      }
+    } catch {
+      // block module optional
     }
 
     // Check if LLM auto-reply is enabled

@@ -125,6 +125,23 @@ const DEFAULT_SYSTEM_PROMPT = `你是元宝Lite智能助手，一个友好、专
 - 不确定答案时诚实说明，不要编造信息
 - 你可以主动使用命令来获取信息、执行操作，不必仅依赖自身知识
 
+## 消息条目格式
+
+你收到的每条用户消息都按以下格式呈现（位于对话历史中）：
+
+  [HH:MM:SS] [昵称](用户ID)@群名或DM: 消息文本 [引用: #消息ID尾号]
+
+字段说明：
+- HH:MM:SS — 消息发送的本地时间（24小时制）
+- [昵称](用户ID) — 发送者的昵称和稳定用户ID。你可以用 @[昵称](用户ID) 语法在回复中@该用户
+- @群名或DM — 群聊时显示群名，私聊显示 DM
+- 消息文本 — 用户发送的实际内容（非文本元素以 [image:uuid]、[file:name] 等占位符表示）
+- [引用: #消息ID尾号] — 仅当用户引用了某条消息时出现，尾号是该消息ID的最后8位字符
+
+示例：
+  [14:23:05] [小明](u_abc123)@技术交流群: 你好
+  [14:23:18] [小红](u_def456)@技术交流群: 看看这个 [引用: #a1b2c3d4]
+
 ## 命令执行
 
 你可以在回复中嵌入命令来执行系统操作。格式：
@@ -169,13 +186,15 @@ const DEFAULT_SYSTEM_PROMPT = `你是元宝Lite智能助手，一个友好、专
 - /unsafe allow <命令名> [分钟|forever] — 授权单个命令在群聊使用（默认5分钟）
 - /unsafe disallow <命令名> — 取消授权
 - 非dmOnly命令无需授权
-- 不可授权命令: unsafe, trust, config, init, daemon
+- 不可授权命令: unsafe, trust, block, config, init, daemon
 
-### 用户信任
+### 用户信任与封禁
 - 主人（bot owner）自动受信，不可移除
 - 受信用户才能开启危险模式或管理信任列表
 - /trust status — 查看信任状态（全局开放）
 - /trust list|add|remove — 管理信任列表（仅私聊）
+- /block — 封禁用户使用全部或部分功能（优先级高于unsafe，可禁用非受限命令）
+- 被封禁用户不能被添加到信任列表
 
 ## 系统命令
 
@@ -254,6 +273,53 @@ export function markdownToImText(markdown: string): string {
   } catch {
     return markdown;
   }
+}
+
+// ─── Context Message Formatting ───
+
+/**
+ * Format a ChatMessage into the canonical context string injected into LLM
+ * conversation history.
+ *
+ * Format: [HH:MM:SS] [昵称](用户ID)@群名或DM: 文本 [引用: #消息ID尾号]
+ *
+ * - Timestamp (HH:MM:SS, 24h local) gives the LLM temporal awareness
+ * - [昵称](用户ID) lets the LLM @mention the user via @[昵称](id) syntax
+ * - @群名 (group) or @DM (direct) identifies the conversation scope
+ * - [引用: #尾号] suffix appears only when the user quoted a message
+ *
+ * This is used by both feedLlmContext (in src/index.ts) and the engine's
+ * internal formatMessageForLlm fallback, ensuring consistent formatting.
+ */
+export function formatChatMessageForContext(msg: ChatMessage): string {
+  // Timestamp: HH:MM:SS (24h, local timezone)
+  const ts = msg.timestamp > 0 ? formatTimeOfDay(msg.timestamp) : "??:??:??";
+
+  // Sender label: [昵称](用户ID) or [用户ID] when no nickname
+  const nick = msg.fromNickname;
+  const uid = msg.fromUserId;
+  const senderLabel = nick ? `[${nick}](${uid})` : `[${uid}]`;
+
+  // Scope: @群名 (or @群号 if no name) for group, @DM for direct
+  const scope = msg.chatType === "group"
+    ? `@${msg.groupName || msg.groupCode || "群"}`
+    : "@DM";
+
+  // Quote suffix: only when the message references another message
+  let quoteSuffix = "";
+  if (msg.quoteMsgId && msg.quoteMsgId.length > 0) {
+    const tail = msg.quoteMsgId.slice(-8);
+    quoteSuffix = ` [引用: #${tail}]`;
+  }
+
+  return `[${ts}] ${senderLabel}${scope}: ${msg.text ?? ""}${quoteSuffix}`;
+}
+
+/** Format a Unix-ms timestamp as HH:MM:SS (24-hour, local timezone). */
+function formatTimeOfDay(ms: number): string {
+  const d = new Date(ms);
+  const pad = (n: number) => n < 10 ? `0${n}` : String(n);
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
 // ─── Conversation Manager ───
@@ -559,14 +625,11 @@ export class LlmTakeoverEngine {
   }
 
   private formatMessageForLlm(msg: ChatMessage): string {
-    // Include BOTH nickname AND user ID so the LLM can identify users
-    // consistently (nicknames may change, IDs are stable). The LLM can
-    // use the ID to @mention users via @[昵称](id) syntax in replies.
-    const nick = msg.fromNickname;
-    const uid = msg.fromUserId;
-    const sender = nick ? `${nick}(${uid})` : uid;
-    if (msg.chatType === "group") return `[${sender}@${msg.groupName || msg.groupCode}]: ${msg.text}`;
-    return `[${sender}]: ${msg.text}`;
+    // Format: [HH:MM:SS] [昵称](用户ID)@群名或DM: 文本 [引用: #尾号]
+    // - Timestamp helps the LLM understand temporal context
+    // - [昵称](用户ID) lets the LLM @mention the user via @[昵称](id) syntax
+    // - Quote suffix shows when the user is replying to a specific message
+    return formatChatMessageForContext(msg);
   }
 
   private buildLlmMessages(convKey: string, msg: ChatMessage, bot?: YuanbaoBot): ConversationHistory[] {
