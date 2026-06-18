@@ -22,6 +22,12 @@ export type CommandContext = {
   args: string[];
   /** Reply with text (auto-splits long messages) */
   reply: (text: string) => Promise<void>;
+  /**
+   * Reply with documentation/help text that contains literal @mention syntax.
+   * Escapes @ → \@ so parseMentions() treats it as literal text rather than
+   * trying to parse @[昵称](id), @[所有人](), @[](all) etc. as real mentions.
+   */
+  replyDoc: (text: string) => Promise<void>;
   /** Reply with a raw msg_body (for rich messages like stickers/images) */
   replyRaw: (msgBody: YuanbaoMsgBodyElement[]) => Promise<void>;
   /** Send a direct message to the sender */

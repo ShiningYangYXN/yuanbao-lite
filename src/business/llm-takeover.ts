@@ -559,7 +559,12 @@ export class LlmTakeoverEngine {
   }
 
   private formatMessageForLlm(msg: ChatMessage): string {
-    const sender = msg.fromNickname || msg.fromUserId;
+    // Include BOTH nickname AND user ID so the LLM can identify users
+    // consistently (nicknames may change, IDs are stable). The LLM can
+    // use the ID to @mention users via @[昵称](id) syntax in replies.
+    const nick = msg.fromNickname;
+    const uid = msg.fromUserId;
+    const sender = nick ? `${nick}(${uid})` : uid;
     if (msg.chatType === "group") return `[${sender}@${msg.groupName || msg.groupCode}]: ${msg.text}`;
     return `[${sender}]: ${msg.text}`;
   }

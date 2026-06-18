@@ -384,6 +384,22 @@ export async function parseMentions(
 }
 
 /**
+ * Escape @ characters in a string so that parseMentions() treats them as
+ * literal text rather than mention syntax.
+ *
+ * Use this for help text, documentation, command usage strings, and any
+ * other output that contains literal @mention syntax (e.g. "@[所有人]()",
+ * "@[](all)", "@[昵称](id)") that should NOT be interpreted as actual mentions
+ * when sent via bot.sendGroupMessage / bot.sendDirectMessage.
+ *
+ * The mention parser recognizes \@ as an escaped @ and converts it back to @.
+ */
+export function escapeMentionSyntax(text: string): string {
+  // Escape @ that is NOT already escaped (avoid double-escaping \@ → \\@)
+  return text.replace(/(?<!\\)@/g, "\\@");
+}
+
+/**
  * Build TIMCustomElem msg_body elements for @mentioning users.
  *
  * In the Yuanbao IM protocol, @ mentions are sent as TIMCustomElem with:

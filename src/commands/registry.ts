@@ -574,6 +574,19 @@ export class CommandSystem {
       }
     });
 
+    // replyDoc: escape @mention syntax in documentation/help text so
+    // parseMentions() doesn't interpret literal @[昵称](id), @[所有人](),
+    // @[](all) etc. as real mentions when sent to a group.
+    const replyDoc = onReply ?? (async (text: string) => {
+      const { escapeMentionSyntax } = await import("../business/mention.js");
+      const escaped = escapeMentionSyntax(text);
+      if (isGroup && groupCode) {
+        await bot.sendGroupMessage(groupCode, escaped);
+      } else {
+        await bot.sendDirectMessage(message.fromUserId, escaped);
+      }
+    });
+
     const replyRaw = async (msgBody: YuanbaoMsgBodyElement[]) => {
       if (isGroup && groupCode) {
         await bot.sendRawMessage({
@@ -619,6 +632,7 @@ export class CommandSystem {
       command,
       args: filteredArgs,
       reply,
+      replyDoc,
       replyRaw,
       replyDirect,
       isGroup,
@@ -665,7 +679,10 @@ export class CommandSystem {
           if (def.requireConnected) flags.push("需连接");
           if (def.hidden) flags.push("隐藏");
           if (flags.length > 0) lines.push(`标记: ${flags.join(", ")}`);
-          await ctx.reply(lines.join("\n"));
+          // Use replyDoc: command descriptions/usage may contain literal
+          // @mention syntax (e.g. "/mention ... @[所有人]()") that must NOT
+          // be interpreted as real mentions when sent to a group.
+          await ctx.replyDoc(lines.join("\n"));
           return;
         }
 
@@ -681,7 +698,35 @@ export class CommandSystem {
           prefix: this.config.prefix,
           footer: this.config.helpFooter,
         });
-        await ctx.reply(helpText);
+        // Use replyDoc: help text contains command descriptions that may
+        // include literal @mention syntax (e.g. the /mention command
+        // description says "支持 @[昵称](id), @[所有人]() 内联语法").
+        // Without escaping, parseMentions would interpret these as real
+        // mentions when sent to a group, producing garbage TIMCustomElem
+        // elements and confusing the IM client.
+        await ctx.replyDoc(helpText);
+      },
+    });
+
+    // /commands — list all command names + aliases (compact, no descriptions)
+    this.register({
+      name: "commands",
+      aliases: ["cmdlist", "命令列表"],
+      description: "列出所有命令和别名（紧凑格式，无描述）",
+      usage: "/commands   (列出所有命令名和别名)",
+      category: "misc" as CommandCategory,
+      handler: async (ctx) => {
+        const visible = this.getAll().filter(c => !c.hidden);
+        if (visible.length === 0) {
+          await ctx.reply("暂无可用命令");
+          return;
+        }
+        const lines: string[] = [`📋 所有命令 (${visible.length} 个):`];
+        for (const cmd of visible) {
+          const aliases = cmd.aliases?.length ? ` (${cmd.aliases.join(", ")})` : "";
+          lines.push(`  ${this.config.prefix}${cmd.name}${aliases}`);
+        }
+        await ctx.reply(lines.join("\n"));
       },
     });
 
@@ -2407,7 +2452,7 @@ export class CommandSystem {
       requireConnected: true,
       handler: async (ctx) => {
         if (ctx.args.length < 2) {
-          await ctx.reply("用法: /mention <目标> <消息>\n消息中可用 @语法:\n  @[昵称](id) — 用指定昵称@指定用户\n  @[](id) — 用默认昵称@指定用户\n  @[昵称]() — 群聊中按昵称自动匹配ID\n  @[所有人]() — @所有群成员（逐个展开）");
+          await ctx.replyDoc("用法: /mention <目标> <消息>\n消息中可用 @语法:\n  @[昵称](id) — 用指定昵称@指定用户\n  @[](id) — 用默认昵称@指定用户\n  @[昵称]() — 群聊中按昵称自动匹配ID\n  @[所有人]() — @所有群成员（逐个展开）");
           return;
         }
         const target = ctx.args[0];

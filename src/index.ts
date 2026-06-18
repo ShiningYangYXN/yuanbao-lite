@@ -1042,17 +1042,35 @@ export class YuanbaoBot {
     });
 
     // Query bot owner info (non-blocking)
+    // Also caches the platform-provided bot ID from the QueryBotInfo response.
+    // This is the "public" bot ID that users see and @mention in groups —
+    // it may differ from account.botId (the sign-token ID used for sending).
     if (this.account.botId && this.client) {
       this.client.queryBotInfo(this.account.botId).then(async (rsp) => {
-        if (rsp.code === 0 && rsp.ownerId) {
-          this.account.botOwnerId = rsp.ownerId;
-          this.log.info(`bot owner cached: ownerId=${rsp.ownerId}`);
-          // Auto-trust the master (bot owner) — they can always use /unsafe
-          try {
-            const { setMasterUserId } = await import("./business/trust.js");
-            setMasterUserId(rsp.ownerId);
-          } catch {
-            // trust module optional
+        if (rsp.code === 0) {
+          // Cache the platform-provided bot ID for @mention detection.
+          // The QueryBotInfoRsp.botInfo.botId is the authoritative public ID
+          // that group members see when they @mention the bot. Using it
+          // directly (instead of auto-learning from mentions) is more
+          // reliable and avoids false positives.
+          if (rsp.botId && rsp.botId !== this.account.botId) {
+            this.botPublicIds.add(rsp.botId);
+            this.log.info(`platform-provided public bot ID: ${rsp.botId} (sign-token botId=${this.account.botId})`);
+          } else if (rsp.botId) {
+            // Same as sign-token ID — still add to the set for uniform checking
+            this.botPublicIds.add(rsp.botId);
+            this.log.info(`platform-provided bot ID matches sign-token ID: ${rsp.botId}`);
+          }
+          if (rsp.ownerId) {
+            this.account.botOwnerId = rsp.ownerId;
+            this.log.info(`bot owner cached: ownerId=${rsp.ownerId}`);
+            // Auto-trust the master (bot owner) — they can always use /unsafe
+            try {
+              const { setMasterUserId } = await import("./business/trust.js");
+              setMasterUserId(rsp.ownerId);
+            } catch {
+              // trust module optional
+            }
           }
         }
       }).catch((err) => {
@@ -1107,35 +1125,30 @@ export class YuanbaoBot {
     }
 
     // Fix isMentioned: verify against the bot's own IDs.
-    // Tencent Yuanbao uses TWO different IDs for the same bot:
-    //   - account.botId (from sign-token) — internal ID
-    //   - "public" bot IDs (visible to group members) — what users @mention
-    // We auto-learn public IDs from inbound @bot_* mentions and treat them all
-    // as "self" for mention detection.
+    // The bot's "public" ID (what group members see and @mention) is obtained
+    // directly from the platform's QueryBotInfo API at connection time, and
+    // cached in botPublicIds. This is more reliable than auto-learning from
+    // inbound mentions (which risks false positives if someone @s another bot).
+    // We keep auto-learn as a FALLBACK only if QueryBotInfo didn't provide an ID.
     if (chatMessage.chatType === "group") {
       // Debug: log raw message structure for mention analysis
       this.log.debug(`mention check: account.botId=${this.account.botId ?? "(none)"} botPublicIds=[${Array.from(this.botPublicIds).join(",")}] mentions=${JSON.stringify(chatMessage.mentions?.map(m => ({userId: m.userId, name: m.displayName})))} cloud_custom_data=${msg.cloud_custom_data?.substring(0, 200)}`);
       this.log.debug(`mention check: from_account=${msg.from_account} to_account=${msg.to_account} group_code=${msg.group_code} bot_owner_id=${msg.bot_owner_id} msg_body types=${msg.msg_body?.map(e => e.msg_type).join(",")} raw text="${chatMessage.text?.substring(0, 100)}"`);
 
-      // Auto-learn: if a TIMCustomElem mention has a userId starting with "bot_"
-      // that we haven't seen, record it as a candidate public bot ID.
-      // Rationale: this is OUR bot's WS connection. When users @ a bot in our
-      // group, the IM platform delivers the message to us. The first bot_*
-      // userId we see in a TIMCustomElem mention is almost certainly our own
-      // public ID. (Edge case: someone @s a different bot in our group — we
-      // accept the small risk of false positives for the benefit of working
-      // @mentions.)
-      if (chatMessage.mentions) {
+      // FALLBACK auto-learn: only if we don't yet have a platform-provided ID
+      // (e.g. QueryBotInfo failed or hasn't responded yet). Once the platform
+      // ID is cached, this is skipped entirely.
+      if (this.botPublicIds.size === 0 && chatMessage.mentions) {
         for (const m of chatMessage.mentions) {
           const uid = String(m.userId ?? "");
           if (uid.startsWith("bot_") && !this.isSelfUserId(uid)) {
             this.botPublicIds.add(uid);
-            this.log.info(`auto-learned public bot ID: ${uid} (mention name="${m.displayName}"). Adding to botPublicIds set. account.botId remains ${this.account.botId}.`);
+            this.log.info(`fallback auto-learned public bot ID: ${uid} (QueryBotInfo not yet available). account.botId=${this.account.botId}.`);
           }
         }
       }
 
-      // Check if any mention matches our internal botId OR any auto-learned public ID
+      // Check if any mention matches our internal botId OR any platform-provided public ID
       const mentioned = chatMessage.mentions?.some(m => this.isSelfUserId(String(m.userId)));
       if (mentioned) {
         chatMessage.isMentioned = true;
@@ -1339,12 +1352,21 @@ export class YuanbaoBot {
    * ALL messages (including slash commands) are stored so the LLM always
    * has full conversation awareness. The API call is only triggered when
    * the user @mentions the bot in a group or sends a DM.
+   *
+   * The formatted context includes BOTH the sender's nickname AND user ID
+   * so the LLM can identify users consistently (nicknames may change, IDs
+   * are stable). Format: [昵称(userId)]: text  or  [userId]: text (when no nickname).
    */
   private feedLlmContext(chatMessage: ChatMessage): void {
     if (!this.llmEngine) return;
     const text = chatMessage.text?.trim();
     if (!text) return;
-    const sender = chatMessage.fromNickname || chatMessage.fromUserId;
+    // Build sender label with both nickname and ID for full context.
+    // The LLM can use the ID to track users across nickname changes and
+    // to @mention specific users via @[昵称](id) syntax in replies.
+    const nick = chatMessage.fromNickname;
+    const uid = chatMessage.fromUserId;
+    const sender = nick ? `${nick}(${uid})` : uid;
     this.llmEngine.addContextMessage(chatMessage, `[${sender}]: ${text}`);
   }
 

@@ -164,30 +164,63 @@ export function extractContentFromMsgBody(
           hasAnyMention = true;
           // Don't add text placeholder — mention info is in mentions[] separately
         } else if (elemType === 1007 || elemType === 1010) {
-          // Link card — try to extract URL from XML
+          // Link card — extract the URL and include it in the text so the
+          // recipient (e.g. the LLM config wizard) sees the actual URL, not
+          // a useless "[link card]" placeholder. This is critical: when users
+          // type a URL in the IM client, Tencent auto-converts it to a link
+          // card. If we push "[link card]" to textParts, the wizard receives
+          // "[link card]" instead of the real URL, breaking configuration.
+          let extractedUrl: string | undefined;
+          let extractedText: string | undefined;
           if (customData) {
+            // Try XML format first (Tencent often uses XML for link cards)
             const urlMatch = customData.match(/<url[^>]*>([^<]+)<\/url>/i)
               ?? customData.match(/<link[^>]*>([^<]+)<\/link>/i);
-            if (urlMatch) {
-              linkUrls.push(urlMatch[1]);
-            }
-            // Also try to extract from JSON
+            if (urlMatch) extractedUrl = urlMatch[1];
+            // Try to extract title/text from XML
+            const titleMatch = customData.match(/<title[^>]*>([^<]+)<\/title>/i);
+            if (titleMatch) extractedText = titleMatch[1];
+            // Also try JSON format
             try {
               const parsed = JSON.parse(customData) as Record<string, unknown>;
-              const url = typeof parsed.url === "string" ? parsed.url : undefined;
-              if (url) linkUrls.push(url);
+              if (!extractedUrl && typeof parsed.url === "string") extractedUrl = parsed.url;
+              if (!extractedUrl && typeof parsed.link === "string") extractedUrl = parsed.link;
+              if (!extractedText && typeof parsed.text === "string") extractedText = parsed.text;
+              if (!extractedText && typeof parsed.title === "string") extractedText = parsed.title;
             } catch {
               // Not JSON — XML already handled above
             }
           }
-          textParts.push("[link card]");
+          if (extractedUrl) {
+            linkUrls.push(extractedUrl);
+            // Push the actual URL into the text stream so downstream consumers
+            // (wizards, LLM context, command handlers) see the real URL.
+            textParts.push(extractedUrl);
+          } else if (extractedText) {
+            // No URL but has title — use the title text
+            textParts.push(extractedText);
+          } else {
+            // Couldn't extract anything — use minimal placeholder
+            textParts.push("[link]");
+          }
         } else if (elemType === 1009) {
           // Forwarded chat records — would need protobuf decoding for full content
           // For now, just add a placeholder
           textParts.push("[forwarded records]");
         } else if (customData) {
-          // Unknown custom element — add as opaque placeholder
-          textParts.push(`[custom:${elemType ?? "unknown"}]`);
+          // Unknown custom element — try to extract any text content from data
+          // before falling back to a placeholder. This prevents dirty data like
+          // "[custom:unknown]" from leaking into wizard input or LLM context.
+          let extractedText: string | undefined;
+          try {
+            const parsed = JSON.parse(customData) as Record<string, unknown>;
+            if (typeof parsed.text === "string") extractedText = parsed.text;
+            else if (typeof parsed.url === "string") extractedText = parsed.url;
+            else if (typeof parsed.content === "string") extractedText = parsed.content;
+          } catch {
+            // Not JSON
+          }
+          textParts.push(extractedText ?? `[custom:${elemType ?? "unknown"}]`);
         }
         break;
       }
