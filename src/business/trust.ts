@@ -68,13 +68,20 @@ function load(): TrustData {
   try {
     if (existsSync(TRUST_FILE)) {
       const raw = readFileSync(TRUST_FILE, "utf-8");
-      cache = JSON.parse(raw) as TrustData;
+      const parsed = JSON.parse(raw) as TrustData;
+      // Validate structure — if malformed, treat as file-not-found
+      if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.entries)) {
+        throw new Error("malformed trust.json");
+      }
+      cache = parsed;
       return cache;
     }
   } catch (err) {
-    log.warn(`failed to load trust file: ${(err as Error).message}`);
+    log.warn(`failed to load trust file: ${(err as Error).message} — creating empty shell`);
   }
+  // File missing or unreadable/corrupt — create empty shell and persist
   cache = { version: 1, masterUserId: null, entries: [] };
+  save();
   return cache;
 }
 

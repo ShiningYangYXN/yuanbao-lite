@@ -289,6 +289,11 @@ export class ConfigStore {
       const raw = readFileSync(this.configPath, "utf-8");
       const parsed = JSON.parse(raw) as CliConfigData;
 
+      // Validate structure — if malformed, treat as corrupt
+      if (!parsed || typeof parsed !== "object" || !parsed.profiles) {
+        throw new Error("malformed config.json");
+      }
+
       // Version migration
       if (parsed.version !== CURRENT_VERSION) {
         this.data = this.migrate(parsed);
@@ -304,7 +309,10 @@ export class ConfigStore {
       if (this.data.global?.configDir) this.data.global.configDir = normalizeDir(this.data.global.configDir);
 
       return true;
-    } catch {
+    } catch (err) {
+      // File corrupt or unreadable — overwrite with default config
+      this.data = this.createDefaultData();
+      this.save();
       return false;
     }
   }

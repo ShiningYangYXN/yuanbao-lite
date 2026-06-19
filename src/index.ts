@@ -935,26 +935,13 @@ export class YuanbaoBot {
   }
 
   /**
-   * Heuristic: determine if an inbound message is likely the bot's OWN
-   * outgoing message arriving via CallbackAfterSendMsg callback.
-   *
-   * Tencent uses DIFFERENT bot IDs in different contexts:
-   *   - account.botId (from sign-token): used as from_account when sending
-   *   - "public" bot IDs (in group member lists): what users @mention
-   *   - callback IDs: what appears as from_account in CallbackAfterSendMsg
-   *
-   * Since the callback IDs may not match any known ID, we use the
-   * callback_command as a signal: if it's "Group.CallbackAfterSendMsg" or
-   * "C2C.CallbackAfterSendMsg" AND from_account starts with "bot_", it's
-   * almost certainly our own outgoing message.
+   * Check if an inbound message is a CallbackAfterSendMsg (bot's own
+   * outgoing message callback). Used to identify and skip other bot
+   * instances' messages in group chats.
    */
-  private isLikelySelfMessage(msg: YuanbaoInboundMessage, chatMessage: ChatMessage): boolean {
+  private isCallbackAfterSendMsg(msg: YuanbaoInboundMessage): boolean {
     const callbackCmd = msg.callback_command || "";
-    if (!callbackCmd.includes("CallbackAfterSendMsg")) return false;
-    // from_account starts with "bot_" — it's a bot message, and since this
-    // WS connection only receives callbacks for OUR bot, it must be ours.
-    if (!chatMessage.fromUserId.startsWith("bot_")) return false;
-    return true;
+    return callbackCmd.includes("CallbackAfterSendMsg");
   }
 
   /**
@@ -1117,18 +1104,14 @@ export class YuanbaoBot {
     // ctx.reply() in the command system, which injects ASSISTANT context
     // at the moment of sending. This avoids double-injection.
     //
-    // IMPORTANT: Tencent may use DIFFERENT bot IDs for the same bot across
+    // IMPORTANT: Tencent uses DIFFERENT bot IDs for the same bot across
     // different contexts (sign-token ID vs group member ID vs callback ID).
-    // So we check: is the fromUserId a bot_ ID that we've seen before, OR
-    // is it in our known IDs? We also auto-learn new bot IDs here.
-    const isBotSelf = this.isSelfUserId(chatMessage.fromUserId) ||
-      (chatMessage.fromUserId.startsWith("bot_") && this.isLikelySelfMessage(msg, chatMessage));
-    if (isBotSelf) {
-      // Auto-learn this bot ID if we haven't seen it
-      if (chatMessage.fromUserId.startsWith("bot_") && !this.isSelfUserId(chatMessage.fromUserId)) {
-        this.botPublicIds.add(chatMessage.fromUserId);
-        this.log.info(`auto-learned bot ID from self-message callback: ${chatMessage.fromUserId}`);
-      }
+    // We only trust IDs from sign-token and QueryBotInfo (stored in
+    // botPublicIds). We do NOT auto-learn from callbacks — other bot
+    // instances in the same group could send callbacks that reach us.
+    // For CallbackAfterSendMsg, we check if the callback is for OUR bot
+    // by verifying from_account matches a known self ID.
+    if (this.isSelfUserId(chatMessage.fromUserId)) {
       this.log.debug(`self-message detected (fromUserId=${chatMessage.fromUserId}), storing in history but skipping dispatch`);
 
       // Store in history (so /inspect can find bot's own messages)
@@ -1142,6 +1125,18 @@ export class YuanbaoBot {
       // Skip command dispatch + LLM auto-reply + context injection
       // (context injection is handled by ctx.reply() in the command system)
       return;
+    }
+
+    // For CallbackAfterSendMsg callbacks where from_account is a bot_ ID
+    // that we DON'T recognize: this is ANOTHER bot instance in the group.
+    // Treat it like any other user message — store in history, inject into
+    // LLM context, dispatch commands, and allow LLM auto-reply. The bot's
+    // messages are visible to our LLM and can trigger responses.
+    if (chatMessage.fromUserId.startsWith("bot_") && this.isCallbackAfterSendMsg(msg)) {
+      this.log.debug(`other bot's message detected (fromUserId=${chatMessage.fromUserId}), processing as normal inbound message`);
+      // Fall through to normal processing — do NOT return here.
+      // The message will be stored in history, context-injected, and
+      // dispatched (commands + LLM auto-reply) like any user message.
     }
 
     // ─── /switch context override ───
@@ -1198,26 +1193,13 @@ export class YuanbaoBot {
     // Fix isMentioned: verify against the bot's own IDs.
     // The bot's "public" ID (what group members see and @mention) is obtained
     // directly from the platform's QueryBotInfo API at connection time, and
-    // cached in botPublicIds. This is more reliable than auto-learning from
-    // inbound mentions (which risks false positives if someone @s another bot).
-    // We keep auto-learn as a FALLBACK only if QueryBotInfo didn't provide an ID.
+    // cached in botPublicIds. We do NOT auto-learn from mentions — other bot
+    // instances in the group could be @mentioned and we'd incorrectly identify
+    // them as ourselves.
     if (chatMessage.chatType === "group") {
       // Debug: log raw message structure for mention analysis
       this.log.debug(`mention check: account.botId=${this.account.botId ?? "(none)"} botPublicIds=[${Array.from(this.botPublicIds).join(",")}] mentions=${JSON.stringify(chatMessage.mentions?.map(m => ({userId: m.userId, name: m.displayName})))} cloud_custom_data=${msg.cloud_custom_data?.substring(0, 200)}`);
       this.log.debug(`mention check: from_account=${msg.from_account} to_account=${msg.to_account} group_code=${msg.group_code} bot_owner_id=${msg.bot_owner_id} msg_body types=${msg.msg_body?.map(e => e.msg_type).join(",")} raw text="${chatMessage.text?.substring(0, 100)}"`);
-
-      // FALLBACK auto-learn: only if we don't yet have a platform-provided ID
-      // (e.g. QueryBotInfo failed or hasn't responded yet). Once the platform
-      // ID is cached, this is skipped entirely.
-      if (this.botPublicIds.size === 0 && chatMessage.mentions) {
-        for (const m of chatMessage.mentions) {
-          const uid = String(m.userId ?? "");
-          if (uid.startsWith("bot_") && !this.isSelfUserId(uid)) {
-            this.botPublicIds.add(uid);
-            this.log.info(`fallback auto-learned public bot ID: ${uid} (QueryBotInfo not yet available). account.botId=${this.account.botId}.`);
-          }
-        }
-      }
 
       // Check if any mention matches our internal botId OR any platform-provided public ID
       const mentioned = chatMessage.mentions?.some(m => this.isSelfUserId(String(m.userId)));

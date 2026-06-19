@@ -495,14 +495,24 @@ export class LlmTakeoverEngine {
   }
 
   private loadPersistedConfig(): void {
-    if (!this.persistencePath || !existsSync(this.persistencePath)) return;
+    if (!this.persistencePath) return;
     try {
-      const saved = JSON.parse(readFileSync(this.persistencePath, "utf-8")) as Partial<LlmTakeoverConfig>;
+      if (!existsSync(this.persistencePath)) return;
+      const raw = readFileSync(this.persistencePath, "utf-8");
+      const saved = JSON.parse(raw) as Partial<LlmTakeoverConfig>;
+      // Validate structure — if malformed, treat as corrupt and overwrite
+      if (!saved || typeof saved !== "object") {
+        throw new Error("malformed llm-config.json");
+      }
       // Never allow persisted config to override the default systemPrompt
       delete saved.systemPrompt;
       this.config = { ...this.config, ...saved };
       this.activeProviderName = this.config.provider;
-    } catch (e) { this.log.warn(`load persisted config failed: ${(e as Error).message}`); }
+    } catch (e) {
+      this.log.warn(`load persisted config failed: ${(e as Error).message} — overwriting with defaults`);
+      // File corrupt or unreadable — persist current defaults to overwrite
+      this.persistConfig();
+    }
   }
 
   get isReady(): boolean {

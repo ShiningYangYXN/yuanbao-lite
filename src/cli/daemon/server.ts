@@ -22,6 +22,8 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { homedir } from "node:os";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { YuanbaoBot } from "../../index.js";
 import type { BotState } from "../../types.js";
 import type { ChatMessage } from "../../types.js";
@@ -67,6 +69,9 @@ export class Daemon {
       log.error(`uncaughtException: ${err.message}`);
       // Don't exit — daemon should be resilient
     });
+
+    // 0. Ensure all security module files exist (create empty shells if missing)
+    this.ensureSecurityFiles();
 
     // 1. Acquire PID file (auto-kills stale daemons)
     const { killedStale, stalePid } = await acquirePidFile();
@@ -142,6 +147,97 @@ export class Daemon {
     }
     releasePidFile();
     process.exit(0);
+  }
+
+  /**
+   * Ensure all security module files exist. If a file is missing, create
+   * it with a valid empty-shell structure (NOT completely empty — the
+   * module must be able to parse it correctly).
+   *
+   * Files checked:
+   *   config.json      — ConfigStore (created by getGlobalConfigStore, but
+   *                       we check here too for safety)
+   *   llm-config.json  — LLM engine config
+   *   trust.json       — Trust list
+   *   block.json       — Block list
+   *   aliases.json     — Alias store
+   *   contacts.json    — Contact store
+   *   groups.json      — Group store
+   *
+   * This runs at daemon startup, BEFORE any module tries to load these files.
+   * If a file was deleted (e.g. by /config reset), the module would get a
+   * "file not found" error and might default to an insecure state (e.g.
+   * "trust everyone" or "block nobody"). By pre-creating the empty shell,
+   * we guarantee the module always has a valid file to read.
+   */
+  private ensureSecurityFiles(): void {
+    const configDir = join(homedir(), ".yuanbao-lite");
+    if (!existsSync(configDir)) mkdirSync(configDir, { recursive: true });
+
+    const shells: Record<string, string> = {
+      // trust.json: empty trust list, no master yet
+      "trust.json": JSON.stringify({ version: 1, masterUserId: null, entries: [] }, null, 2),
+      // block.json: empty block list
+      "block.json": JSON.stringify({ version: 1, entries: [] }, null, 2),
+      // aliases.json: empty alias store
+      "aliases.json": "[]",
+      // contacts.json: empty contact store
+      "contacts.json": "[]",
+      // groups.json: empty group store
+      "groups.json": "[]",
+    };
+
+    for (const [file, content] of Object.entries(shells)) {
+      const filePath = join(configDir, file);
+      if (!existsSync(filePath)) {
+        try {
+          writeFileSync(filePath, content, "utf-8");
+          log.info(`created empty shell: ${file}`);
+        } catch (err) {
+          log.error(`failed to create ${file}: ${(err as Error).message}`);
+        }
+      }
+    }
+
+    // llm-config.json: only create if missing AND no llmConfig was loaded
+    // before. The LLM engine creates this file itself on first persist,
+    // but if it was deleted (e.g. by /llm reset), we create a shell so
+    // the engine doesn't error on load. The engine's loadPersistedConfig
+    // handles "file not found" gracefully (returns without loading), so
+    // this is just a safety net.
+    const llmConfigPath = join(configDir, "llm-config.json");
+    if (!existsSync(llmConfigPath)) {
+      try {
+        // Empty shell with default config — the LLM engine will populate
+        // it on first updateConfig() call
+        const defaultLlmConfig = JSON.stringify({
+          enabled: true,
+          model: "",
+          temperature: 0.7,
+          maxTokens: 2048,
+          maxHistoryTurns: 20,
+          enableInGroup: true,
+          enableInDirect: true,
+          requireMentionInGroup: true,
+          cooldownMs: 0,
+          mergeWindowMs: 0,
+          responsePrefix: "",
+          markdownRawMode: true,
+          maxIterate: 50,
+          provider: "",
+          customProviders: {},
+          autoRotateKeys: true,
+          autoSwitchProvider: true,
+          keyCooldownMs: 300000,
+          maxFailuresBeforeSwitch: 3,
+          userSystemPrompt: "",
+        }, null, 2);
+        writeFileSync(llmConfigPath, defaultLlmConfig, "utf-8");
+        log.info("created empty shell: llm-config.json");
+      } catch (err) {
+        log.error(`failed to create llm-config.json: ${(err as Error).message}`);
+      }
+    }
   }
 
   private async startHttpServer(): Promise<void> {
