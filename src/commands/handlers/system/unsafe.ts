@@ -80,8 +80,9 @@ export function register(cmdSys: CommandSystem): void {
               const { isTrusted } = await import("../../../business/trust.js");
               trusted = isTrusted(ctx.message.fromUserId);
             } catch {
-              // trust module optional — default to allowing if module missing
-              trusted = true;
+              // trust module missing — DEFAULT TO DENY (security: never allow
+              // untrusted users to enable unsafe mode if trust check fails)
+              trusted = false;
             }
           }
 

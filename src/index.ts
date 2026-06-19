@@ -926,19 +926,35 @@ export class YuanbaoBot {
    * Check if a userId refers to THIS bot (either the internal account.botId
    * from sign-token, or any auto-learned public bot ID visible to group
    * members).
-   *
-   * Tencent Yuanbao assigns TWO different IDs to the same bot:
-   *   - account.botId — returned by sign-token, used as from_account when
-   *     sending messages
-   *   - "public" bot IDs — what users see and @mention in groups
-   * We auto-learn public IDs by observing inbound @bot_* mentions and add
-   * them to botPublicIds. This helper unifies the check.
    */
   isSelfUserId(userId: string | undefined | null): boolean {
     if (!userId) return false;
     const uid = String(userId);
     if (this.account.botId && uid === String(this.account.botId)) return true;
     return this.botPublicIds.has(uid);
+  }
+
+  /**
+   * Heuristic: determine if an inbound message is likely the bot's OWN
+   * outgoing message arriving via CallbackAfterSendMsg callback.
+   *
+   * Tencent uses DIFFERENT bot IDs in different contexts:
+   *   - account.botId (from sign-token): used as from_account when sending
+   *   - "public" bot IDs (in group member lists): what users @mention
+   *   - callback IDs: what appears as from_account in CallbackAfterSendMsg
+   *
+   * Since the callback IDs may not match any known ID, we use the
+   * callback_command as a signal: if it's "Group.CallbackAfterSendMsg" or
+   * "C2C.CallbackAfterSendMsg" AND from_account starts with "bot_", it's
+   * almost certainly our own outgoing message.
+   */
+  private isLikelySelfMessage(msg: YuanbaoInboundMessage, chatMessage: ChatMessage): boolean {
+    const callbackCmd = msg.callback_command || "";
+    if (!callbackCmd.includes("CallbackAfterSendMsg")) return false;
+    // from_account starts with "bot_" — it's a bot message, and since this
+    // WS connection only receives callbacks for OUR bot, it must be ours.
+    if (!chatMessage.fromUserId.startsWith("bot_")) return false;
+    return true;
   }
 
   /**
@@ -1096,14 +1112,26 @@ export class YuanbaoBot {
     // ─── Skip-self guard (for dispatch) + history storage for bot's own messages ───
     // Prevents infinite echo when the bot's own outgoing messages arrive
     // via Group.CallbackAfterSendMsg / C2C.CallbackAfterSendMsg callbacks.
-    // We still store the bot's message in history (so /inspect can find it),
+    // We store the bot's message in history (so /inspect can find it),
     // but we DON'T inject it into LLM context here — that's handled by
     // ctx.reply() in the command system, which injects ASSISTANT context
     // at the moment of sending. This avoids double-injection.
-    if (this.isSelfUserId(chatMessage.fromUserId)) {
-      this.log.debug(`self-message detected (fromUserId=${chatMessage.fromUserId}), storing in history but skipping dispatch + context injection`);
+    //
+    // IMPORTANT: Tencent may use DIFFERENT bot IDs for the same bot across
+    // different contexts (sign-token ID vs group member ID vs callback ID).
+    // So we check: is the fromUserId a bot_ ID that we've seen before, OR
+    // is it in our known IDs? We also auto-learn new bot IDs here.
+    const isBotSelf = this.isSelfUserId(chatMessage.fromUserId) ||
+      (chatMessage.fromUserId.startsWith("bot_") && this.isLikelySelfMessage(msg, chatMessage));
+    if (isBotSelf) {
+      // Auto-learn this bot ID if we haven't seen it
+      if (chatMessage.fromUserId.startsWith("bot_") && !this.isSelfUserId(chatMessage.fromUserId)) {
+        this.botPublicIds.add(chatMessage.fromUserId);
+        this.log.info(`auto-learned bot ID from self-message callback: ${chatMessage.fromUserId}`);
+      }
+      this.log.debug(`self-message detected (fromUserId=${chatMessage.fromUserId}), storing in history but skipping dispatch`);
 
-      // 1. Store in history (so /inspect can find bot's own messages)
+      // Store in history (so /inspect can find bot's own messages)
       this.historyStore.add(chatMessage);
 
       // Track group activity for group name resolution
@@ -1111,7 +1139,7 @@ export class YuanbaoBot {
         this.groupStore.trackActivity(chatMessage.groupCode, chatMessage.groupName);
       }
 
-      // 2. Skip command dispatch + LLM auto-reply + context injection
+      // Skip command dispatch + LLM auto-reply + context injection
       // (context injection is handled by ctx.reply() in the command system)
       return;
     }

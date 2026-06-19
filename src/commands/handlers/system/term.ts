@@ -108,4 +108,118 @@ export function register(cmdSys: CommandSystem): void {
           );
         },
       });
+
+  // ─── Terminal session setup ───
+  // This MUST be set up so /term can find _termSessions.
+  // The terminal input handler is called by YuanbaoBot.handleDispatch when a
+  // user has an active session (intercepts non-slash messages).
+  type TermSession = {
+    shell: { kill: (sig: string) => void; killed: boolean; exitCode: number | null; stdout: { on: (e: string, cb: (d: Buffer) => void) => void }; stderr: { on: (e: string, cb: (d: Buffer) => void) => void }; on: (e: string, cb: (code: number | null) => void) => void; stdin: { write: (s: string) => boolean } | null };
+    lastActivity: number;
+    lastExitCode: number | null;
+    outputBuffer: string;
+    commandResolve: (() => void) | null;
+    idleTimer: ReturnType<typeof setInterval> | null;
+  };
+  const termSessions = new Map<string, TermSession>();
+  (cmdSys as unknown as { _termSessions: Map<string, unknown> })._termSessions = termSessions;
+
+  (cmdSys as unknown as { _handleTermInput: (bot: unknown, userId: string, text: string, reply: (t: string) => Promise<void>) => Promise<boolean> })._handleTermInput =
+    async (bot: unknown, userId: string, text: string, reply: (t: string) => Promise<void>): Promise<boolean> => {
+      const session = termSessions.get(userId);
+      if (!session) return false;
+
+      // Check if shell has exited
+      if (session.shell.killed || session.shell.exitCode !== null) {
+        termSessions.delete(userId);
+        if (session.idleTimer) clearInterval(session.idleTimer);
+        await reply(`🖥️ 终端进程已退出 (退出码: ${session.lastExitCode ?? 0})`);
+        return true;
+      }
+
+      // Check 5-minute timeout
+      if (Date.now() - session.lastActivity > 5 * 60 * 1000) {
+        session.shell.kill("SIGTERM");
+        if (session.idleTimer) clearInterval(session.idleTimer);
+        termSessions.delete(userId);
+        await reply("⏰ 终端已超时（5分钟无操作），自动退出");
+        return true;
+      }
+
+      session.lastActivity = Date.now();
+      const cmd = text.trim();
+
+      // Check for exit command
+      if (cmd === "exit" || cmd === "quit" || cmd === "/term exit" || cmd === "/term") {
+        session.shell.kill("SIGTERM");
+        if (session.idleTimer) clearInterval(session.idleTimer);
+        termSessions.delete(userId);
+        await reply(`🖥️ 终端已退出${session.lastExitCode !== null ? ` (最后退出码: ${session.lastExitCode})` : ""}`);
+        return true;
+      }
+
+      // Execute command in the persistent shell
+      session.outputBuffer = "";
+      const marker = `__TERM_MARKER_${Date.now()}__`;
+      let resolved = false;
+
+      const outputPromise = new Promise<string>((resolve) => {
+        const timeout = setTimeout(() => {
+          if (!resolved) {
+            resolved = true;
+            resolve(session.outputBuffer);
+            session.outputBuffer = "";
+          }
+        }, 30_000);
+
+        const checkOutput = () => {
+          if (resolved) return;
+          if (session.outputBuffer.includes(marker)) {
+            resolved = true;
+            clearTimeout(timeout);
+            const fullBuffer = session.outputBuffer;
+            session.outputBuffer = "";
+            resolve(fullBuffer);
+          } else {
+            setTimeout(checkOutput, 50);
+          }
+        };
+        checkOutput();
+      });
+
+      if (session.shell.stdin) {
+        session.shell.stdin.write(`${cmd}\n`);
+        session.shell.stdin.write(`echo "${marker}$?|$(whoami)|$(hostname)|$(pwd)"\n`);
+      }
+
+      const rawBuffer = await outputPromise;
+
+      const markerIdx = rawBuffer.indexOf(marker);
+      const output = markerIdx >= 0
+        ? rawBuffer.slice(0, markerIdx).replace(/\r\n/g, "\n").trim()
+        : rawBuffer.replace(/\r\n/g, "\n").trim();
+      const afterMarker = markerIdx >= 0
+        ? rawBuffer.slice(markerIdx + marker.length).trim()
+        : "";
+
+      const promptParts = afterMarker.split("|");
+      if (promptParts.length >= 1) {
+        session.lastExitCode = parseInt(promptParts[0], 10) || 0;
+      }
+      const userInfo = promptParts.length >= 2 ? promptParts[1] : "";
+      const hostInfo = promptParts.length >= 3 ? promptParts[2] : "";
+      const cwdInfo = promptParts.length >= 4 ? promptParts[3] : "";
+      const home = process.env.HOME || "";
+      const promptStr = (userInfo && hostInfo && cwdInfo)
+        ? `${userInfo}@${hostInfo}:${home && cwdInfo.startsWith(home) ? "~" + cwdInfo.slice(home.length) : cwdInfo}$ `
+        : "$ ";
+
+      const cleanOutput = output || "(无输出)";
+      const finalOutput = cleanOutput.length > 3000
+        ? cleanOutput.slice(0, 3000) + `\n... (截断，共 ${cleanOutput.length} 字符)`
+        : cleanOutput;
+
+      await reply(`${promptStr}${cmd}\n${finalOutput}\n[退出码: ${session.lastExitCode ?? 0}]`);
+      return true;
+    };
 }
