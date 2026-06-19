@@ -1093,16 +1093,15 @@ export class YuanbaoBot {
     const { msg, chatType } = converted;
     const chatMessage = toChatMessage(msg);
 
-    // ─── Skip-self guard (for dispatch) + context injection for bot's own messages ───
+    // ─── Skip-self guard (for dispatch) + history storage for bot's own messages ───
     // Prevents infinite echo when the bot's own outgoing messages arrive
     // via Group.CallbackAfterSendMsg / C2C.CallbackAfterSendMsg callbacks.
-    // However, we STILL want to:
-    //   1. Store the bot's message in history (so /inspect can find it)
-    //   2. Inject it into LLM context as an ASSISTANT message (so the LLM
-    //      remembers what it said, per conversation)
-    // We just skip command dispatch + LLM auto-reply to avoid loops.
+    // We still store the bot's message in history (so /inspect can find it),
+    // but we DON'T inject it into LLM context here — that's handled by
+    // ctx.reply() in the command system, which injects ASSISTANT context
+    // at the moment of sending. This avoids double-injection.
     if (this.isSelfUserId(chatMessage.fromUserId)) {
-      this.log.debug(`self-message detected (fromUserId=${chatMessage.fromUserId}), storing + injecting context but skipping dispatch`);
+      this.log.debug(`self-message detected (fromUserId=${chatMessage.fromUserId}), storing in history but skipping dispatch + context injection`);
 
       // 1. Store in history (so /inspect can find bot's own messages)
       this.historyStore.add(chatMessage);
@@ -1112,33 +1111,8 @@ export class YuanbaoBot {
         this.groupStore.trackActivity(chatMessage.groupCode, chatMessage.groupName);
       }
 
-      // 2. Inject into LLM context as an ASSISTANT message (per conversation)
-      // For DM: use the TARGET user's ID (to_account) as the conversation key,
-      //   NOT the bot's ID (so the conversation history stays consistent)
-      // For group: use groupCode (same as user messages)
-      if (this.llmEngine) {
-        const text = chatMessage.text?.trim();
-        if (text) {
-          // Determine the correct conversation key for the bot's outgoing message
-          let convKey: string;
-          if (chatMessage.chatType === "group") {
-            convKey = `group:${chatMessage.groupCode}`;
-          } else {
-            // DM: use to_account (the user the bot is talking to)
-            // Fall back to fromUserId if to_account is missing
-            const targetUserId = msg.to_account || chatMessage.fromUserId;
-            convKey = `dm:${targetUserId}`;
-          }
-          // Format the bot's message for context (same format as user messages,
-          // but it will be stored as role=assistant)
-          const { formatChatMessageForContext } = await import("./business/llm-takeover.js");
-          const formatted = formatChatMessageForContext(chatMessage);
-          this.llmEngine.getConversationManager().addAssistantMessage(convKey, formatted);
-          this.log.debug(`injected bot's own message as assistant context for ${convKey}: ${text.substring(0, 80)}`);
-        }
-      }
-
-      // 3. Skip command dispatch + LLM auto-reply (prevents infinite loop)
+      // 2. Skip command dispatch + LLM auto-reply + context injection
+      // (context injection is handled by ctx.reply() in the command system)
       return;
     }
 

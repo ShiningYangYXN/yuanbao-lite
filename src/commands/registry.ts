@@ -706,11 +706,42 @@ export class CommandSystem {
       } else {
         await bot.sendDirectMessage(message.fromUserId, text);
       }
+      // Inject the bot's reply into LLM context as an ASSISTANT message.
+      // This is CRITICAL: we can't rely on the IM platform's CallbackAfterSendMsg
+      // callback to capture the bot's output (some platforms don't send it, or
+      // it arrives asynchronously). By injecting here, we guarantee the LLM
+      // sees its own replies in the conversation history.
+      // The conversation key matches what feedLlmContext uses:
+      //   group → group:<groupCode>, DM → dm:<fromUserId>
+      const engine = bot.getLlmEngine();
+      if (engine) {
+        const convKey = isGroup && groupCode
+          ? `group:${groupCode}`
+          : `dm:${message.fromUserId}`;
+        try {
+          const { formatChatMessageForContext } = await import("../business/llm-takeover.js");
+          // Build a synthetic ChatMessage for the bot's reply
+          const botMsg: ChatMessage = {
+            id: `bot-reply-${Date.now()}`,
+            fromUserId: bot.getAccount().botId || "bot",
+            fromNickname: "bot",
+            chatType: message.chatType,
+            ...(isGroup && groupCode ? { groupCode, groupName: message.groupName } : {}),
+            text,
+            timestamp: Date.now(),
+          };
+          const formatted = formatChatMessageForContext(botMsg);
+          engine.getConversationManager().addAssistantMessage(convKey, formatted);
+        } catch {
+          // context injection failure is non-critical
+        }
+      }
     });
 
     // replyDoc: escape @mention syntax in documentation/help text so
     // parseMentions() doesn't interpret literal @[昵称](id), @[所有人](),
     // @[](all) etc. as real mentions when sent to a group.
+    // Also injects the reply into LLM context (same as reply).
     const replyDoc = onReply ?? (async (text: string) => {
       const { escapeMentionSyntax } = await import("../business/mention.js");
       const escaped = escapeMentionSyntax(text);
@@ -718,6 +749,29 @@ export class CommandSystem {
         await bot.sendGroupMessage(groupCode, escaped);
       } else {
         await bot.sendDirectMessage(message.fromUserId, escaped);
+      }
+      // Inject into LLM context (same as reply, but with escaped text)
+      const engine = bot.getLlmEngine();
+      if (engine) {
+        const convKey = isGroup && groupCode
+          ? `group:${groupCode}`
+          : `dm:${message.fromUserId}`;
+        try {
+          const { formatChatMessageForContext } = await import("../business/llm-takeover.js");
+          const botMsg: ChatMessage = {
+            id: `bot-reply-${Date.now()}`,
+            fromUserId: bot.getAccount().botId || "bot",
+            fromNickname: "bot",
+            chatType: message.chatType,
+            ...(isGroup && groupCode ? { groupCode, groupName: message.groupName } : {}),
+            text: escaped,
+            timestamp: Date.now(),
+          };
+          const formatted = formatChatMessageForContext(botMsg);
+          engine.getConversationManager().addAssistantMessage(convKey, formatted);
+        } catch {
+          // context injection failure is non-critical
+        }
       }
     });
 
