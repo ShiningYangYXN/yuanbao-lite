@@ -15,13 +15,36 @@ export function register(cmdSys: CommandSystem): void {
         name: "block",
         aliases: ["封禁", "ban"],
         description: "封禁用户使用全部或部分功能（优先级高于unsafe，可禁用非受限命令）",
-        usage: "/block [list|add <ID|*> <all|llm|command|命令名> [昵称]|remove <ID|*> [范围]|status]",
+        usage: "/block [list|add <ID|*> <[all]|[llm]|[command]|命令名> [昵称]|remove <ID|*> [范围]|status|help]",
         category: "system" as CommandCategory,
         dmOnly: true,
         handler: async (ctx) => {
           const block = await import("../../../business/block.js");
           const { addBlock, removeBlock, listBlocks, getBlockEntry } = block;
           const subCmd = ctx.args[0]?.toLowerCase();
+
+          // /block help — show detailed subcommand help (globally open)
+          if (subCmd === "help" || subCmd === "?") {
+            await ctx.replyDoc(
+              "📋 /block 子命令帮助:\n\n" +
+              "  /block                          查看封禁列表\n" +
+              "  /block list                     同上\n" +
+              "  /block add <ID|*> <范围> [昵称] 添加封禁（附加到已有范围）\n" +
+              "  /block remove <ID|*> [范围]     移除封禁（不指定范围则全部移除）\n" +
+              "  /block status                   查看自己的封禁状态\n" +
+              "  /block help                     显示此帮助\n\n" +
+              "范围可选值:\n" +
+              "  [all]      — 封禁所有功能（命令+LLM）\n" +
+              "  [llm]      — 封禁LLM自动回复\n" +
+              "  [command]  — 封禁所有斜杠命令\n" +
+              "  <命令名>   — 封禁特定命令（如 shell, unsafe, send 等）\n\n" +
+              "权限组必须加方括号；命令名无需加/\n" +
+              "用 * 作为用户ID可封禁所有用户（全局）\n" +
+              "多次对同一用户操作会附加范围\n" +
+              "优先级: block > trust > unsafe",
+            );
+            return;
+          }
 
           // /block status — anyone can check their own block status
           if (subCmd === "status") {

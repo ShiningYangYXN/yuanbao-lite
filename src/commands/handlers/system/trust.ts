@@ -15,13 +15,34 @@ export function register(cmdSys: CommandSystem): void {
         name: "trust",
         aliases: ["信任", "受信"],
         description: "管理受信用户列表和单命令授权（主人自动受信，不可移除）",
-        usage: "/trust [list|add <ID> [昵称]|remove <ID>|grant <ID> /命令 [分钟|forever]|revoke <ID> /命令|status]",
+        usage: "/trust [list|add <ID> [昵称]|remove <ID>|grant <ID> <命令> [分钟|forever]|revoke <ID> <命令>|grants [ID]|status|help]",
         category: "system" as CommandCategory,
         handler: async (ctx) => {
           const trust = await import("../../../business/trust.js");
           const { isTrusted, addTrust, removeTrust, listTrust, getMasterUserId, grantCommand, revokeCommand, listCommandGrants, getTrustEntry } = trust;
           const subCmd = ctx.args[0]?.toLowerCase();
           const userId = ctx.message.fromUserId;
+
+          // /trust help — show detailed subcommand help (globally open)
+          if (subCmd === "help" || subCmd === "?") {
+            await ctx.replyDoc(
+              "📋 /trust 子命令帮助:\n\n" +
+              "  /trust                    查看信任列表\n" +
+              "  /trust list               同上\n" +
+              "  /trust add <ID> [昵称]    添加受信用户\n" +
+              "  /trust remove <ID>        移除受信用户（主人不可移除）\n" +
+              "  /trust grant <ID> <命令> [分钟|forever]\n" +
+              "                            授权单命令给单用户（默认5分钟）\n" +
+              "  /trust revoke <ID> <命令> 撤销单用户单命令授权\n" +
+              "  /trust grants [ID]        查看单命令授权（默认自己）\n" +
+              "  /trust status             查看自己的信任状态\n" +
+              "  /trust help               显示此帮助\n\n" +
+              "命令名无需加/前缀（如 shell, 不是 /shell）\n" +
+              "不可授权命令: unsafe, trust, block, config, init, daemon\n" +
+              "被封禁用户不能被添加到信任列表",
+            );
+            return;
+          }
 
           // /trust status is globally open — anyone can check their own status
           if (subCmd === "status") {

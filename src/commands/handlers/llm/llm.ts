@@ -23,6 +23,43 @@ export function register(cmdSys: CommandSystem): void {
           const subCmd = ctx.args[0]?.toLowerCase();
           const subArgs = ctx.args.slice(1);
 
+          // /llm help — show detailed subcommand help
+          if (subCmd === "help" || subCmd === "?") {
+            await ctx.replyDoc(
+              "🤖 LLM 子命令帮助:\n\n" +
+              "  /llm                    查看状态\n" +
+              "  /llm status             同上\n" +
+              "  /llm on                 开启LLM自动回复\n" +
+              "  /llm off                关闭LLM自动回复\n" +
+              "  /llm chat <文本>        与LLM对话（不触发自动回复）\n" +
+              "  /llm config             启动交互式配置向导\n" +
+              "  /llm config cancel      取消配置向导\n" +
+              "  /llm provider [名称]    查看或切换活跃供应商\n" +
+              "  /llm customprovider ... 管理自定义供应商\n" +
+              "    list                  列出所有供应商\n" +
+              "    add <名> <格式> <模型> <URL> [key]  添加供应商\n" +
+              "    remove <名>           移除供应商\n" +
+              "    use <名>              切换活跃供应商\n" +
+              "    addkey <名> <key>     添加API密钥\n" +
+              "    removekey <名> <key>  移除API密钥\n" +
+              "  /llm model [名称]       查看或设置模型\n" +
+              "  /llm temp [0-2]         查看或设置温度\n" +
+              "  /llm prompt [文本]      查看或设置用户系统提示词\n" +
+              "  /llm group on|off       开关群聊响应\n" +
+              "  /llm group mention on|off  开关群聊需@\n" +
+              "  /llm im on|off          开关私聊响应\n" +
+              "  /llm merge [ms]         查看或设置消息合并窗口（0=关闭）\n" +
+              "  /llm cooldown [ms]      查看或设置响应冷却（0=关闭）\n" +
+              "  /llm iterate [轮数]     查看或设置最大迭代轮数（0=无限）\n" +
+              "  /llm raw on|off         开关原始markdown模式\n" +
+              "  /llm history            查看对话历史\n" +
+              "  /llm clear              清空当前对话历史\n" +
+              "  /llm billing            查看用量统计\n" +
+              "\n命令名无需加/前缀",
+            );
+            return;
+          }
+
           if (!subCmd) {
             // Show LLM status
             const autoReply = ctx.bot.isLlmAutoReply();
@@ -261,6 +298,24 @@ export function register(cmdSys: CommandSystem): void {
               const customProviders = { ...(config.customProviders ?? {}) };
               const action = subArgs[0];
 
+              if (action === "help" || action === "?") {
+                const { API_FORMATS } = await import("../../../business/llm-takeover.js");
+                const formats = API_FORMATS.map(f => `  ${f.value}: ${f.label}`).join("\n");
+                await ctx.replyDoc(
+                  "📋 /llm customprovider 子命令帮助:\n\n" +
+                  "  /llm customprovider list              列出所有供应商\n" +
+                  "  /llm customprovider add <名> <格式> <模型> <URL> [key]\n" +
+                  "                                        添加供应商\n" +
+                  "  /llm customprovider remove <名>       移除供应商\n" +
+                  "  /llm customprovider use <名>          切换活跃供应商\n" +
+                  "  /llm customprovider addkey <名> <key> 添加API密钥\n" +
+                  "  /llm customprovider removekey <名> <idx>  移除API密钥\n" +
+                  "  /llm customprovider help              显示此帮助\n\n" +
+                  `API格式:\n${formats}`,
+                );
+                return;
+              }
+
               if (!action || action === "list") {
                 const names = Object.keys(customProviders);
                 if (names.length === 0) {
@@ -488,4 +543,137 @@ export function register(cmdSys: CommandSystem): void {
           }
         },
       });
+
+  // ─── LLM interactive config wizard session setup ───
+  // This MUST be set up so /llm config can find _llmWizardSessions.
+  // The wizard input handler is called by YuanbaoBot.handleDispatch when a
+  // user has an active session (intercepts non-slash messages).
+  type LlmWizardSession = {
+    step: "apiFormat" | "name" | "model" | "baseUrl" | "apiKey" | "systemPrompt" | "done";
+    apiFormat?: string;
+    providerName?: string;
+    model?: string;
+    baseUrl?: string;
+    apiKey?: string;
+    startedAt: number;
+  };
+  const llmWizardSessions = new Map<string, LlmWizardSession>();
+  (cmdSys as unknown as { _llmWizardSessions: Map<string, unknown> })._llmWizardSessions = llmWizardSessions;
+
+  (cmdSys as unknown as { _handleLlmWizardInput: (bot: unknown, userId: string, text: string, reply: (t: string) => Promise<void>) => Promise<boolean> })._handleLlmWizardInput =
+    async (bot: unknown, userId: string, text: string, reply: (t: string) => Promise<void>): Promise<boolean> => {
+      const session = llmWizardSessions.get(userId);
+      if (!session) return false;
+
+      if (Date.now() - session.startedAt > 5 * 60 * 1000) {
+        llmWizardSessions.delete(userId);
+        await reply("⏰ LLM 配置向导已超时（5分钟），请重新发送 /llm config");
+        return true;
+      }
+
+      const engine = (bot as { getLlmEngine?: () => unknown }).getLlmEngine?.() as
+        { updateConfig: (patch: Record<string, unknown>) => void; getConfig: () => Record<string, unknown> } | null;
+      if (!engine) {
+        llmWizardSessions.delete(userId);
+        await reply("❌ LLM 引擎未初始化");
+        return true;
+      }
+
+      const input = text.trim();
+
+      // Step 1: Choose API format
+      if (session.step === "apiFormat") {
+        const { API_FORMATS } = await import("../../../business/llm-takeover.js");
+        const formatMap: Record<string, string> = {};
+        API_FORMATS.forEach((f, i) => {
+          formatMap[String(i + 1)] = f.value;
+          formatMap[f.value] = f.value;
+          if (f.value === "openai-chat-completions") { formatMap["openai"] = f.value; formatMap["1"] = f.value; }
+          if (f.value === "anthropic-messages") { formatMap["anthropic"] = f.value; formatMap["claude"] = f.value; formatMap["2"] = f.value; }
+          if (f.value === "google-gemini-rest") { formatMap["gemini"] = f.value; formatMap["google"] = f.value; formatMap["3"] = f.value; }
+          if (f.value === "aws-bedrock-converse") { formatMap["bedrock"] = f.value; formatMap["aws"] = f.value; formatMap["4"] = f.value; }
+          if (f.value === "azure-openai") { formatMap["azure"] = f.value; formatMap["5"] = f.value; }
+        });
+        const apiFormat = formatMap[input.toLowerCase()];
+        if (!apiFormat) {
+          await reply(`❌ 无效选择: ${input}\n请发送 1-5 或格式名称`);
+          return true;
+        }
+        session.apiFormat = apiFormat;
+        session.step = "name";
+        await reply(`✅ API 格式: ${apiFormat}\n\n📝 请发送供应商名称 (如 my-openai, backup-claude):`);
+        return true;
+      }
+
+      // Step 2: Provider name
+      if (session.step === "name") {
+        session.providerName = input;
+        session.step = "model";
+        await reply(`✅ 供应商名称: ${input}\n\n📝 请发送模型名称 (如 gpt-4o, claude-sonnet-4-20250514):`);
+        return true;
+      }
+
+      // Step 3: Model name
+      if (session.step === "model") {
+        session.model = input;
+        session.step = "baseUrl";
+        const { API_FORMATS } = await import("../../../business/llm-takeover.js");
+        const fmt = API_FORMATS.find(f => f.value === session.apiFormat);
+        const hint = fmt?.defaultEndpoint ? `\n(默认: ${fmt.defaultEndpoint})` : "";
+        await reply(`✅ 模型: ${input}\n\n📝 请发送端点 URL (baseUrl):${hint}`);
+        return true;
+      }
+
+      // Step 4: Base URL
+      if (session.step === "baseUrl") {
+        session.baseUrl = input;
+        session.step = "apiKey";
+        await reply(`✅ 端点: ${input}\n\n📝 请发送 API Key:`);
+        return true;
+      }
+
+      // Step 5: API Key
+      if (session.step === "apiKey") {
+        session.apiKey = input;
+        const config = engine.getConfig() as { customProviders?: Record<string, unknown> };
+        const customProviders = { ...(config.customProviders ?? {}) };
+        customProviders[session.providerName!] = {
+          apiFormat: session.apiFormat,
+          model: session.model,
+          baseUrl: session.baseUrl,
+          apiKey: input,
+          apiKeys: [input],
+        };
+        engine.updateConfig({ customProviders, provider: session.providerName });
+        session.step = "systemPrompt";
+        await reply(
+          `✅ 供应商 "${session.providerName}" 已创建!\n` +
+          `  API格式: ${session.apiFormat}\n` +
+          `  模型: ${session.model}\n` +
+          `  端点: ${session.baseUrl}\n` +
+          `  密钥: ***${input.slice(-4)}\n\n` +
+          `📝 请发送系统提示词 (或 skip 使用默认):`,
+        );
+        return true;
+      }
+
+      // Step 6: System prompt (optional)
+      if (session.step === "systemPrompt") {
+        if (input.toLowerCase() !== "skip" && input.toLowerCase() !== "done") {
+          engine.updateConfig({ systemPrompt: input });
+        }
+        session.step = "done";
+        llmWizardSessions.delete(userId);
+        await reply(
+          `✅ LLM 配置完成!\n` +
+          `  供应商: ${session.providerName} (${session.apiFormat})\n` +
+          `  模型: ${session.model}\n\n` +
+          `发送 /llm on 开启自动回复\n` +
+          `发送 /llm status 查看状态`,
+        );
+        return true;
+      }
+
+      return true;
+    };
 }

@@ -15,10 +15,30 @@ export function register(cmdSys: CommandSystem): void {
         name: "unsafe",
         aliases: ["危险模式"],
         description: "管理危险模式和单命令授权（需受信）",
-        usage: "/unsafe [on [分钟|forever] | off | status | allow <命令> [分钟|forever] | disallow <命令>]",
+        usage: "/unsafe [on [分钟|forever] | off | status | allow <命令> [分钟|forever] | disallow <命令> | help]",
         category: "system" as CommandCategory,
         handler: async (ctx) => {
           const subCmd = ctx.args[0]?.toLowerCase();
+
+          // /unsafe help — show detailed subcommand help (globally open)
+          if (subCmd === "help" || subCmd === "?") {
+            await ctx.replyDoc(
+              "📋 /unsafe 子命令帮助:\n\n" +
+              "  /unsafe                  开启5分钟危险模式\n" +
+              "  /unsafe on [分钟]        开启指定时长（默认5分钟）\n" +
+              "  /unsafe on forever       永久开启（需受信）\n" +
+              "  /unsafe off              关闭危险模式\n" +
+              "  /unsafe status           查看当前状态和已授权命令\n" +
+              "  /unsafe allow <命令> [分钟|forever]\n" +
+              "                           全局授权单命令在群聊使用\n" +
+              "  /unsafe disallow <命令>  取消全局授权\n" +
+              "  /unsafe help             显示此帮助\n\n" +
+              "命令名无需加/前缀（如 shell, 不是 /shell）\n" +
+              "不可授权命令: unsafe, trust, block, config, init, daemon\n" +
+              "危险模式允许所有dmOnly命令在群聊中使用",
+            );
+            return;
+          }
 
           // /unsafe status is globally open — no trust check, no dmOnly
           if (subCmd === "status") {
