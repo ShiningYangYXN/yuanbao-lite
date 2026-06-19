@@ -7,6 +7,7 @@
  * path fixes.
  */
 
+import { sessionKeyFromMessage } from "../../session-utils.js";
 import type { CommandSystem } from "../../registry.js";
 import type { CommandCategory } from "../../types.js";
 
@@ -19,13 +20,14 @@ export function register(cmdSys: CommandSystem): void {
         category: "system" as CommandCategory,
         dmOnly: true,
         handler: async (ctx) => {
+          const sessionKey = sessionKeyFromMessage(ctx.message);
           if (ctx.args[0]?.toLowerCase() === "exit") {
             const sessions = (cmdSys as unknown as { _termSessions?: Map<string, unknown> })._termSessions;
             if (sessions) {
-              const session = sessions.get(ctx.message.fromUserId) as { shell: { kill: (sig: string) => void } } | undefined;
+              const session = sessions.get(sessionKey) as { shell: { kill: (sig: string) => void } } | undefined;
               if (session) {
                 session.shell.kill("SIGTERM");
-                sessions.delete(ctx.message.fromUserId);
+                sessions.delete(sessionKey);
               }
               await ctx.reply("🖥️ 终端已退出");
             }
@@ -40,10 +42,10 @@ export function register(cmdSys: CommandSystem): void {
           }
 
           // Kill existing session if re-entering
-          const existing = sessions.get(ctx.message.fromUserId);
+          const existing = sessions.get(sessionKey);
           if (existing) {
             existing.shell.kill("SIGTERM");
-            sessions.delete(ctx.message.fromUserId);
+            sessions.delete(sessionKey);
           }
 
           // Spawn a persistent shell process
@@ -91,12 +93,12 @@ export function register(cmdSys: CommandSystem): void {
             if (Date.now() - session.lastActivity > 5 * 60 * 1000) {
               if (session.idleTimer) clearInterval(session.idleTimer);
               shell.kill("SIGTERM");
-              sessions.delete(ctx.message.fromUserId);
+              sessions.delete(sessionKey);
               ctx.bot.sendDirectMessage(ctx.message.fromUserId, "⏰ 终端已超时（5分钟无操作），自动退出").catch(() => {});
             }
           }, 30_000);
 
-          sessions.set(ctx.message.fromUserId, session);
+          sessions.set(sessionKey, session);
 
           await ctx.reply(
             "🖥️ 交互式终端已启动\n\n" +
@@ -124,14 +126,14 @@ export function register(cmdSys: CommandSystem): void {
   const termSessions = new Map<string, TermSession>();
   (cmdSys as unknown as { _termSessions: Map<string, unknown> })._termSessions = termSessions;
 
-  (cmdSys as unknown as { _handleTermInput: (bot: unknown, userId: string, text: string, reply: (t: string) => Promise<void>) => Promise<boolean> })._handleTermInput =
-    async (bot: unknown, userId: string, text: string, reply: (t: string) => Promise<void>): Promise<boolean> => {
-      const session = termSessions.get(userId);
+  (cmdSys as unknown as { _handleTermInput: (bot: unknown, sessionKey: string, text: string, reply: (t: string) => Promise<void>) => Promise<boolean> })._handleTermInput =
+    async (bot: unknown, sessionKey: string, text: string, reply: (t: string) => Promise<void>): Promise<boolean> => {
+      const session = termSessions.get(sessionKey);
       if (!session) return false;
 
       // Check if shell has exited
       if (session.shell.killed || session.shell.exitCode !== null) {
-        termSessions.delete(userId);
+        termSessions.delete(sessionKey);
         if (session.idleTimer) clearInterval(session.idleTimer);
         await reply(`🖥️ 终端进程已退出 (退出码: ${session.lastExitCode ?? 0})`);
         return true;
@@ -141,7 +143,7 @@ export function register(cmdSys: CommandSystem): void {
       if (Date.now() - session.lastActivity > 5 * 60 * 1000) {
         session.shell.kill("SIGTERM");
         if (session.idleTimer) clearInterval(session.idleTimer);
-        termSessions.delete(userId);
+        termSessions.delete(sessionKey);
         await reply("⏰ 终端已超时（5分钟无操作），自动退出");
         return true;
       }
@@ -153,7 +155,7 @@ export function register(cmdSys: CommandSystem): void {
       if (cmd === "exit" || cmd === "quit" || cmd === "/term exit" || cmd === "/term") {
         session.shell.kill("SIGTERM");
         if (session.idleTimer) clearInterval(session.idleTimer);
-        termSessions.delete(userId);
+        termSessions.delete(sessionKey);
         await reply(`🖥️ 终端已退出${session.lastExitCode !== null ? ` (最后退出码: ${session.lastExitCode})` : ""}`);
         return true;
       }

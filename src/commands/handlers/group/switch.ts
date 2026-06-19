@@ -8,6 +8,7 @@
  */
 
 import type { CommandSystem } from "../../registry.js";
+import { sessionKeyFromMessage } from "../../session-utils.js";
 import type { CommandCategory } from "../../types.js";
 
 export function register(cmdSys: CommandSystem): void {
@@ -19,13 +20,13 @@ export function register(cmdSys: CommandSystem): void {
         category: "group" as CommandCategory,
         dmOnly: true,
         handler: async (ctx) => {
-          const userId = ctx.message.fromUserId;
+          const sessionKey = sessionKeyFromMessage(ctx.message);
           // Ensure the switch session map exists on the CommandSystem
           const cs = cmdSys as unknown as {
-            _switchSessions?: Map<string, Array<{ chatType: "group" | "direct"; target: string; label: string; groupName?: string }>>;
+            _switchSessions?: Map<string, Array<{ chatType: "group" | "direct"; target: string; label: string; groupName?: string; lastActivity: number }>>;
           };
           if (!cs._switchSessions) cs._switchSessions = new Map();
-          const stack = cs._switchSessions.get(userId) ?? [];
+          const stack = cs._switchSessions.get(sessionKey) ?? [];
 
           const subArg = ctx.args[0]?.toLowerCase();
 
@@ -37,9 +38,9 @@ export function register(cmdSys: CommandSystem): void {
             }
             const popped = stack.pop()!;
             if (stack.length === 0) {
-              cs._switchSessions.delete(userId);
+              cs._switchSessions.delete(sessionKey);
             } else {
-              cs._switchSessions.set(userId, stack);
+              cs._switchSessions.set(sessionKey, stack);
             }
             const current = stack.length > 0 ? stack[stack.length - 1] : null;
             await ctx.reply(
@@ -75,8 +76,8 @@ export function register(cmdSys: CommandSystem): void {
                 label = `群聊 ${groupName} (${groupCode})`;
               }
             }
-            stack.push({ chatType: "group", target: groupCode, label, groupName });
-            cs._switchSessions.set(userId, stack);
+            stack.push({ chatType: "group", target: groupCode, label, groupName, lastActivity: Date.now() });
+            cs._switchSessions.set(sessionKey, stack);
             await ctx.reply(
               `✅ 已切换到 ${label}\n` +
               `层级: ${stack.length}\n` +
@@ -89,8 +90,8 @@ export function register(cmdSys: CommandSystem): void {
           // /switch dm <用户ID> — push DM context
           if (subArg === "dm" && ctx.args[1]) {
             const targetUserId = ctx.args[1];
-            stack.push({ chatType: "direct", target: targetUserId, label: `私聊 ${targetUserId}` });
-            cs._switchSessions.set(userId, stack);
+            stack.push({ chatType: "direct", target: targetUserId, label: `私聊 ${targetUserId}`, lastActivity: Date.now() });
+            cs._switchSessions.set(sessionKey, stack);
             await ctx.reply(
               `✅ 已切换到 私聊 ${targetUserId}\n` +
               `层级: ${stack.length}\n` +

@@ -60,6 +60,7 @@ import { MultiAccountManager } from "./business/multi-account.js";
 import { SearchEngine } from "./business/search.js";
 import type { YuanbaoAccountConfig, ResolvedYuanbaoAccount, YuanbaoInboundMessage, YuanbaoMsgBodyElement, ChatMessage, SendTextMessageParams, BotStatus, BotState } from "./types.js";
 import type { WsPushEvent, WsAuthBindResult, WsClientState } from "./access/ws/types.js";
+import { sessionKeyFromMessage, BLOCKING_SESSION_TIMEOUT_MS } from "./commands/session-utils.js";
 
 // ─── Event types ───
 
@@ -1145,13 +1146,35 @@ export class YuanbaoBot {
     // runs in the switched context. The original sender is preserved in
     // a private field for logging. /switch exit (handled by the command)
     // pops the stack and restores the previous context.
+    // Compute session key for this message's conversation context — used by
+    // both /switch override and wizard interception below.
+    const sessionKey = sessionKeyFromMessage(chatMessage);
     if (this.commandSystem) {
       const cs = this.commandSystem as unknown as {
-        _switchSessions?: Map<string, Array<{ chatType: "group" | "direct"; target: string; label: string; groupName?: string }>>;
+        _switchSessions?: Map<string, Array<{ chatType: "group" | "direct"; target: string; label: string; groupName?: string; lastActivity: number }>>;
       };
-      const stack = cs._switchSessions?.get(chatMessage.fromUserId);
+      const stack = cs._switchSessions?.get(sessionKey);
       if (stack && stack.length > 0) {
         const current = stack[stack.length - 1];
+        // Check 5-minute inactivity timeout
+        if (Date.now() - current.lastActivity > 5 * 60 * 1000) {
+          stack.pop();
+          if (stack.length === 0) {
+            cs._switchSessions!.delete(sessionKey);
+          } else {
+            cs._switchSessions!.set(sessionKey, stack);
+          }
+          this.log.info(`/switch session expired (5min inactivity) for user ${chatMessage.fromUserId}`);
+          // Don't apply the override — fall through to normal processing
+        } else {
+          // Update lastActivity
+          current.lastActivity = Date.now();
+        }
+      }
+      // Re-read stack after potential expiry
+      const activeStack = cs._switchSessions?.get(sessionKey);
+      if (activeStack && activeStack.length > 0) {
+        const current = activeStack[activeStack.length - 1];
         // Override the chatMessage fields to the switched context
         // Preserve original fromUserId so replies go back to the user
         const originalFromUserId = chatMessage.fromUserId;
@@ -1278,14 +1301,32 @@ export class YuanbaoBot {
     // ─── Step 1.5: Check for active wizard sessions (/init or /llm config) ───
     // If the user has an active wizard session, intercept non-slash messages
     // as wizard input (blocking normal dispatch + LLM).
+    // All blocking sessions auto-expire after BLOCKING_SESSION_TIMEOUT_MS (imported from session-utils).
     if (this.commandSystem && !chatMessage.text.trim().startsWith("/")) {
       const cs = this.commandSystem as unknown as {
-        _initWizardSessions?: Map<string, unknown>;
-        _handleInitWizardInput?: (bot: unknown, userId: string, text: string, reply: (t: string) => Promise<void>) => Promise<boolean>;
-        _llmWizardSessions?: Map<string, unknown>;
-        _handleLlmWizardInput?: (bot: unknown, userId: string, text: string, reply: (t: string) => Promise<void>) => Promise<boolean>;
+        _initWizardSessions?: Map<string, { startedAt: number; lastActivity?: number }>;
+        _handleInitWizardInput?: (bot: unknown, sessionKey: string, text: string, reply: (t: string) => Promise<void>) => Promise<boolean>;
+        _llmWizardSessions?: Map<string, { startedAt: number; lastActivity?: number }>;
+        _handleLlmWizardInput?: (bot: unknown, sessionKey: string, text: string, reply: (t: string) => Promise<void>) => Promise<boolean>;
       };
-      const userId = chatMessage.fromUserId;
+      // Session key already computed above (line 1151) — reuse it.
+      // sessionKey = sessionKeyFromMessage(chatMessage) was set in the /switch block.
+
+      // Helper: check and clean up expired sessions
+      const checkExpiry = (sessions: Map<string, { startedAt: number; lastActivity?: number }> | undefined, name: string): boolean => {
+        if (!sessions) return false;
+        const session = sessions.get(sessionKey);
+        if (!session) return false;
+        const lastActivity = session.lastActivity ?? session.startedAt;
+        if (Date.now() - lastActivity > BLOCKING_SESSION_TIMEOUT_MS) {
+          sessions.delete(sessionKey);
+          this.log.info(`${name} session expired (5min inactivity): ${sessionKey}`);
+          return true; // expired
+        }
+        // Update lastActivity
+        session.lastActivity = Date.now();
+        return false;
+      };
 
       const replyFn = async (text: string): Promise<void> => {
         try {
@@ -1299,31 +1340,47 @@ export class YuanbaoBot {
         }
       };
 
-      // Check /init wizard
-      if (cs._initWizardSessions?.has(userId) && cs._handleInitWizardInput) {
-        void cs._handleInitWizardInput(this, userId, chatMessage.text, replyFn);
-        return;
-      }
-
-      // Check /llm config wizard
-      if (cs._llmWizardSessions?.has(userId) && cs._handleLlmWizardInput) {
-        void cs._handleLlmWizardInput(this, userId, chatMessage.text, replyFn);
-        return;
-      }
-
-      // Check /term interactive terminal session
-      const cs2 = this.commandSystem as unknown as {
-        _termSessions?: Map<string, unknown>;
-        _handleTermInput?: (bot: unknown, userId: string, text: string, reply: (t: string) => Promise<void>) => Promise<boolean>;
-      };
-      if (cs2._termSessions?.has(userId) && cs2._handleTermInput) {
-        // Allow /term exit to pass through to command dispatch
-        const text = chatMessage.text.trim();
-        if (text === "/term exit" || text === "/term") {
-          // Let the command system handle it
-        } else {
-          void cs2._handleTermInput(this, userId, chatMessage.text, replyFn);
+      // Check /init wizard (with expiry)
+      if (cs._initWizardSessions?.has(sessionKey)) {
+        if (checkExpiry(cs._initWizardSessions, "/init")) {
+          await replyFn("⏰ 配置向导已超时（5分钟无操作），自动退出");
+        } else if (cs._handleInitWizardInput) {
+          void cs._handleInitWizardInput(this, sessionKey, chatMessage.text, replyFn);
           return;
+        }
+      }
+
+      // Check /llm config wizard (with expiry)
+      if (cs._llmWizardSessions?.has(sessionKey)) {
+        if (checkExpiry(cs._llmWizardSessions, "/llm config")) {
+          await replyFn("⏰ LLM 配置向导已超时（5分钟无操作），自动退出");
+        } else if (cs._handleLlmWizardInput) {
+          void cs._handleLlmWizardInput(this, sessionKey, chatMessage.text, replyFn);
+          return;
+        }
+      }
+
+      // Check /term interactive terminal session (with expiry)
+      const cs2 = this.commandSystem as unknown as {
+        _termSessions?: Map<string, { lastActivity: number; idleTimer: ReturnType<typeof setInterval> | null }>;
+        _handleTermInput?: (bot: unknown, sessionKey: string, text: string, reply: (t: string) => Promise<void>) => Promise<boolean>;
+      };
+      if (cs2._termSessions?.has(sessionKey)) {
+        // /term has its own 5-min idle timer in the session, but check here too
+        const termSession = cs2._termSessions.get(sessionKey) as { lastActivity: number } | undefined;
+        if (termSession && Date.now() - termSession.lastActivity > BLOCKING_SESSION_TIMEOUT_MS) {
+          cs2._termSessions.delete(sessionKey);
+          await replyFn("⏰ 终端已超时（5分钟无操作），自动退出");
+        } else {
+          // Allow /term exit to pass through to command dispatch
+          const text = chatMessage.text.trim();
+          if (text === "/term exit" || text === "/term") {
+            // Let the command system handle it
+          } else {
+            if (termSession) termSession.lastActivity = Date.now();
+            void cs2._handleTermInput?.(this, sessionKey, chatMessage.text, replyFn);
+            return;
+          }
         }
       }
     }

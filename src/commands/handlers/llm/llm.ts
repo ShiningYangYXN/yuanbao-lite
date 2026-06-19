@@ -434,16 +434,17 @@ export function register(cmdSys: CommandSystem): void {
                 return;
               }
               const userId = ctx.message.fromUserId;
+              const sessionKey = ctx.message.chatType === "group" && ctx.groupCode ? `${userId}:group:${ctx.groupCode}` : `${userId}:dm`;
 
               // Cancel
               if (subArgs[0]?.toLowerCase() === "cancel") {
-                llmWizardSessions.delete(userId);
+                llmWizardSessions.delete(sessionKey);
                 await ctx.reply("✅ LLM 配置向导已取消");
                 return;
               }
 
               // Start wizard
-              llmWizardSessions.set(userId, {
+              llmWizardSessions.set(sessionKey, {
                 step: "apiFormat",
                 startedAt: Date.now(),
               });
@@ -463,9 +464,9 @@ export function register(cmdSys: CommandSystem): void {
 
               // Auto-cancel after 5 min
               setTimeout(() => {
-                const session = llmWizardSessions.get(userId) as { startedAt: number } | undefined;
+                const session = llmWizardSessions.get(sessionKey) as { startedAt: number } | undefined;
                 if (session && Date.now() - session.startedAt > 5 * 60 * 1000) {
-                  llmWizardSessions.delete(userId);
+                  llmWizardSessions.delete(sessionKey);
                 }
               }, 5 * 60 * 1000);
               return;
@@ -579,6 +580,7 @@ export function register(cmdSys: CommandSystem): void {
                   return;
                 }
                 const userId = ctx.message.fromUserId;
+              const sessionKey = ctx.message.chatType === "group" && ctx.groupCode ? `${userId}:group:${ctx.groupCode}` : `${userId}:dm`;
                 const now = Date.now();
                 const entry = confirmations.get(userId);
                 const WINDOW_MS = 60_000;
@@ -625,13 +627,13 @@ export function register(cmdSys: CommandSystem): void {
   const llmWizardSessions = new Map<string, LlmWizardSession>();
   (cmdSys as unknown as { _llmWizardSessions: Map<string, unknown> })._llmWizardSessions = llmWizardSessions;
 
-  (cmdSys as unknown as { _handleLlmWizardInput: (bot: unknown, userId: string, text: string, reply: (t: string) => Promise<void>) => Promise<boolean> })._handleLlmWizardInput =
-    async (bot: unknown, userId: string, text: string, reply: (t: string) => Promise<void>): Promise<boolean> => {
-      const session = llmWizardSessions.get(userId);
+  (cmdSys as unknown as { _handleLlmWizardInput: (bot: unknown, sessionKey: string, text: string, reply: (t: string) => Promise<void>) => Promise<boolean> })._handleLlmWizardInput =
+    async (bot: unknown, sessionKey: string, text: string, reply: (t: string) => Promise<void>): Promise<boolean> => {
+      const session = llmWizardSessions.get(sessionKey);
       if (!session) return false;
 
       if (Date.now() - session.startedAt > 5 * 60 * 1000) {
-        llmWizardSessions.delete(userId);
+        llmWizardSessions.delete(sessionKey);
         await reply("⏰ LLM 配置向导已超时（5分钟），请重新发送 /llm config");
         return true;
       }
@@ -639,7 +641,7 @@ export function register(cmdSys: CommandSystem): void {
       const engine = (bot as { getLlmEngine?: () => unknown }).getLlmEngine?.() as
         { updateConfig: (patch: Record<string, unknown>) => void; getConfig: () => Record<string, unknown> } | null;
       if (!engine) {
-        llmWizardSessions.delete(userId);
+        llmWizardSessions.delete(sessionKey);
         await reply("❌ LLM 引擎未初始化");
         return true;
       }
@@ -728,7 +730,7 @@ export function register(cmdSys: CommandSystem): void {
           engine.updateConfig({ systemPrompt: input });
         }
         session.step = "done";
-        llmWizardSessions.delete(userId);
+        llmWizardSessions.delete(sessionKey);
         await reply(
           `✅ LLM 配置完成!\n` +
           `  供应商: ${session.providerName} (${session.apiFormat})\n` +

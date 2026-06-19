@@ -25,6 +25,13 @@ export function register(cmdSys: CommandSystem): void {
             trusted = isTrusted(msg.fromUserId);
           } catch { /* ignore */ }
 
+          // Resolve group name: try msg.groupName first, then groupStore
+          let groupName = msg.groupName;
+          if (!groupName && msg.chatType === "group" && msg.groupCode) {
+            const entry = ctx.bot.getGroupStore().get(msg.groupCode);
+            groupName = entry?.groupName || entry?.name;
+          }
+
           const lines = [
             `👤 你的信息:`,
             `  用户ID: ${msg.fromUserId}`,
@@ -32,7 +39,7 @@ export function register(cmdSys: CommandSystem): void {
             `  聊天类型: ${msg.chatType === "group" ? "群聊" : "私聊"}`,
             ...(msg.chatType === "group" ? [
               `  群号: ${msg.groupCode || "(未知)"}`,
-              `  群名: ${msg.groupName || "(未知)"}`,
+              `  群名: ${groupName || "(未知)"}`,
             ] : []),
             `  是否受信: ${trusted ? "✅ 是" : "❌ 否"}`,
             ...(trusted ? [`  (可使用 /unsafe on 开启危险模式)`] : []),

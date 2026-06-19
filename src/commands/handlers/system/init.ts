@@ -36,10 +36,11 @@ export function register(cmdSys: CommandSystem): void {
             const store = getGlobalConfigStore({ autoSave: true });
             const active = store.getActiveProfileName();
             const userId = ctx.message.fromUserId;
+          const sessionKey = ctx.message.chatType === "group" && ctx.groupCode ? `${userId}:group:${ctx.groupCode}` : `${userId}:dm`;
 
             // Cancel sub-command
             if (ctx.args[0]?.toLowerCase() === "cancel") {
-              wizardSessions.delete(userId);
+              wizardSessions.delete(sessionKey);
               await ctx.reply("✅ 配置向导已取消");
               return;
             }
@@ -72,7 +73,7 @@ export function register(cmdSys: CommandSystem): void {
             }
 
             // Start interactive wizard
-            wizardSessions.set(userId, {
+            wizardSessions.set(sessionKey, {
               step: "appkey",
               authMethod: "appkey",
               startedAt: Date.now(),
@@ -89,9 +90,9 @@ export function register(cmdSys: CommandSystem): void {
 
             // Set a timeout to auto-cancel
             setTimeout(() => {
-              const session = wizardSessions.get(userId);
+              const session = wizardSessions.get(sessionKey);
               if (session && Date.now() - session.startedAt > WIZARD_TIMEOUT_MS) {
-                wizardSessions.delete(userId);
+                wizardSessions.delete(sessionKey);
               }
             }, WIZARD_TIMEOUT_MS);
           },
