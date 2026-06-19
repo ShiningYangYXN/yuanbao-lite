@@ -55,7 +55,9 @@ export function register(cmdSys: CommandSystem): void {
               "  /llm history            查看对话历史\n" +
               "  /llm clear              清空当前对话历史\n" +
               "  /llm billing            查看用量统计\n" +
-              "\n命令名无需加/前缀",
+              "  /llm reset              清空所有LLM配置（3次确认，CLI免确认）\n" +
+              "  /llm help               显示此帮助\n\n" +
+              "命令名无需加/前缀",
             );
             return;
           }
@@ -538,8 +540,68 @@ export function register(cmdSys: CommandSystem): void {
               }
               break;
             }
+            case "reset":
+            case "重置": {
+              // /llm reset — clear ALL LLM configuration
+              // This is a destructive operation. CLI source executes immediately;
+              // chat source requires 3x confirmation (same as /daemon restart).
+              const fs = await import("node:fs");
+              const pathMod = await import("node:path");
+              const os = await import("node:os");
+              const llmConfigPath = pathMod.join(os.homedir(), ".yuanbao-lite", "llm-config.json");
+
+              const doReset = async (): Promise<void> => {
+                try {
+                  // Clear in-memory engine config (this re-persists the file
+                  // with empty providers, so we delete the file AFTER)
+                  engine.updateConfig({
+                    provider: "",
+                    customProviders: {},
+                    enabled: true,
+                  });
+                  // Delete the persisted config file (after updateConfig re-created it)
+                  if (fs.existsSync(llmConfigPath)) {
+                    fs.unlinkSync(llmConfigPath);
+                  }
+                  await ctx.reply("✅ 已清空所有LLM配置\n发送 /llm config 重新配置供应商\n发送 /daemon restart (3次) 让更改生效");
+                } catch (err) {
+                  await ctx.reply(`❌ 清空LLM配置失败: ${(err as Error).message}`);
+                }
+              };
+
+              if (ctx.source === "cli") {
+                // CLI — execute immediately
+                await doReset();
+              } else {
+                // Chat — require 3x confirmation
+                const confirmations = (cmdSys as unknown as { _llmResetConfirmations?: Map<string, { count: number; firstAt: number }> })._llmResetConfirmations;
+                if (!confirmations) {
+                  await ctx.reply("❌ 确认机制不可用");
+                  return;
+                }
+                const userId = ctx.message.fromUserId;
+                const now = Date.now();
+                const entry = confirmations.get(userId);
+                const WINDOW_MS = 60_000;
+                const REQUIRED = 3;
+                if (!entry || now - entry.firstAt > WINDOW_MS) {
+                  confirmations.set(userId, { count: 1, firstAt: now });
+                  await ctx.reply(`⚠️ 确认清空LLM配置 (1/${REQUIRED})\n请在 ${WINDOW_MS / 1000}s 内再发送 ${REQUIRED - 1} 次 /llm reset 以确认\n⚠️ 此操作将删除所有供应商配置，不可恢复`);
+                  return;
+                }
+                entry.count++;
+                if (entry.count < REQUIRED) {
+                  await ctx.reply(`⚠️ 确认清空LLM配置 (${entry.count}/${REQUIRED})\n还需 ${REQUIRED - entry.count} 次确认`);
+                  return;
+                }
+                // Confirmed — execute
+                confirmations.delete(userId);
+                await doReset();
+              }
+              break;
+            }
             default:
-              await ctx.reply(`未知LLM子命令: ${subCmd}。使用 /llm 查看状态`);
+              await ctx.reply(`未知LLM子命令: ${subCmd}。使用 /llm help 查看帮助`);
           }
         },
       });
@@ -548,6 +610,10 @@ export function register(cmdSys: CommandSystem): void {
   // This MUST be set up so /llm config can find _llmWizardSessions.
   // The wizard input handler is called by YuanbaoBot.handleDispatch when a
   // user has an active session (intercepts non-slash messages).
+
+  // Set up the /llm reset confirmation tracking map
+  (cmdSys as unknown as { _llmResetConfirmations: Map<string, { count: number; firstAt: number }> })._llmResetConfirmations = new Map();
+
   type LlmWizardSession = {
     step: "apiFormat" | "name" | "model" | "baseUrl" | "apiKey" | "systemPrompt" | "done";
     apiFormat?: string;

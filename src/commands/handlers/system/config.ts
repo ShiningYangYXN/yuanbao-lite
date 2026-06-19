@@ -11,11 +11,14 @@ import type { CommandSystem } from "../../registry.js";
 import type { CommandCategory } from "../../types.js";
 
 export function register(cmdSys: CommandSystem): void {
+  // Set up the /config reset confirmation tracking map
+  (cmdSys as unknown as { _configResetConfirmations: Map<string, { count: number; firstAt: number }> })._configResetConfirmations = new Map();
+
   cmdSys.register({
         name: "config",
         aliases: ["配置"],
-        description: "配置管理（查看/设置/导入/导出/档案）",
-        usage: "/config [show | set <key> <value> | get <key> | profile list|switch|add|remove | export | import <json>]",
+        description: "配置管理（查看/设置/导入/导出/档案/重置）",
+        usage: "/config [show | set <key> <value> | get <key> | profile list|switch|add|remove | export | import <json> | reset]",
         category: "system" as CommandCategory,
         requireConnected: false,
         dmOnly: true,
@@ -161,6 +164,84 @@ export function register(cmdSys: CommandSystem): void {
               return;
             }
 
+            case "reset":
+            case "重置": {
+              // /config reset — clear ALL configuration files
+              // Deletes: config.json, llm-config.json, trust.json, block.json,
+              // aliases.json, contacts.json, groups.json, history.jsonl, daemon.pid
+              // This is a DESTRUCTIVE operation.
+              // CLI source executes immediately; chat source requires 3x confirmation.
+              const fs = await import("node:fs");
+              const path = await import("node:path");
+              const os = await import("node:os");
+              const configDir = path.join(os.homedir(), ".yuanbao-lite");
+              const filesToDelete = [
+                "config.json",
+                "llm-config.json",
+                "trust.json",
+                "block.json",
+                "aliases.json",
+                "contacts.json",
+                "groups.json",
+                "history.jsonl",
+                "history",
+                "daemon.pid",
+                "runtime-prefs.json",
+              ];
+
+              const doReset = async (): Promise<void> => {
+                let deleted = 0;
+                const errors: string[] = [];
+                for (const file of filesToDelete) {
+                  const filePath = path.join(configDir, file);
+                  try {
+                    if (fs.existsSync(filePath)) {
+                      fs.unlinkSync(filePath);
+                      deleted++;
+                    }
+                  } catch (err) {
+                    errors.push(`${file}: ${(err as Error).message}`);
+                  }
+                }
+                if (errors.length > 0) {
+                  await ctx.reply(`✅ 已清空 ${deleted} 个配置文件（${errors.length} 个失败）\n${errors.join("\n")}\n\n发送 /config init 重新初始化\n发送 /daemon restart (3次) 让更改生效`);
+                } else {
+                  await ctx.reply(`✅ 已清空 ${deleted} 个配置文件\n\n发送 /config init 重新初始化\n发送 /daemon restart (3次) 让更改生效`);
+                }
+              };
+
+              if (ctx.source === "cli") {
+                // CLI — execute immediately
+                await doReset();
+              } else {
+                // Chat — require 3x confirmation
+                const confirmations = (cmdSys as unknown as { _configResetConfirmations?: Map<string, { count: number; firstAt: number }> })._configResetConfirmations;
+                if (!confirmations) {
+                  await ctx.reply("❌ 确认机制不可用");
+                  return;
+                }
+                const userId = ctx.message.fromUserId;
+                const now = Date.now();
+                const entry = confirmations.get(userId);
+                const WINDOW_MS = 60_000;
+                const REQUIRED = 3;
+                if (!entry || now - entry.firstAt > WINDOW_MS) {
+                  confirmations.set(userId, { count: 1, firstAt: now });
+                  await ctx.reply(`⚠️ 确认清空所有配置 (1/${REQUIRED})\n请在 ${WINDOW_MS / 1000}s 内再发送 ${REQUIRED - 1} 次 /config reset 以确认\n⚠️ 此操作将删除所有配置文件（config/llm/trust/block/aliases/contacts/groups/history），不可恢复`);
+                  return;
+                }
+                entry.count++;
+                if (entry.count < REQUIRED) {
+                  await ctx.reply(`⚠️ 确认清空所有配置 (${entry.count}/${REQUIRED})\n还需 ${REQUIRED - entry.count} 次确认`);
+                  return;
+                }
+                // Confirmed — execute
+                confirmations.delete(userId);
+                await doReset();
+              }
+              return;
+            }
+
             default:
               await ctx.reply(
                 "用法:\n" +
@@ -173,7 +254,8 @@ export function register(cmdSys: CommandSystem): void {
                 "  /config profile add <name>    创建档案\n" +
                 "  /config profile remove <name> 删除档案\n" +
                 "  /config export                导出配置为 JSON\n" +
-                "  /config import <json>         导入配置",
+                "  /config import <json>         导入配置\n" +
+                "  /config reset                 清空所有配置文件（3次确认，CLI免确认）",
               );
           }
         },
