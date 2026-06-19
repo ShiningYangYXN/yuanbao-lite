@@ -436,8 +436,21 @@ export class CommandSystem {
       return { handled: true };
     }
 
+    // ─── Resolve @-references in args to user IDs ───
+    // Allows users to reference other users by @mention syntax instead of
+    // typing the full user ID. Supports:
+    //   @[nick](id)  → id (extracted directly from the syntax)
+    //   @nick        → looked up in message.mentions[] by displayName, or
+    //                  in group member list if available
+    //   @<botId>     → the bot ID itself (bare ID with @ prefix)
+    // CLI source skips this (CLI args are pre-resolved).
+    let resolvedArgs = args;
+    if (source !== "cli" && args.length > 0) {
+      resolvedArgs = await this.resolveAtReferences(args, message, bot);
+    }
+
     // Build context and execute
-    const ctx = this.makeContext(bot, message, commandName, args, onReply, source);
+    const ctx = this.makeContext(bot, message, commandName, resolvedArgs, onReply, source);
 
     try {
       this.log.info(`executing command: ${commandName} (args: ${args.join(" ")})`);
@@ -453,6 +466,92 @@ export class CommandSystem {
       }
       return { handled: true, error };
     }
+  }
+
+  // ─── @-reference resolution ───
+
+  /**
+   * Resolve @-references in command args to actual user IDs.
+   *
+   * Supports:
+   *   @[nick](id)  → id (extracted directly from the mention syntax)
+   *   @nick        → looked up in message.mentions[] by displayName, then
+   *                  in group member list (if available)
+   *   @<botId>     → the bare ID (anything starting with @ that looks like an ID)
+   *
+   * Args that don't start with @ are returned unchanged.
+   * Args that start with @ but can't be resolved are returned unchanged (the
+   * command handler will deal with the invalid ID).
+   */
+  private async resolveAtReferences(
+    args: string[],
+    message: ChatMessage,
+    bot: YuanbaoBot,
+  ): Promise<string[]> {
+    const resolved: string[] = [];
+    for (const arg of args) {
+      const trimmed = arg.trim();
+      if (!trimmed.startsWith("@")) {
+        resolved.push(arg);
+        continue;
+      }
+
+      // Pattern 1: @[nick](id) — extract id directly
+      const fullMentionMatch = trimmed.match(/^@\[([^\]]*)\]\(([^)]+)\)$/);
+      if (fullMentionMatch) {
+        const id = fullMentionMatch[2];
+        resolved.push(id);
+        this.log.debug(`resolved @[nick](${id}) → ${id}`);
+        continue;
+      }
+
+      // Pattern 2: @nick — look up in message.mentions[] by displayName
+      const nick = trimmed.slice(1); // strip leading @
+      if (nick && message.mentions) {
+        // Try exact displayName match
+        const mention = message.mentions.find(m => m.displayName === nick || m.userId === nick);
+        if (mention) {
+          resolved.push(mention.userId);
+          this.log.debug(`resolved @${nick} → ${mention.userId} (from message.mentions)`);
+          continue;
+        }
+        // Try case-insensitive match
+        const mentionCI = message.mentions.find(m => m.displayName.toLowerCase() === nick.toLowerCase());
+        if (mentionCI) {
+          resolved.push(mentionCI.userId);
+          this.log.debug(`resolved @${nick} → ${mentionCI.userId} (case-insensitive from message.mentions)`);
+          continue;
+        }
+      }
+
+      // Pattern 3: @<bareId> — if the arg after @ looks like an ID (contains
+      // alphanumeric + underscore/hyphen, length > 5), treat it as a bare ID
+      if (nick.length > 5 && /^[a-zA-Z0-9_-]+$/.test(nick)) {
+        resolved.push(nick);
+        this.log.debug(`resolved @${nick} → ${nick} (bare ID)`);
+        continue;
+      }
+
+      // Pattern 4: @nick in group — try group member list lookup
+      if (nick && message.chatType === "group" && message.groupCode) {
+        try {
+          const resp = await bot.getGroupMemberList(message.groupCode);
+          const members = resp?.member_list ?? [];
+          const member = members.find(m => m.nick_name === nick || m.user_id === nick);
+          if (member) {
+            resolved.push(member.user_id);
+            this.log.debug(`resolved @${nick} → ${member.user_id} (from group members)`);
+            continue;
+          }
+        } catch {
+          // group member lookup failed — fall through
+        }
+      }
+
+      // Could not resolve — return as-is (command handler will handle)
+      resolved.push(arg);
+    }
+    return resolved;
   }
 
   // ─── Parsing ───
