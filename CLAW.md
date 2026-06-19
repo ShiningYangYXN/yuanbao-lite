@@ -86,12 +86,9 @@ sudo systemctl stop yuanbao-lite      # 停止
 sudo systemctl restart yuanbao-lite   # 重启
 sudo systemctl status yuanbao-lite    # 状态
 sudo journalctl -u yuanbao-lite -f    # 实时日志
-sudo journalctl -u yuanbao-lite --since "1 hour ago"  # 最近1小时日志
 ```
 
 ### 非 systemd 部署
-
-如果不需要 systemd，可以直接用 daemon 模式运行：
 
 ```bash
 # 前台运行（调试用）
@@ -116,23 +113,18 @@ daemon 会自动杀菌：新 daemon 启动时自动 SIGTERM 旧 daemon（通过 
 | aliases.json | 别名 |
 | history.jsonl | 消息历史 |
 | llm-config.json | LLM 配置 (含密钥池/供应商池) |
-| trust.json | 信任列表 |
+| trust.json | 信任列表 + 单命令授权 |
+| block.json | 封禁列表 |
 | reminders.json | 提醒和定时任务 |
+
+daemon 启动时自动检查所有安全模块文件，缺失或损坏时自动创建空壳（trust.json/block.json 等均为有效 JSON 结构，非全空）。
 
 ## daemon 管理端口
 
-默认端口 `8992`（T9:TXYB 腾讯元宝）。修改：
+默认端口 `8992`。修改：
 
 ```bash
 node dist/cli/index.js daemon start --port 9000
-```
-
-或通过 CLI 命令：
-
-```bash
-node dist/cli/index.js rc /daemon status
-node dist/cli/index.js rc /daemon stop
-node dist/cli/index.js rc /daemon restart
 ```
 
 ## LLM 配置
@@ -153,9 +145,6 @@ node dist/cli/index.js rc "/llm config"
 # 添加供应商 (5种API格式可选)
 node dist/cli/index.js rc "/llm customprovider add my-openai openai-chat-completions gpt-4o https://api.openai.com/v1 sk-xxx"
 
-# 添加密钥到池
-node dist/cli/index.js rc "/llm customprovider addkey my-openai sk-yyy"
-
 # 切换到供应商
 node dist/cli/index.js rc "/llm customprovider use my-openai"
 
@@ -164,6 +153,18 @@ node dist/cli/index.js rc "/llm on"
 
 # 查看用量
 node dist/cli/index.js rc "/llm billing"
+```
+
+### 重置 LLM 配置
+
+```bash
+# CLI 直接执行（无需确认）
+node dist/cli/index.js rc "/llm reset"
+
+# 私聊中需要3次确认
+/llm reset
+/llm reset
+/llm reset
 ```
 
 ### 支持的 API 格式
@@ -176,31 +177,56 @@ node dist/cli/index.js rc "/llm billing"
 
 ## 安全机制
 
+### 优先级
+
+**block > trust > unsafe**
+
+被封禁用户不能被添加到信任列表，会被立即从信任列表移除。CLI 全局最高权限绕过所有限制。
+
 ### 信任系统
+
 - 主人 (bot owner) 自动受信，不可移除
 - 受信用户才能开启危险模式或管理信任列表
-- `/trust status` — 查看信任状态（全局开放）
-- `/trust list|add|remove` — 管理信任列表（仅私聊）
+- `/trust status` — 查看信任状态 + 单命令授权（全局开放）
+- `/trust list|add|remove` — 管理信任列表（仅私聊，unsafe 模式下可在群聊使用）
+- `/trust grant <ID> <命令> [分钟|forever]` — 授权单命令给单用户
+- `/trust revoke <ID> <命令>` — 撤销授权
+- 命令名可加/也可不加，支持别名（如 sh = shell）
+
+### 封禁系统
+
+- `/block add <ID|*> <范围> [昵称]` — 封禁用户
+  - 范围: `[all]` `[llm]` `[command]` 或命令名（如 shell）
+  - 权限组必须加方括号，命令名无需加/
+  - `*` 作为用户ID可封禁所有用户（全局）
+  - 多次操作附加范围
+- `/block remove <ID|*> [范围]` — 解封
+- 主人不能被封禁
+- unsafe 模式下可在群聊管理封禁
 
 ### 危险模式
+
 - `/unsafe on [分钟]` — 开启全局危险模式（默认5分钟）
 - `/unsafe on forever` — 永久开启
-- `/unsafe off` — 关闭
-- `/unsafe status` — 查看状态 + 已授权命令白名单 + 过期时间
-
-### 单命令授权
-- `/unsafe allow <命令名> [分钟|forever]` — 授权单个 dmOnly 命令（默认5分钟）
-- `/unsafe disallow <命令名>` — 取消授权（非 dmOnly 命令无法被 disallow）
-- `/unsafe allow` — 查看已授权命令列表 + 过期时间
-- 不可授权命令: unsafe, trust, config, init, daemon
+- `/unsafe allow <命令> [分钟|forever]` — 全局授权单命令
+- 不可授权命令: unsafe, trust, block, config, init, daemon
 
 ### 系统提示词
+
 - 默认系统提示词不可被用户覆盖
 - 用户可通过 `userSystemPrompt` 追加自定义提示词
-- 自定义提示词以「用户添加的系统提示词」为标头拼接在默认提示词之后
 
-### 插值安全
-- 群聊中非 unsafe 模式自动屏蔽危险插值 (process/env/require 等)
+## 阻塞式会话
+
+所有阻塞式会话统一使用 session-scoped 隔离（同一用户 + 同一会话才捕获），5 分钟无操作自动退出：
+
+| 会话 | 启动 | 退出 |
+|------|------|------|
+| /init 向导 | `/init` | 完成或 `/init cancel` |
+| /llm config 向导 | `/llm config` | 完成或 `/llm config cancel` |
+| /term 终端 | `/term` | `/term exit` 或 `exit` |
+| /switch 上下文 | `/switch group <群号>` | `/switch exit` |
+| /join 群聊 | `/join <群号>` | `/switch exit` |
 
 ## CLI 使用
 
@@ -208,7 +234,7 @@ node dist/cli/index.js rc "/llm billing"
 # 交互式 REPL
 node dist/cli/index.js
 
-# 执行任意命令 (共享 CommandSystem)
+# 执行任意命令 (CLI 无需确认，全局最高权限)
 node dist/cli/index.js rc /help
 node dist/cli/index.js rc /status
 node dist/cli/index.js rc /ip 8.8.8.8
@@ -216,6 +242,16 @@ node dist/cli/index.js rc /ip 8.8.8.8
 # 发送消息
 node dist/cli/index.js send dm <userId> "hello"
 node dist/cli/index.js send group <groupCode> "hello"
+
+# 配置管理
+node dist/cli/index.js config show
+node dist/cli/index.js config set logLevel debug
+
+# daemon 管理
+node dist/cli/index.js daemon start
+node dist/cli/index.js daemon stop
+node dist/cli/index.js daemon restart
+node dist/cli/index.js daemon status
 ```
 
 ## 日志
@@ -233,7 +269,8 @@ node dist/cli/index.js config set logLevel debug
 2. **daemon 不启动**: 检查端口 8992 是否被占用
 3. **LLM 不工作**: 检查 `/llm status`，确保供应商已配置且有密钥
 4. **命令不可用**: 检查 `/help <命令名>` 查看是否 dmOnly，使用 `/unsafe allow` 授权
-5. **systemd 启动失败**: 检查 `journalctl -u yuanbao-lite` 日志，确认路径和权限
+5. **安全文件缺失**: daemon 启动时自动创建空壳，无需手动处理
+6. **systemd 启动失败**: 检查 `journalctl -u yuanbao-lite` 日志，确认路径和权限
 
 ## 快速验证
 
@@ -250,11 +287,13 @@ node dist/cli/index.js rc /status
 # 测试计算
 node dist/cli/index.js rc /calc 2+2
 
-# 测试 IP 查询
-node dist/cli/index.js rc /ip 8.8.8.8
-
 # 查看安全状态
+node dist/cli/index.js rc /trust status
+node dist/cli/index.js rc /block status
 node dist/cli/index.js rc /unsafe status
+
+# 查看所有命令
+node dist/cli/index.js rc /commands
 ```
 
 ## 技能生成引导
@@ -264,7 +303,7 @@ node dist/cli/index.js rc /unsafe status
 1. **部署技能**: 从源码包完成安装、编译、配置、启动的完整流程
 2. **systemd 管理技能**: 创建、启用、管理 systemd 服务，包括日志查看和故障恢复
 3. **LLM 配置技能**: 通过命令行或私聊完成 LLM 供应商配置，包括密钥池管理
-4. **安全审计技能**: 检查信任列表、危险模式状态、授权白名单，确保安全配置合理
+4. **安全审计技能**: 检查信任列表、封禁列表、危险模式状态、授权白名单，确保安全配置合理
 5. **故障诊断技能**: 通过日志、健康检查、状态查询定位问题并修复
 
 生成技能时，请参考本文件中的具体命令和配置示例。
