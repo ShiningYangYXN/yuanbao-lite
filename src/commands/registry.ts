@@ -436,12 +436,12 @@ export class CommandSystem {
         }
         if (isTrustedUser) {
           await this.makeContext(bot, message, commandName, args, onReply, source).reply(
-            `⚠️ 此命令仅限私聊使用。\n受信用户可：\n  /unsafe on [分钟] — 开启全局危险模式（默认5分钟）\n  /unsafe on forever — 永久开启\n  /unsafe allow /${commandName} [分钟|forever] — 全局授权此命令（默认5分钟）\n  /trust grant <你的ID> /${commandName} [分钟|forever] — 仅授权给你（需主人执行）\n查看状态: /unsafe status`,
+            `⚠️ 此命令仅限私聊使用。\n受信用户可：\n  /unsafe on [分钟] — 开启全局危险模式（默认5分钟）\n  /unsafe on forever — 永久开启\n  /unsafe allow ${commandName} [分钟|forever] — 全局授权此命令（默认5分钟）\n  /trust grant <你的ID> ${commandName} [分钟|forever] — 仅授权给你（需主人执行）\n命令名可加/也可不加，支持别名\n查看状态: /unsafe status`,
           );
         } else {
           // Auto-include the user's own ID so they can forward it to the master
           await this.makeContext(bot, message, commandName, args, onReply, source).reply(
-            `⚠️ 此命令仅限私聊使用。\n你的用户ID: ${message.fromUserId}\n如需在群聊中执行：\n  1. 联系主人发送: /trust add ${message.fromUserId}\n  2. 加入信任列表后，发送: /unsafe allow /${commandName}\n  或: /unsafe on 开启全局危险模式\n  或请主人执行: /trust grant ${message.fromUserId} /${commandName}`,
+            `⚠️ 此命令仅限私聊使用。\n你的用户ID: ${message.fromUserId}\n如需在群聊中执行：\n  1. 联系主人发送: /trust add ${message.fromUserId}\n  2. 加入信任列表后，发送: /unsafe allow ${commandName}\n  或: /unsafe on 开启全局危险模式\n  或请主人执行: /trust grant ${message.fromUserId} ${commandName}\n命令名可加/也可不加，支持别名`,
           );
         }
         return { handled: true };

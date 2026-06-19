@@ -65,15 +65,22 @@ export function register(cmdSys: CommandSystem): void {
 
           // list/add/remove/grant/revoke require dmOnly (system management operations).
           // CLI source bypasses dmOnly + trust check (CLI is global highest privilege).
-          if (ctx.source !== "cli" && ctx.message.chatType === "group") {
-            await ctx.reply("⚠️ 此操作仅限私聊使用。请私聊机器人发送此命令。");
+          // Unsafe mode also bypasses dmOnly + trust check (trusted user enabled it).
+          const bypassChecks = ctx.source === "cli" || cmdSys.isUnsafeMode();
+          if (!bypassChecks && ctx.message.chatType === "group") {
+            await ctx.reply("⚠️ 此操作仅限私聊使用。请私聊机器人发送此命令。\n或在群聊中开启危险模式：/unsafe on");
             return;
           }
 
           // Only trusted users can manage trust (master always can).
-          // CLI source bypasses trust check.
-          if (ctx.source !== "cli" && !isTrusted(userId)) {
-            await ctx.reply("❌ 你不在信任列表中，无法管理受信用户");
+          // CLI source and unsafe mode bypass trust check.
+          if (!bypassChecks && !isTrusted(userId)) {
+            await ctx.reply(
+              `❌ 权限不足：你需要受信才能管理信任列表。\n` +
+              `你的用户ID: ${userId}\n` +
+              `请联系主人发送: /trust add ${userId}\n` +
+              `或由主人开启危险模式后在群聊中执行`,
+            );
             return;
           }
 

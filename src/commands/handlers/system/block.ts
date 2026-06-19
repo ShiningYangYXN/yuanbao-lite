@@ -60,11 +60,17 @@ export function register(cmdSys: CommandSystem): void {
           }
 
           // Only trusted users can manage blocks (master always can).
-          // CLI source bypasses trust check (CLI is global highest privilege).
-          if (ctx.source !== "cli") {
+          // CLI source and unsafe mode bypass trust check.
+          const bypassChecks = ctx.source === "cli" || cmdSys.isUnsafeMode();
+          if (!bypassChecks) {
             const { isTrusted } = await import("../../../business/trust.js");
             if (!isTrusted(ctx.message.fromUserId)) {
-              await ctx.reply("❌ 你不在信任列表中，无法管理封禁列表");
+              await ctx.reply(
+                `❌ 权限不足：你需要受信才能管理封禁列表。\n` +
+                `你的用户ID: ${ctx.message.fromUserId}\n` +
+                `请联系主人发送: /trust add ${ctx.message.fromUserId}\n` +
+                `或由主人开启危险模式后在群聊中执行`,
+              );
               return;
             }
           }
