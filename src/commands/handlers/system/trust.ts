@@ -133,23 +133,23 @@ export function register(cmdSys: CommandSystem): void {
           // The user does NOT need to be trusted first — this is a standalone grant.
           if (subCmd === "grant") {
             if (ctx.args.length < 3) {
-              await ctx.reply("用法: /trust grant <用户ID> /命令名 [分钟|forever]\n默认: 5分钟, forever=永久\n不可授权命令: unsafe, trust, block, config, init, daemon");
+              await ctx.reply("用法: /trust grant <用户ID> <命令名> [分钟|forever]\n默认: 5分钟, forever=永久\n命令名可加/也可不加，支持别名（如 sh = shell）\n不可授权命令: unsafe, trust, block, config, init, daemon");
               return;
             }
             const targetId = ctx.args[1];
-            const cmdName = ctx.args[2].replace(/^\//, "");
+            // Resolve command name: accepts "shell", "/shell", "sh" (alias) → "shell"
+            const resolved = cmdSys.resolveCommandName(ctx.args[2]);
+            if (!resolved) {
+              await ctx.reply(`❌ 未知命令: ${ctx.args[2]}\n提示: 可用 /commands 查看所有命令和别名`);
+              return;
+            }
+            const cmdName = resolved;
             let durationMs = 5 * 60 * 1000;
             if (ctx.args[3]?.toLowerCase() === "forever") {
               durationMs = 0;
             } else {
               const minutes = parseInt(ctx.args[3], 10);
               if (!isNaN(minutes) && minutes > 0) durationMs = minutes * 60 * 1000;
-            }
-            // Check command exists and is dmOnly (only dmOnly commands need grants)
-            const cmdDef = cmdSys.get(cmdName);
-            if (!cmdDef) {
-              await ctx.reply(`❌ 未知命令: ${cmdName}`);
-              return;
             }
             if (CommandSystem.UNAUTHORIZABLE_COMMANDS.has(cmdName.toLowerCase())) {
               await ctx.reply(`❌ 命令 ${cmdName} 不支持被授权`);
@@ -167,11 +167,17 @@ export function register(cmdSys: CommandSystem): void {
           // /trust revoke <userID> /command
           if (subCmd === "revoke") {
             if (ctx.args.length < 3) {
-              await ctx.reply("用法: /trust revoke <用户ID> /命令名");
+              await ctx.reply("用法: /trust revoke <用户ID> <命令名>\n命令名可加/也可不加，支持别名");
               return;
             }
             const targetId = ctx.args[1];
-            const cmdName = ctx.args[2].replace(/^\//, "");
+            // Resolve command name: accepts "shell", "/shell", "sh" (alias) → "shell"
+            const resolved = cmdSys.resolveCommandName(ctx.args[2]);
+            if (!resolved) {
+              await ctx.reply(`❌ 未知命令: ${ctx.args[2]}`);
+              return;
+            }
+            const cmdName = resolved;
             const result = revokeCommand(targetId, cmdName);
             await ctx.reply(result.ok
               ? `✅ 已撤销 ${targetId} 的 ${cmdName} 授权`

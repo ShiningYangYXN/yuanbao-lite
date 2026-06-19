@@ -95,7 +95,7 @@ export function register(cmdSys: CommandSystem): void {
                 "  [all]      — 封禁所有功能（命令+LLM）\n" +
                 "  [llm]      — 封禁LLM自动回复\n" +
                 "  [command]  — 封禁所有斜杠命令\n" +
-                "  <命令名>   — 封禁特定命令（如 shell, unsafe, send 等，可禁用非受限命令，无需加/）\n" +
+                "  <命令名>   — 封禁特定命令（如 shell, sh, unsafe 等，可加/也可不加，支持别名）\n" +
                 "权限组必须加方括号以区分命令名\n" +
                 "用 * 作为用户ID可封禁所有用户（全局）\n" +
                 "多次对同一用户操作会附加范围",
@@ -103,8 +103,17 @@ export function register(cmdSys: CommandSystem): void {
               return;
             }
             const targetId = ctx.args[1];
-            const scope = ctx.args[2];
+            let scope = ctx.args[2];
             const nickname = ctx.args.slice(3).join(" ");
+            // If scope is not a special group ([all]/[llm]/[command]), try to
+            // resolve it as a command name/alias → canonical name
+            if (!["[all]", "[llm]", "[command]", "all", "llm", "command"].includes(scope.toLowerCase())) {
+              const resolved = cmdSys.resolveCommandName(scope);
+              if (resolved) {
+                scope = resolved; // use canonical name
+              }
+              // If not resolved, use as-is (may be a custom string)
+            }
             const result = await addBlock(targetId, scope, nickname);
             await ctx.reply(result.ok
               ? `✅ 已封禁 ${targetId} (${scope})${nickname ? ` 昵称: ${nickname}` : ""}`

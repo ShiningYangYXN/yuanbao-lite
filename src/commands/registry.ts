@@ -260,6 +260,26 @@ export class CommandSystem {
     return this.commands.get(normalName) ?? this.commands.get(this.aliasMap.get(normalName) ?? "");
   }
 
+  /**
+   * Resolve a command name or alias (with optional leading /) to the
+   * canonical command name. Returns undefined if not found.
+   *
+   * Examples:
+   *   "shell"   → "shell"
+   *   "/shell"  → "shell"
+   *   "sh"      → "shell"  (alias)
+   *   "/v"      → "version" (alias)
+   *   "xyz"     → undefined (not found)
+   */
+  resolveCommandName(input: string): string | undefined {
+    const stripped = input.replace(/^\//, "").trim();
+    const normalName = this.normalizeName(stripped);
+    if (this.commands.has(normalName)) return normalName;
+    const aliasTarget = this.aliasMap.get(normalName);
+    if (aliasTarget) return aliasTarget;
+    return undefined;
+  }
+
   // ─── Dispatch ───
 
   /**

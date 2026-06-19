@@ -107,16 +107,20 @@ export function register(cmdSys: CommandSystem): void {
               await ctx.reply(
                 `📋 已授权命令 (${allowed.length}):\n${lines.length > 0 ? lines.join("\n") : "  (无)"}\n\n` +
                 `用法: /unsafe allow <命令名> [分钟数|forever]\n` +
-                `命令名无需加/ (如 shell, 不是 /shell)\n` +
+                `命令名可加/也可不加，支持别名 (如 sh = shell)\n` +
                 `默认: 5分钟, forever=永久\n` +
                 `/unsafe disallow <命令名> — 取消授权\n` +
                 `不可授权: unsafe, trust, block, config, init, daemon`,
               );
               return;
             }
-            // Parse duration: minutes number, "forever", or default 5min.
-            // Command name is given WITHOUT leading "/" — tolerate it if user adds one.
-            const cmdName = ctx.args[1].replace(/^\//, "");
+            // Resolve command name: accepts "shell", "/shell", "sh" (alias) → "shell"
+            const resolved = cmdSys.resolveCommandName(ctx.args[1]);
+            if (!resolved) {
+              await ctx.reply(`❌ 未知命令: ${ctx.args[1]}\n提示: 可用 /commands 查看所有命令和别名`);
+              return;
+            }
+            const cmdName = resolved;
             let durationMs = 5 * 60 * 1000; // default 5 min
             if (ctx.args[2]?.toLowerCase() === "forever") {
               durationMs = 0;
@@ -138,11 +142,18 @@ export function register(cmdSys: CommandSystem): void {
           if (subCmd2 === "disallow") {
             // /unsafe disallow <command> — revoke authorization
             if (!ctx.args[1]) {
-              await ctx.reply("用法: /unsafe disallow <命令名>\n命令名无需加/ (如 shell, 不是 /shell)");
+              await ctx.reply("用法: /unsafe disallow <命令名>\n命令名可加/也可不加，支持别名");
               return;
             }
-            const result = cmdSys.disallowCommand(ctx.args[1]);
-            await ctx.reply(result.ok ? `✅ 已取消授权 ${ctx.args[1]}` : `❌ ${result.reason}`);
+            // Resolve command name: accepts "shell", "/shell", "sh" (alias) → "shell"
+            const resolved = cmdSys.resolveCommandName(ctx.args[1]);
+            if (!resolved) {
+              await ctx.reply(`❌ 未知命令: ${ctx.args[1]}`);
+              return;
+            }
+            const cmdName = resolved;
+            const result = cmdSys.disallowCommand(cmdName);
+            await ctx.reply(result.ok ? `✅ 已取消授权 ${cmdName}` : `❌ ${result.reason}`);
             return;
           }
 
