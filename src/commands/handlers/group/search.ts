@@ -41,7 +41,7 @@ export function register(cmdSys: CommandSystem): void {
                 return;
               }
               const lines = results.map(r =>
-                `  ${r.groupCode} — ${r.groupName} (${r.groupSize}人) [${r.matchType}]`,
+                `  ${r.groupCode} — ${r.groupName || "(未知)"} (${r.groupSize}人) [${r.matchType}]`,
               );
               await ctx.reply(`🔍 群组搜索结果:\n${lines.join("\n")}`);
               break;

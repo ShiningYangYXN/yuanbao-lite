@@ -1147,7 +1147,7 @@ export class YuanbaoBot {
     // pops the stack and restores the previous context.
     if (this.commandSystem) {
       const cs = this.commandSystem as unknown as {
-        _switchSessions?: Map<string, Array<{ chatType: "group" | "direct"; target: string; label: string }>>;
+        _switchSessions?: Map<string, Array<{ chatType: "group" | "direct"; target: string; label: string; groupName?: string }>>;
       };
       const stack = cs._switchSessions?.get(chatMessage.fromUserId);
       if (stack && stack.length > 0) {
@@ -1158,6 +1158,9 @@ export class YuanbaoBot {
         if (current.chatType === "group") {
           (chatMessage as { chatType: "group" | "direct" }).chatType = "group";
           (chatMessage as { groupCode?: string }).groupCode = current.target;
+          // Update groupName to the switched group's name (fixes cross-group
+          // name pollution where original group's name leaked into switched context)
+          (chatMessage as { groupName?: string }).groupName = current.groupName || current.target;
           // isMentioned is forced true so commands work in the switched group context
           (chatMessage as { isMentioned?: boolean }).isMentioned = true;
         } else {
@@ -1242,7 +1245,28 @@ export class YuanbaoBot {
     this.historyStore.add(chatMessage);
 
     // Track group activity for group name resolution
+    // If groupName is missing, try to resolve from group store before tracking
     if (chatMessage.chatType === "group" && chatMessage.groupCode) {
+      if (!chatMessage.groupName) {
+        // Try group store first (may have been resolved by /groups, /join, etc.)
+        const existing = this.groupStore.get(chatMessage.groupCode);
+        if (existing?.groupName) {
+          (chatMessage as { groupName?: string }).groupName = existing.groupName;
+        } else if (existing?.name) {
+          (chatMessage as { groupName?: string }).groupName = existing.name;
+        }
+        // If still no name, fire-and-forget queryGroupInfo to populate the store
+        // for future messages (throttled — only if store doesn't have it)
+        if (!chatMessage.groupName && !existing?.groupName) {
+          this.client?.queryGroupInfo({ group_code: chatMessage.groupCode }).then((rsp) => {
+            if (rsp.code === 0 && rsp.group_info?.group_name) {
+              this.groupStore.setGroupName(chatMessage.groupCode!, rsp.group_info.group_name);
+              this.groupStore.trackActivity(chatMessage.groupCode!, rsp.group_info.group_name);
+              this.log.debug(`lazy-resolved group name: ${chatMessage.groupCode} → ${rsp.group_info.group_name}`);
+            }
+          }).catch(() => { /* ignore — non-critical */ });
+        }
+      }
       this.groupStore.trackActivity(chatMessage.groupCode, chatMessage.groupName);
     }
 

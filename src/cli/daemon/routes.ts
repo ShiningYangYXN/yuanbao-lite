@@ -253,7 +253,7 @@ async function runCommand(ctx: RouteContext, body: Record<string, unknown>): Pro
     chatType: chatMode,
     text,
     timestamp: Date.now(),
-    ...(chatMode === "group" ? { groupCode: chatTarget, groupName: chatTarget } : {}),
+    ...(chatMode === "group" ? { groupCode: chatTarget, groupName: undefined } : {}),
     ...(quoteMsgId !== undefined ? { quoteMsgId } : {}),
     ...(quoteMsgSeq !== undefined ? { quoteMsgSeq } : {}),
   };

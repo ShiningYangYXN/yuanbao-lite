@@ -22,7 +22,7 @@ export function register(cmdSys: CommandSystem): void {
           const userId = ctx.message.fromUserId;
           // Ensure the switch session map exists on the CommandSystem
           const cs = cmdSys as unknown as {
-            _switchSessions?: Map<string, Array<{ chatType: "group" | "direct"; target: string; label: string }>>;
+            _switchSessions?: Map<string, Array<{ chatType: "group" | "direct"; target: string; label: string; groupName?: string }>>;
           };
           if (!cs._switchSessions) cs._switchSessions = new Map();
           const stack = cs._switchSessions.get(userId) ?? [];
@@ -53,16 +53,29 @@ export function register(cmdSys: CommandSystem): void {
           if (subArg === "group" && ctx.args[1]) {
             const groupCode = ctx.args[1];
             // Try to resolve group name
+            let groupName: string | undefined;
             let label = `群聊 ${groupCode}`;
             try {
               const info = await ctx.bot.queryGroupInfo(groupCode);
               if (info.code === 0 && info.group_info?.group_name) {
-                label = `群聊 ${info.group_info.group_name} (${groupCode})`;
+                groupName = info.group_info.group_name;
+                label = `群聊 ${groupName} (${groupCode})`;
+                // Persist to group store so future lookups don't need queryGroupInfo
+                ctx.bot.getGroupStore().setGroupName(groupCode, groupName);
+                ctx.bot.getGroupStore().trackActivity(groupCode, groupName);
               }
             } catch {
-              // ignore
+              // ignore query errors — try group store as fallback
+              const existing = ctx.bot.getGroupStore().get(groupCode);
+              if (existing?.groupName) {
+                groupName = existing.groupName;
+                label = `群聊 ${groupName} (${groupCode})`;
+              } else if (existing?.name) {
+                groupName = existing.name;
+                label = `群聊 ${groupName} (${groupCode})`;
+              }
             }
-            stack.push({ chatType: "group", target: groupCode, label });
+            stack.push({ chatType: "group", target: groupCode, label, groupName });
             cs._switchSessions.set(userId, stack);
             await ctx.reply(
               `✅ 已切换到 ${label}\n` +
