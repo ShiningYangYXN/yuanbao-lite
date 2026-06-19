@@ -153,24 +153,45 @@ export async function parseMentions(
     // @[](all)       → nickname="", id="all"
     // @[所有人](all) → nickname="所有人", id="all"  (also valid)
     // @all           → nickname="all", id=""
+    // @[所有人类](humans)   → @all humans (exclude bots)
+    // @[所有BOT](bots)     → @all bots (yuanbao + lobsters)
+    // @[所有龙虾](lobsters) → @all lobsters (exclude yuanbao bots)
     const isAtAllSyntax =
       (m.nickname === "所有人" && (m.id === "" || m.id === "all")) ||
       (m.id === "all" && (m.nickname === "" || m.nickname === "所有人")) ||
       (m.nickname === "all" && m.id === "") ||
       (m.id === "所有人" && m.nickname === "");
 
-    if (isAtAllSyntax) {
+    // Check for scoped @all variants
+    const atAllScope: "all" | "humans" | "bots" | "lobsters" | null = isAtAllSyntax ? "all"
+      : (m.id === "humans" || (m.nickname === "所有人类" && (m.id === "" || m.id === "humans"))) ? "humans"
+      : (m.id === "bots" || (m.nickname === "所有BOT" && (m.id === "" || m.id === "bots")) || (m.nickname === "所有Bot" && (m.id === "" || m.id === "bots"))) ? "bots"
+      : (m.id === "lobsters" || (m.nickname === "所有龙虾" && (m.id === "" || m.id === "lobsters"))) ? "lobsters"
+      : null;
+
+    if (atAllScope) {
       if (allMembersResolver) {
         try {
           const allMembers = await allMembersResolver();
           atAll = true;
-          // Expand @[所有人]() into individual @nickname tokens for EVERY
-          // group member. Each token will later be matched by
-          // buildMentionMsgBody's splitRegex and converted into a separate
-          // TIMCustomElem (elem_type=1002) so every member actually receives
-          // an @ mention notification — not just a single "@所有人" text.
+          // Filter members based on scope:
+          // - "all": everyone
+          // - "humans": exclude bot_ prefixed IDs
+          // - "bots": only bot_ prefixed IDs
+          // - "lobsters": only bot_ prefixed IDs (same as bots for now, since
+          //   we can't distinguish yuanbao bots from lobsters by ID alone —
+          //   but the API allows future differentiation)
+          const filteredMembers = allMembers.filter(user => {
+            const uid = String(user.userId ?? "");
+            if (atAllScope === "all") return true;
+            if (atAllScope === "humans") return !uid.startsWith("bot_");
+            if (atAllScope === "bots") return uid.startsWith("bot_");
+            if (atAllScope === "lobsters") return uid.startsWith("bot_");
+            return true;
+          });
+          // Expand into individual @nickname tokens for each matching member.
           const displayParts: string[] = [];
-          for (const user of allMembers) {
+          for (const user of filteredMembers) {
             const mention: MentionInfo = {
               userId: user.userId,
               displayName: user.nickname || user.userId,
@@ -184,12 +205,14 @@ export async function parseMentions(
             }
             displayParts.push(`@${user.nickname || user.userId}`);
           }
-          // Replace @[所有人]() / @[](all) with "@张三 @李四 ... @王五"
-          // (space-separated @displayName tokens). If the group is empty,
-          // fall back to a single "@所有人" so the message still reads naturally.
+          // Replace with expanded @displayName tokens or fallback text
+          const fallbackLabel = atAllScope === "humans" ? "@所有人类"
+            : atAllScope === "bots" ? "@所有BOT"
+            : atAllScope === "lobsters" ? "@所有龙虾"
+            : "@所有人";
           const replacement = displayParts.length > 0
             ? displayParts.join(" ")
-            : `@所有人`;
+            : fallbackLabel;
           text = text.slice(0, m.index) + replacement + text.slice(m.index + m.full.length);
           const diff = replacement.length - m.full.length;
           for (let j = 0; j < i; j++) {
@@ -197,7 +220,10 @@ export async function parseMentions(
           }
         } catch {
           // Resolver failed — leave as plain text
-          const replacement = `@所有人`;
+          const replacement = atAllScope === "humans" ? "@所有人类"
+            : atAllScope === "bots" ? "@所有BOT"
+            : atAllScope === "lobsters" ? "@所有龙虾"
+            : "@所有人";
           text = text.slice(0, m.index) + replacement + text.slice(m.index + m.full.length);
           const diff = replacement.length - m.full.length;
           for (let j = 0; j < i; j++) {
@@ -207,7 +233,10 @@ export async function parseMentions(
       } else {
         // No resolver — leave as plain text (still mark atAll for caller)
         atAll = true;
-        const replacement = `@所有人`;
+        const replacement = atAllScope === "humans" ? "@所有人类"
+          : atAllScope === "bots" ? "@所有BOT"
+          : atAllScope === "lobsters" ? "@所有龙虾"
+          : "@所有人";
         text = text.slice(0, m.index) + replacement + text.slice(m.index + m.full.length);
         const diff = replacement.length - m.full.length;
         for (let j = 0; j < i; j++) {

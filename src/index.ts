@@ -1071,7 +1071,7 @@ export class YuanbaoBot {
             // Auto-trust the master (bot owner) — they can always use /unsafe
             try {
               const { setMasterUserId } = await import("./business/trust.js");
-              setMasterUserId(rsp.ownerId);
+              setMasterUserId(rsp.ownerId, "主人");
             } catch {
               // trust module optional
             }

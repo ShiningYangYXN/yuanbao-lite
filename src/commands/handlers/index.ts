@@ -1,13 +1,13 @@
 /**
- * Handler index — imports and re-exports all command register functions.
- *
- * Organized by command metadata category. Each subfolder contains
- * one file per command, exporting `register(cmdSys: CommandSystem): void`.
+ * Handler index.
  */
 
 import type { CommandSystem } from "../registry.js";
 
 import { register as registerAtall } from "./chat/atall.js";
+import { register as registerAtbots } from "./chat/atbots.js";
+import { register as registerAthumans } from "./chat/athumans.js";
+import { register as registerAtlobsters } from "./chat/atlobsters.js";
 import { register as registerChat } from "./chat/chat.js";
 import { register as registerDm } from "./chat/dm.js";
 import { register as registerGroup } from "./chat/group.js";
@@ -63,6 +63,9 @@ import { register as registerRemind } from "./utility/remind.js";
 
 export {
   registerAtall,
+  registerAtbots,
+  registerAthumans,
+  registerAtlobsters,
   registerChat,
   registerDm,
   registerGroup,
@@ -117,9 +120,11 @@ export {
   registerRemind,
 };
 
-/** Register all built-in commands by calling each handler's register(). */
 export function registerAll(cmdSys: CommandSystem): void {
   registerAtall(cmdSys);
+  registerAtbots(cmdSys);
+  registerAthumans(cmdSys);
+  registerAtlobsters(cmdSys);
   registerChat(cmdSys);
   registerDm(cmdSys);
   registerGroup(cmdSys);

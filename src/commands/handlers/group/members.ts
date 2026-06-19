@@ -27,11 +27,25 @@ export function register(cmdSys: CommandSystem): void {
           try {
             const members = await ctx.bot.getGroupMemberList(groupCode);
             if (members.code === 0 && members.member_list && members.member_list.length > 0) {
+              // Query group info to get owner ID
+              let groupOwnerId: string | undefined;
+              try {
+                const groupInfo = await ctx.bot.queryGroupInfo(groupCode);
+                groupOwnerId = groupInfo.group_info?.group_owner_user_id;
+              } catch { /* ignore */ }
+
               const maxMembers = ctx.showAll ? members.member_list.length : 50;
               const lines = members.member_list.slice(0, maxMembers).map(m => {
                 const typeLabel = m.user_type === 1 ? "[人类]" : m.user_type === 2 ? "[元宝]" : m.user_type === 3 ? "[龙虾]" : "";
+                // Check if this member is our bot (本体)
+                const isSelf = ctx.bot.isSelfUserId(String(m.user_id));
+                const selfLabel = isSelf ? "[本体]" : "";
+                // Check if this member is the group owner (群主)
+                const isOwner = groupOwnerId && String(m.user_id) === String(groupOwnerId);
+                const ownerLabel = isOwner ? "[群主]" : "";
                 const displayName = m.nick_name || m.user_id;
-                return `  ${displayName} ${typeLabel}\n    ID: ${m.user_id}`;
+                const labels = [selfLabel, ownerLabel, typeLabel].filter(l => l).join(" ");
+                return `  ${displayName}${labels ? " " + labels : ""}\n    ID: ${m.user_id}`;
               });
               const suffix = !ctx.showAll && members.member_list.length > 50 ? `\n  ... 及其他 ${members.member_list.length - 50} 人 (用 /members --all 查看全部)` : "";
               await ctx.reply(`👥 群成员 (${members.member_list.length}人):\n${lines.join("\n")}${suffix}`);

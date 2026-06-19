@@ -183,11 +183,13 @@ export function register(cmdSys: CommandSystem): void {
             case "系统提示": {
               if (subArgs.length === 0) {
                 const config = engine.getConfig();
-                await ctx.reply(`当前系统提示词:\n${config.systemPrompt}`);
+                await ctx.reply(`当前用户提示词:\n${config.userSystemPrompt || "(未设置)"}\n\n注意: 默认系统提示词不可修改，用户提示词会追加在默认提示词之后。`);
                 return;
               }
-              engine.updateConfig({ systemPrompt: subArgs.join(" ") });
-              await ctx.reply(`✅ 系统提示词已更新`);
+              // systemPrompt is locked — use userSystemPrompt instead
+              const promptText = subArgs.join(" ");
+              engine.updateConfig({ userSystemPrompt: promptText });
+              await ctx.reply(`✅ 用户提示词已更新（追加在默认系统提示词之后）`);
               break;
             }
             case "model":
