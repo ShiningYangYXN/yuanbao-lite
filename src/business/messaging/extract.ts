@@ -170,6 +170,12 @@ export function extractContentFromMsgBody(
           // type a URL in the IM client, Tencent auto-converts it to a link
           // card. If we push "[link card]" to textParts, the wizard receives
           // "[link card]" instead of the real URL, breaking configuration.
+          //
+          // IMPORTANT: Tencent IM often sends BOTH a TIMTextElem (with the URL
+          // as plain text) AND a TIMCustomElem link card (the preview). If we
+          // push the URL again from the link card, the wizard receives the URL
+          // TWICE (e.g. "https://x.comhttps://x.com"). To avoid this, we only
+          // push the URL if it's NOT already present in textParts.
           let extractedUrl: string | undefined;
           let extractedText: string | undefined;
           if (customData) {
@@ -193,34 +199,52 @@ export function extractContentFromMsgBody(
           }
           if (extractedUrl) {
             linkUrls.push(extractedUrl);
-            // Push the actual URL into the text stream so downstream consumers
-            // (wizards, LLM context, command handlers) see the real URL.
-            textParts.push(extractedUrl);
+            // Only push the URL if it's NOT already in textParts (avoid duplication
+            // when TIMTextElem already contains the URL)
+            const alreadyPresent = textParts.some(tp => tp.includes(extractedUrl!) || extractedUrl!.includes(tp.trim()));
+            if (!alreadyPresent) {
+              textParts.push(extractedUrl);
+            }
+            // If alreadyPresent, the URL was already added by TIMTextElem — skip
           } else if (extractedText) {
-            // No URL but has title — use the title text
-            textParts.push(extractedText);
-          } else {
-            // Couldn't extract anything — use minimal placeholder
-            textParts.push("[link]");
+            // No URL but has title — only push if not a duplicate
+            const alreadyPresent = textParts.some(tp => tp.includes(extractedText!));
+            if (!alreadyPresent) {
+              textParts.push(extractedText);
+            }
           }
+          // If we couldn't extract anything, DON'T push "[link]" — that's the
+          // "garbage text" the user complained about. Just skip silently.
         } else if (elemType === 1009) {
           // Forwarded chat records — would need protobuf decoding for full content
           // For now, just add a placeholder
           textParts.push("[forwarded records]");
         } else if (customData) {
           // Unknown custom element — try to extract any text content from data
-          // before falling back to a placeholder. This prevents dirty data like
-          // "[custom:unknown]" from leaking into wizard input or LLM context.
+          // before falling back. If nothing can be extracted, skip silently
+          // (don't push "[custom:...]" placeholder — that's garbage text that
+          // pollutes wizard input and LLM context).
           let extractedText: string | undefined;
           try {
             const parsed = JSON.parse(customData) as Record<string, unknown>;
             if (typeof parsed.text === "string") extractedText = parsed.text;
             else if (typeof parsed.url === "string") extractedText = parsed.url;
             else if (typeof parsed.content === "string") extractedText = parsed.content;
+            else if (typeof parsed.desc === "string") extractedText = parsed.desc;
           } catch {
-            // Not JSON
+            // Not JSON — try XML text extraction
+            const xmlTextMatch = customData.match(/<text[^>]*>([^<]+)<\/text>/i)
+              ?? customData.match(/<desc[^>]*>([^<]+)<\/desc>/i);
+            if (xmlTextMatch) extractedText = xmlTextMatch[1];
           }
-          textParts.push(extractedText ?? `[custom:${elemType ?? "unknown"}]`);
+          // Only push if we extracted real text; skip if empty or just placeholder
+          if (extractedText && extractedText.trim()) {
+            const alreadyPresent = textParts.some(tp => tp.includes(extractedText!));
+            if (!alreadyPresent) {
+              textParts.push(extractedText);
+            }
+          }
+          // If no text could be extracted, skip silently — no [custom:...] garbage
         }
         break;
       }
