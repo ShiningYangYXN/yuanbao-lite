@@ -160,9 +160,29 @@ export function extractContentFromMsgBody(
         }
 
         if (elemType === 1002) {
-          // @mention — mark and let extractMentionsFromMsgBody handle the details
+          // @mention — mark and inject @[nick](id) syntax IN-PLACE so the
+          // LLM context preserves the mention position and identity.
+          // The TIMCustomElem elem_type=1002 data contains:
+          //   { elem_type: 1002, text: "@nickname", user_id: "..." }
+          // We inject @[displayName](userId) at this element's position in the
+          // text stream, so downstream consumers (LLM context, wizard input)
+          // see the mention exactly where it appeared in the original message.
           hasAnyMention = true;
-          // Don't add text placeholder — mention info is in mentions[] separately
+          if (customData) {
+            try {
+              const parsed = JSON.parse(customData) as Record<string, unknown>;
+              const userId = parsed.user_id != null ? String(parsed.user_id) : undefined;
+              const mentionText: string | undefined = typeof parsed.text === "string" ? parsed.text : undefined;
+              // displayName: strip leading @ from text, or fallback to userId
+              const displayName = mentionText ? mentionText.replace(/^@/, "") : (userId ?? "");
+              if (userId && displayName) {
+                // Inject @[displayName](userId) syntax in-place
+                textParts.push(`@[${displayName}](${userId}) `);
+              }
+            } catch {
+              // data is not JSON — can't extract mention info, skip
+            }
+          }
         } else if (elemType === 1007 || elemType === 1010) {
           // Link card — extract the URL and include it in the text so the
           // recipient (e.g. the LLM config wizard) sees the actual URL, not
