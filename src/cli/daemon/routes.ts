@@ -241,6 +241,10 @@ async function runCommand(ctx: RouteContext, body: Record<string, unknown>): Pro
   // Defaults to "cli" for normal CLI usage.
   const fromUserId = typeof body.fromUserId === "string" && body.fromUserId.trim() ? body.fromUserId.trim() : "cli";
   const fromNickname = typeof body.fromNickname === "string" && body.fromNickname.trim() ? body.fromNickname.trim() : fromUserId;
+  // Optional: quote message ID (for /inspect and /reply commands that use the
+  // quoted message). When provided, the synthetic message will have quoteMsgId set.
+  const quoteMsgId = typeof body.quoteMsgId === "string" && body.quoteMsgId.trim() ? body.quoteMsgId.trim() : undefined;
+  const quoteMsgSeq = typeof body.quoteMsgSeq === "number" ? body.quoteMsgSeq : undefined;
 
   const syntheticMsg: ChatMessage = {
     id: `cli-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -250,6 +254,8 @@ async function runCommand(ctx: RouteContext, body: Record<string, unknown>): Pro
     text,
     timestamp: Date.now(),
     ...(chatMode === "group" ? { groupCode: chatTarget, groupName: chatTarget } : {}),
+    ...(quoteMsgId !== undefined ? { quoteMsgId } : {}),
+    ...(quoteMsgSeq !== undefined ? { quoteMsgSeq } : {}),
   };
 
   const replies: string[] = [];

@@ -36,14 +36,20 @@ export function register(cmdSys: CommandSystem): void {
           // Search history for the message by full ID or suffix (last 8 chars)
           const historyStore = ctx.bot.getHistoryStore();
           const allHistory = historyStore.getHistory();
-          let foundMsg = allHistory.find(m => m.id === targetMsgId);
+          // Normalize: strip leading # and any whitespace
+          const normalizedTarget = targetMsgId.trim();
+          let foundMsg = allHistory.find(m => m.id === normalizedTarget);
           if (!foundMsg) {
-            // Try suffix match (last 8 chars)
-            const suffix = targetMsgId.slice(-8);
-            foundMsg = allHistory.find(m => m.id && m.id.endsWith(suffix));
+            // Try suffix match (last 8+ chars of the ID)
+            // The Yuanbao message ID format is like "144115441903907777-1781854337-65638922"
+            // Users may provide just the last segment or last 8 chars.
+            const suffix = normalizedTarget.slice(-8);
+            if (suffix.length >= 3) { // require at least 3 chars for suffix match
+              foundMsg = allHistory.find(m => m.id && (m.id.endsWith(suffix) || m.id.includes(normalizedTarget)));
+            }
           }
           if (!foundMsg) {
-            await ctx.reply(`❌ 未找到消息: ${targetMsgId}\n提示: 消息ID可在历史记录中查看（/history）`);
+            await ctx.reply(`❌ 未找到消息: ${normalizedTarget}\n提示: 消息ID可在历史记录中查看（/history）\n可使用完整ID或ID尾号（至少3位）`);
             return;
           }
 

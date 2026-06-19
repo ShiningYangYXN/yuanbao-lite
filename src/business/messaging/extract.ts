@@ -281,7 +281,10 @@ export function isBotMentioned(msg: YuanbaoInboundMessage): boolean {
  * Extract quote/reply information from a YuanbaoInboundMessage.
  *
  * In the Yuanbao IM protocol, quote/reply info can be found in:
- * - cloud_custom_data: JSON string containing reply message reference
+ * - cloud_custom_data: JSON string containing a "quote" object with
+ *   { id, seq, type, desc, sender_id, sender_nickname } — this is the
+ *   PRIMARY format used by Tencent Yuanbao IM clients.
+ * - cloud_custom_data: alternative patterns (replyMsgId, ref_msg_id)
  * - msg_body elements with TIMRelayElem type
  *
  * @returns Quote info if present, undefined otherwise
@@ -291,24 +294,42 @@ function extractQuoteInfo(msg: YuanbaoInboundMessage): { quoteMsgId?: string; qu
   if (msg.cloud_custom_data) {
     try {
       const customData = JSON.parse(msg.cloud_custom_data) as Record<string, unknown>;
-      // Common patterns for reply info in cloud_custom_data
-      const id = customData.replyMsgId || customData.ref_msg_id || customData.msgId;
-      if (id && typeof id === "string") {
-        const seq = customData.replyMsgSeq || customData.ref_msg_seq || customData.msgSeq;
+
+      // PRIMARY format: { quote: { id, seq, type, desc, sender_id, sender_nickname } }
+      // This is the standard Tencent Yuanbao IM quote format.
+      const quote = customData.quote as Record<string, unknown> | undefined;
+      if (quote) {
+        const id = quote.id ?? quote.msgId ?? quote.ref_msg_id ?? quote.uuid;
+        const seq = quote.seq ?? quote.msgSeq ?? quote.ref_msg_seq;
+        if (id !== undefined) {
+          return {
+            quoteMsgId: String(id),
+            quoteMsgSeq: typeof seq === "number" ? seq : undefined,
+          };
+        }
+      }
+
+      // Alternative patterns: replyMsgId, ref_msg_id, msgId at top level
+      const id = customData.replyMsgId ?? customData.ref_msg_id ?? customData.msgId;
+      if (id !== undefined) {
+        const seq = customData.replyMsgSeq ?? customData.ref_msg_seq ?? customData.msgSeq;
         return {
-          quoteMsgId: id,
+          quoteMsgId: String(id),
           quoteMsgSeq: typeof seq === "number" ? seq : undefined,
         };
       }
-      // Some platforms nest it under a "reply" key
+
+      // Alternative: nested under "reply" key
       const reply = customData.reply as Record<string, unknown> | undefined;
       if (reply) {
-        const replyId = reply.msgId || reply.ref_msg_id;
-        const replySeq = reply.msgSeq || reply.ref_msg_seq;
-        return {
-          quoteMsgId: typeof replyId === "string" ? replyId : undefined,
-          quoteMsgSeq: typeof replySeq === "number" ? replySeq : undefined,
-        };
+        const replyId = reply.id ?? reply.msgId ?? reply.ref_msg_id ?? reply.uuid;
+        const replySeq = reply.seq ?? reply.msgSeq ?? reply.ref_msg_seq;
+        if (replyId !== undefined) {
+          return {
+            quoteMsgId: String(replyId),
+            quoteMsgSeq: typeof replySeq === "number" ? replySeq : undefined,
+          };
+        }
       }
     } catch {
       // Not valid JSON, ignore
@@ -321,12 +342,14 @@ function extractQuoteInfo(msg: YuanbaoInboundMessage): { quoteMsgId?: string; qu
       if (el.msg_type === "TIMRelayElem" || el.msg_type === "TIMReplyElem") {
         const content = el.msg_content as Record<string, unknown> | undefined;
         if (content) {
-          const id = content.msg_id || content.ref_msg_id || content.uuid;
-          const seq = content.msg_seq || content.ref_msg_seq;
-          return {
-            quoteMsgId: typeof id === "string" ? id : undefined,
-            quoteMsgSeq: typeof seq === "number" ? seq : undefined,
-          };
+          const id = content.msg_id ?? content.ref_msg_id ?? content.uuid;
+          const seq = content.msg_seq ?? content.ref_msg_seq;
+          if (id !== undefined) {
+            return {
+              quoteMsgId: String(id),
+              quoteMsgSeq: typeof seq === "number" ? seq : undefined,
+            };
+          }
         }
       }
     }
