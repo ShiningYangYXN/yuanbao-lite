@@ -15,9 +15,9 @@
 
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { dirname, basename, resolve } from "node:path";
-import type { AliasStore } from "../business/alias.js";
-import type { ContactStore } from "../business/contacts.js";
-import type { GroupStore } from "../business/groups.js";
+import type { AliasStore } from "../../business/alias.js";
+import type { ContactStore } from "../../business/contacts.js";
+import type { GroupStore } from "../../business/groups.js";
 
 // ─── Types ───
 

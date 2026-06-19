@@ -14,7 +14,7 @@
 import { existsSync, readFileSync, writeFileSync, mkdirSync, appendFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
-import { createLog } from "../logger.js";
+import { createLog } from "../../logger.js";
 
 // ─── Constants ───
 

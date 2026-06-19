@@ -16,7 +16,7 @@ export function register(cmdSys: CommandSystem): void {
         aliases: ["账号", "acc"],
         description: "多账号管理（添加、切换、启停多个机器人账号）",
         usage: "/account <add|remove|list|switch|start|stop> [参数]",
-        category: "multi-account" as CommandCategory,
+        category: "utility" as CommandCategory,
         dmOnly: true,
         handler: async (ctx) => {
           const subCmd = ctx.args[0]?.toLowerCase();

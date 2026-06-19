@@ -59,12 +59,17 @@ export function register(cmdSys: CommandSystem): void {
             case "recent":
             case "最近": {
               const count = parseInt(ctx.args[1] || "10", 10);
-              const recent = store.getRecent(count);
+              // Filter by current conversation: group → groupCode, DM → fromUserId
+              const filter = ctx.isGroup && ctx.groupCode
+                ? { groupCode: ctx.groupCode }
+                : { fromUserId: ctx.message.fromUserId };
+              const recent = store.getRecent(count, filter);
               if (recent.length === 0) {
-                await ctx.reply("暂无历史消息");
+                await ctx.reply("当前会话暂无历史消息");
                 return;
               }
-              const output = formatHistoryList(recent, { botId, colorize: false, title: `最近消息` });
+              const scopeLabel = ctx.isGroup ? `群${ctx.groupCode}` : "当前私聊";
+              const output = formatHistoryList(recent, { botId, colorize: false, title: `${scopeLabel} 最近消息` });
               await ctx.reply(output);
               break;
             }

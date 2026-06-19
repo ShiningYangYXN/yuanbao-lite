@@ -16,7 +16,7 @@ export function register(cmdSys: CommandSystem): void {
         aliases: ["state", "状态"],
         description: "查看机器人连接状态和账号信息",
         usage: "/status   (显示连接状态、Bot ID、名称等)",
-        category: "misc" as CommandCategory,
+        category: "info" as CommandCategory,
         requireConnected: false,
         handler: async (ctx) => {
           const state = ctx.bot.getState();

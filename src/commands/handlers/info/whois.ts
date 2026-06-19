@@ -16,7 +16,7 @@ export function register(cmdSys: CommandSystem): void {
         aliases: ["域名查询"],
         description: "查询域名 whois 信息",
         usage: "/whois <域名>   例: /whois example.com",
-        category: "misc" as CommandCategory,
+        category: "info" as CommandCategory,
         handler: async (ctx) => {
           if (ctx.args.length === 0) {
             await ctx.reply("用法: /whois <域名>");

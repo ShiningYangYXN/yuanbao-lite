@@ -569,11 +569,10 @@ export function register(cmdSys: CommandSystem): void {
                 }
               };
 
+              // CLI executes immediately; chat requires 3x confirmation
               if (ctx.source === "cli") {
-                // CLI — execute immediately
                 await doReset();
               } else {
-                // Chat — require 3x confirmation
                 const confirmations = (cmdSys as unknown as { _llmResetConfirmations?: Map<string, { count: number; firstAt: number }> })._llmResetConfirmations;
                 if (!confirmations) {
                   await ctx.reply("❌ 确认机制不可用");

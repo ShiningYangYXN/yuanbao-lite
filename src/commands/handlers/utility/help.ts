@@ -17,7 +17,7 @@ export function register(cmdSys: CommandSystem): void {
         aliases: ["h", "?", "帮助"],
         description: "显示命令帮助信息",
         usage: "/help [命令名]   (查看指定命令详细用法)",
-        category: "misc" as CommandCategory,
+        category: "utility" as CommandCategory,
         handler: async (ctx) => {
           if (ctx.args.length > 0) {
             // Show help for specific command

@@ -1,5 +1,5 @@
 /**
- * /remind command handler — extracted from registry.ts (lossless split).
+ * /cron command handler — extracted from registry.ts (lossless split).
  * Category: misc
  *
  * Handler logic is copied verbatim from the original registerBuiltinCommands()
@@ -12,56 +12,58 @@ import type { CommandCategory } from "../../types.js";
 
 export function register(cmdSys: CommandSystem): void {
   cmdSys.register({
-        name: "remind",
-        aliases: ["提醒", "timer"],
-        description: "设置定时提醒（支持任意时长、时间点、目标，持久化）",
-        usage: "/remind <时间> <消息> [--to <目标ID>] [--group]\n/remind list|cancel <ID>",
-        category: "misc" as CommandCategory,
+        name: "cron",
+        aliases: ["定时任务", "周期提醒"],
+        description: "设置周期性定时任务（cron表达式，持久化，可指定目标）",
+        usage: "/cron <cron表达式> <消息> [--to <目标ID>] [--group]\n/cron list|cancel <ID>",
+        category: "utility" as CommandCategory,
         dmOnly: true,
         handler: async (ctx) => {
           const reminders = await import("../../../business/reminders.js");
-          const { addReminder, removeReminder, listReminders, parseTimeString, startAllJobs } = reminders;
+          const { addReminder, removeReminder, listReminders, parseCronExpression, startAllJobs } = reminders;
           type SendFunction = (targetId: string, message: string, isGroup: boolean) => Promise<void>;
           const subCmd = ctx.args[0]?.toLowerCase();
 
           if (subCmd === "list") {
-            const jobs = listReminders(ctx.message.fromUserId);
+            const jobs = listReminders(ctx.message.fromUserId).filter(j => j.type === "cron");
             if (jobs.length === 0) {
-              await ctx.reply("暂无提醒");
+              await ctx.reply("暂无定时任务");
               return;
             }
             const lines = jobs.map(j => {
-              const time = new Date(j.fireAt).toLocaleString("zh-CN");
+              const next = new Date(j.fireAt).toLocaleString("zh-CN");
               const target = j.isGroup ? `群${j.targetId}` : j.targetId ?? j.userId;
-              return `  ${j.id}: ${time} → ${target} — "${j.message}"`;
+              return `  ${j.id}: ${j.cronExpr} → ${target} 下次: ${next}\n    "${j.message}"`;
             });
-            await ctx.reply(`📋 提醒列表 (${jobs.length}):\n${lines.join("\n")}`);
+            await ctx.reply(`📋 定时任务 (${jobs.length}):\n${lines.join("\n")}`);
             return;
           }
 
           if (subCmd === "cancel" && ctx.args[1]) {
             const ok = removeReminder(ctx.args[1]);
-            await ctx.reply(ok ? `✅ 已取消提醒 ${ctx.args[1]}` : `未找到提醒: ${ctx.args[1]}`);
+            await ctx.reply(ok ? `✅ 已取消定时任务 ${ctx.args[1]}` : `未找到: ${ctx.args[1]}`);
             return;
           }
 
-          if (ctx.args.length < 2) {
+          if (ctx.args.length < 6) {
             await ctx.reply(
-              "用法: /remind <时间> <消息> [--to <目标ID>] [--group]\n" +
-              "时间格式:\n" +
-              "  相对: 30s, 5m, 2h, 1d, 1w, 1mo, 1y\n" +
-              "  组合: 1d2h3m\n" +
-              "  时间点: 14:30\n" +
-              "  完整: 2026-06-18 14:30\n" +
-              "目标: --to <用户ID/群号> (默认当前会话), --group (发到群)\n\n" +
-              "管理: /remind list | /remind cancel <ID>",
+              "用法: /cron <cron表达式> <消息> [--to <目标ID>] [--group]\n" +
+              "cron表达式: 分 时 日 月 周 (5个字段)\n" +
+              "  * — 任意值\n" +
+              "  star/N — 每N个单位\n" +
+              "  N-M — 范围\n" +
+              "  N,M — 列表\n\n" +
+              "示例:\n" +
+              "  /cron 30 9 * * 1-5 早安\n" +
+              "  /cron 0 */2 * * * 每2小时喝水 --to 765035413 --group\n\n" +
+              "管理: /cron list | /cron cancel <ID>",
             );
             return;
           }
 
-          const timeStr = ctx.args[0];
-          // Parse --to and --group flags
-          const remaining = ctx.args.slice(1);
+          const cronExpr = ctx.args.slice(0, 5).join(" ");
+          // Parse --to and --group flags from remaining args
+          const remaining = ctx.args.slice(5);
           let targetId: string | undefined;
           let isGroup = false;
           const msgParts: string[] = [];
@@ -81,9 +83,15 @@ export function register(cmdSys: CommandSystem): void {
             return;
           }
 
-          const parsed = parseTimeString(timeStr);
+          const parsed = parseCronExpression(cronExpr);
           if (parsed.error) {
             await ctx.reply(`❌ ${parsed.error}`);
+            return;
+          }
+
+          const nextFire = parsed.getNextFire(Date.now());
+          if (nextFire === 0) {
+            await ctx.reply("❌ 无法计算下次触发时间");
             return;
           }
 
@@ -94,16 +102,17 @@ export function register(cmdSys: CommandSystem): void {
           }
 
           const id = addReminder({
-            type: "remind",
+            type: "cron",
             userId: ctx.message.fromUserId,
             message,
-            fireAt: parsed.fireAt,
+            fireAt: nextFire,
             intervalMs: 0,
+            cronExpr,
             targetId,
             isGroup,
           });
 
-          // Schedule the timer
+          // Restart scheduler to pick up the new job
           const sendFn: SendFunction = async (tid, msg, grp) => {
             if (grp) await ctx.bot.sendGroupMessage(tid, msg);
             else await ctx.bot.sendDirectMessage(tid, msg);
@@ -111,12 +120,12 @@ export function register(cmdSys: CommandSystem): void {
           startAllJobs(sendFn);
 
           await ctx.reply(
-            `⏰ 提醒已设置 [${id}]:\n` +
+            `🔄 定时任务已设置 [${id}]:\n` +
+            `  表达式: ${cronExpr}\n` +
             `  消息: "${message}"\n` +
-            `  触发: ${new Date(parsed.fireAt).toLocaleString("zh-CN")}\n` +
             `  目标: ${isGroup ? "群" : "私聊"} ${targetId}\n` +
-            `  (距现在 ${Math.round(parsed.delayMs / 1000)} 秒)\n` +
-            `取消: /remind cancel ${id}`,
+            `  下次触发: ${new Date(nextFire).toLocaleString("zh-CN")}\n` +
+            `取消: /cron cancel ${id}`,
           );
         },
       });

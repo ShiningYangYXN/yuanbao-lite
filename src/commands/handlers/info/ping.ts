@@ -16,7 +16,7 @@ export function register(cmdSys: CommandSystem): void {
         aliases: ["pong"],
         description: "测试机器人响应延迟",
         usage: "/ping   (返回pong和延迟时间)",
-        category: "misc" as CommandCategory,
+        category: "info" as CommandCategory,
         handler: async (ctx) => {
           const start = Date.now();
           await ctx.reply("🏓 pong!");

@@ -16,7 +16,7 @@ export function register(cmdSys: CommandSystem): void {
         aliases: ["批量"],
         description: "批量发送消息（text/sticker/image/file，支持JS插值模板）",
         usage: "/batch <text|sticker|image|file> <目标> <数量> <间隔ms> <模板>\n/batch list | stop [id] | status [id]",
-        category: "batch" as CommandCategory,
+        category: "utility" as CommandCategory,
         requireConnected: true,
         dmOnly: true,
         handler: async (ctx) => {

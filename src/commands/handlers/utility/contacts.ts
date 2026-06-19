@@ -16,7 +16,7 @@ export function register(cmdSys: CommandSystem): void {
         aliases: ["联系人"],
         description: "联系人管理（增删改查、备注、标签、收藏）",
         usage: "/contacts <list|add|rm|rename|note|tag|fav|dm|search> [参数]",
-        category: "contact" as CommandCategory,
+        category: "utility" as CommandCategory,
         dmOnly: true,
         handler: async (ctx) => {
           const subCmd = ctx.args[0]?.toLowerCase();

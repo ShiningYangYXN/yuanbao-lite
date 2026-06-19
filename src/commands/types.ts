@@ -45,18 +45,14 @@ export type CommandContext = {
 // ─── Command Definition ───
 
 export type CommandCategory =
-  | "chat"
-  | "media"
-  | "contact"
-  | "group"
-  | "alias"
-  | "history"
-  | "sticker"
-  | "batch"
+  | "info"
   | "system"
-  | "multi-account"
+  | "chat"
+  | "group"
+  | "media"
+  | "history"
   | "llm"
-  | "misc";
+  | "utility";
 
 export type CommandDefinition = {
   /** Command name (without prefix, e.g. "help") */

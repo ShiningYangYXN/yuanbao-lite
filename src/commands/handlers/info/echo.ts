@@ -16,7 +16,7 @@ export function register(cmdSys: CommandSystem): void {
         aliases: ["say", "重复"],
         description: "回显消息文本",
         usage: "/echo <文本内容>   (原样返回输入文本)",
-        category: "misc" as CommandCategory,
+        category: "info" as CommandCategory,
         handler: async (ctx) => {
           if (ctx.args.length === 0) {
             await ctx.reply("用法: /echo <文本内容>");

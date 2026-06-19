@@ -16,7 +16,7 @@ export function register(cmdSys: CommandSystem): void {
         aliases: ["别名"],
         description: "管理ID别名映射（为用户ID设置快捷名称）",
         usage: "/alias <add|remove|list|save|load|resolve> [参数]",
-        category: "alias" as CommandCategory,
+        category: "utility" as CommandCategory,
         dmOnly: true,
         handler: async (ctx) => {
           const subCmd = ctx.args[0]?.toLowerCase();

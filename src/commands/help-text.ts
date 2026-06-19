@@ -15,33 +15,25 @@ import type { CommandDefinition, CommandCategory } from "./types.js";
 // ─── Category metadata ───
 
 const CATEGORY_LABELS: Record<CommandCategory, string> = {
-  chat: "💬 聊天命令",
-  media: "📎 媒体与文件",
-  contact: "👥 联系人管理",
+  info: "ℹ️ 信息与工具",
+  system: "⚙️ 系统管理",
+  chat: "💬 聊天与贴纸",
   group: "🏠 群聊管理",
-  alias: "🏷️ 别名系统",
+  media: "📎 媒体与文件",
   history: "📜 消息历史",
-  sticker: "🎭 贴纸浏览",
-  batch: "📤 批量发送",
-  system: "⚙️ 系统命令",
-  "multi-account": "🔑 多账号管理",
   llm: "🤖 LLM 接管",
-  misc: "ℹ️ 信息与控制",
+  utility: "🛠️ 实用工具",
 };
 
 const CATEGORY_ORDER: CommandCategory[] = [
+  "info",
   "chat",
-  "media",
-  "contact",
   "group",
-  "alias",
+  "media",
   "history",
-  "sticker",
-  "batch",
-  "system",
-  "multi-account",
   "llm",
-  "misc",
+  "system",
+  "utility",
 ];
 
 // ─── Colors ───
@@ -87,7 +79,7 @@ export function generateColoredHelp(
   const groups = new Map<CommandCategory, CommandDefinition[]>();
 
   for (const cmd of commands) {
-    const cat = cmd.category ?? "misc";
+    const cat = cmd.category ?? "utility";
     if (!groups.has(cat)) groups.set(cat, []);
     groups.get(cat)!.push(cmd);
   }
@@ -184,7 +176,7 @@ export function generatePlainHelp(
   const groups = new Map<CommandCategory, CommandDefinition[]>();
 
   for (const cmd of commands) {
-    const cat = cmd.category ?? "misc";
+    const cat = cmd.category ?? "utility";
     if (!groups.has(cat)) groups.set(cat, []);
     groups.get(cat)!.push(cmd);
   }
@@ -247,7 +239,7 @@ export function generateDetailedHelp(
 ): string {
   const prefix = options.prefix ?? "/";
   const labels = options.categoryLabels ?? CATEGORY_LABELS;
-  const cat = cmd.category ?? "misc";
+  const cat = cmd.category ?? "utility";
   const catLabel = labels[cat] || cat;
 
   const parts: string[] = [];

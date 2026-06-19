@@ -16,7 +16,7 @@ export function register(cmdSys: CommandSystem): void {
         aliases: ["运行时间"],
         description: "查看机器人运行时间",
         usage: "/uptime   (显示已运行时长)",
-        category: "misc" as CommandCategory,
+        category: "info" as CommandCategory,
         requireConnected: true,
         handler: async (ctx) => {
           const state = ctx.bot.getState();

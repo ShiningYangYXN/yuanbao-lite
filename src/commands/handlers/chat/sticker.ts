@@ -16,7 +16,7 @@ export function register(cmdSys: CommandSystem): void {
         aliases: ["贴纸"],
         description: "发送贴纸（使用 emoji_编号 格式）",
         usage: "/sticker <贴纸ID>   (用 /stickers 查看可用贴纸)",
-        category: "sticker" as CommandCategory,
+        category: "chat" as CommandCategory,
         requireConnected: true,
         handler: async (ctx) => {
           if (ctx.args.length === 0) {

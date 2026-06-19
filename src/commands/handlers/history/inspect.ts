@@ -16,7 +16,7 @@ export function register(cmdSys: CommandSystem): void {
         aliases: ["检查", "inspect-msg"],
         description: "输出消息在Bot上下文内部的表示法（escape过）",
         usage: "/inspect [消息ID或#尾号]   (无参数=使用被引用的消息)",
-        category: "misc" as CommandCategory,
+        category: "history" as CommandCategory,
         handler: async (ctx) => {
           // Determine target message ID
           let targetMsgId: string | undefined;

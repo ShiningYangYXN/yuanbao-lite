@@ -16,7 +16,7 @@ export function register(cmdSys: CommandSystem): void {
         aliases: ["我是谁", "我的信息"],
         description: "查看当前发送者的信息（用户ID、昵称、聊天类型等）",
         usage: "/whoami",
-        category: "misc" as CommandCategory,
+        category: "info" as CommandCategory,
         handler: async (ctx) => {
           const msg = ctx.message;
           let trusted = false;

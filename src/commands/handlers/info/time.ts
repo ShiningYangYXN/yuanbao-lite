@@ -16,7 +16,7 @@ export function register(cmdSys: CommandSystem): void {
         aliases: ["时间", "now", "当前时间"],
         description: "显示当前时间（支持时区）",
         usage: "/time [时区]   例: /time, /time Asia/Tokyo, /time America/New_York",
-        category: "misc" as CommandCategory,
+        category: "info" as CommandCategory,
         handler: async (ctx) => {
           const tz = ctx.args[0] || "Asia/Shanghai";
           try {

@@ -16,7 +16,7 @@ export function register(cmdSys: CommandSystem): void {
         aliases: ["cmdlist", "命令列表"],
         description: "列出所有命令和别名（紧凑格式，无描述）",
         usage: "/commands   (列出所有命令名和别名)",
-        category: "misc" as CommandCategory,
+        category: "utility" as CommandCategory,
         handler: async (ctx) => {
           const visible = cmdSys.getAll().filter(c => !c.hidden);
           if (visible.length === 0) {

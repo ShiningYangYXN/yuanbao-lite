@@ -16,8 +16,8 @@
 import * as readline from "node:readline";
 import chalk from "chalk";
 import { getDefaultClient, type DaemonClient } from "./daemon-client.js";
-import { RichHistory } from "../../shared/rich-history.js";
-import { getCompletions, type CompletionContext, type CompletionResult } from "../../shared/auto-complete.js";
+import { RichHistory } from "./rich-history.js";
+import { getCompletions, type CompletionContext, type CompletionResult } from "./auto-complete.js";
 import {
   COLORS,
   printH1,
@@ -366,7 +366,7 @@ function setupSyntaxHighlight(rl: readline.Interface): void {
   // the /command dispatch path (the daemon's CommandSystem produces colored
   // output). For interactive editing, we rely on readline's default behavior.
   //
-  // The highlightLine() function from shared/syntax-highlight.ts is
+  // The highlightLine() function from cli/client/syntax-highlight.ts (removed) is
   // still available and applied to command replies in dispatchCommand().
   void rl;
 }
@@ -451,7 +451,7 @@ function currentPrompt(): string {
 
 function printWelcome(version: string, pid: number, port: number): void {
   printH1(`Yuanbao Lite CLI v${version}`);
-  console.log(`  ${COLORS.dim("shell-mode · readline + RichHistory + auto-complete + syntax-highlight")}`);
+  console.log(`  ${COLORS.dim("shell-mode · readline + RichHistory + auto-complete")}`);
   console.log(`  ${COLORS.dim(`daemon pid=${pid} port=${port}`)}`);
   console.log(`  ${COLORS.dim("/help 查看命令  ·  ↑↓ 历史  ·  Tab 补全  ·  \\ 换行  ·  Ctrl+C 退出")}`);
   console.log("");

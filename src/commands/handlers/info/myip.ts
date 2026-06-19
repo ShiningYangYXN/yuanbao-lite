@@ -16,7 +16,7 @@ export function register(cmdSys: CommandSystem): void {
         aliases: ["服务器ip", "serverip"],
         description: "查看服务器 IP 信息（双栈，含 AS 和地区）",
         usage: "/myip",
-        category: "system" as CommandCategory,
+        category: "info" as CommandCategory,
         dmOnly: true,
         handler: async (ctx) => {
           try {

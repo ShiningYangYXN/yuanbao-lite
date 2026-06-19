@@ -16,7 +16,7 @@ export function register(cmdSys: CommandSystem): void {
         aliases: ["v", "ver", "版本"],
         description: "查看版本信息",
         usage: "/version   (显示当前版本号)",
-        category: "misc" as CommandCategory,
+        category: "info" as CommandCategory,
         handler: async (ctx) => {
           const { getVersion } = await import("../../../version.js");
           await ctx.reply(

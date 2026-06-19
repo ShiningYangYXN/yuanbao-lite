@@ -16,7 +16,7 @@ export function register(cmdSys: CommandSystem): void {
         aliases: ["ip查询"],
         description: "查询 IP 地址的地理位置信息（多服务商并发，支持 IPv4/IPv6）",
         usage: "/ip <IP地址>   例: /ip 8.8.8.8, /ip 2001:4860:4860::8888",
-        category: "misc" as CommandCategory,
+        category: "info" as CommandCategory,
         handler: async (ctx) => {
           if (ctx.args.length === 0) {
             await ctx.reply("用法: /ip <IP地址> (支持 IPv4 和 IPv6)");

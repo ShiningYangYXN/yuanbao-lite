@@ -16,7 +16,7 @@ export function register(cmdSys: CommandSystem): void {
         aliases: ["计算", "calc"],
         description: "快速计算数学表达式",
         usage: "/calc <表达式>   例: /calc 2+3*4, /calc sqrt(16), /calc 100/7",
-        category: "misc" as CommandCategory,
+        category: "info" as CommandCategory,
         handler: async (ctx) => {
           if (ctx.args.length === 0) {
             await ctx.reply("用法: /calc <表达式>\n支持: + - * / % ** sqrt() sin() cos() log() 等");

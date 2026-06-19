@@ -18,7 +18,7 @@ export function register(cmdSys: CommandSystem): void {
         aliases: ["贴纸列表", "stickerlist"],
         description: "浏览和搜索贴纸（支持模糊搜索，默认30条，--all显示全部）",
         usage: "/stickers [--all] [search <关键词>|emojis|load <目录>]   (--all/-a 显示全部)",
-        category: "sticker" as CommandCategory,
+        category: "chat" as CommandCategory,
         handler: async (ctx) => {
           const subCmd = ctx.args[0]?.toLowerCase();
           const subArgs = ctx.args.slice(1);
