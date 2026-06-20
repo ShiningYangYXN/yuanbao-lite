@@ -425,7 +425,7 @@ export class YuanbaoBot {
     // Use buildMentionMsgBody which interleaves TIMCustomElem at correct positions
     // (matching the original project's resolveAtMentions approach)
     const { msgBody: mentionMsgBody, cloudCustomData, mentions: parsedMentions, atAll: _atAll } =
-      await buildMentionMsgBody(interpolatedText, this.aliasStore, nicknameResolver, allMembersResolver, userIdResolver);
+      await buildMentionMsgBody(interpolatedText, this.aliasStore, nicknameResolver, allMembersResolver, userIdResolver, new Set(this.getSelfUserIds()));
     // _atAll flag is already encoded in cloudCustomData via buildCloudCustomDataWithMentions
     void _atAll;
 

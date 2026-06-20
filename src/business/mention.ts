@@ -117,6 +117,7 @@ export async function parseMentions(
   nicknameResolver?: NicknameResolver,
   allMembersResolver?: AllMembersResolver,
   userIdResolver?: UserIdResolver,
+  selfUserIds?: Set<string>,
 ): Promise<ParsedMentions> {
   const store = aliasStore ?? getGlobalAliasStore();
   const mentions: MentionInfo[] = [];
@@ -150,46 +151,51 @@ export async function parseMentions(
   for (let i = matches.length - 1; i >= 0; i--) {
     const m = matches[i];
 
-    // ─── @all detection ───
-    // @[所有人]()    → nickname="所有人", id=""
-    // @[](all)       → nickname="", id="all"
-    // @[所有人](all) → nickname="所有人", id="all"  (also valid)
-    // @all           → nickname="all", id=""
-    // @[所有人类](humans)   → @all humans (exclude bots)
-    // @[所有BOT](bots)     → @all bots (yuanbao + lobsters)
-    // @[所有龙虾](lobsters) → @all lobsters (exclude yuanbao bots)
-    const isAtAllSyntax =
-      (m.nickname === "所有人" && (m.id === "" || m.id === "all")) ||
-      (m.id === "all" && (m.nickname === "" || m.nickname === "所有人")) ||
-      (m.nickname === "all" && m.id === "") ||
-      (m.id === "所有人" && m.nickname === "");
+    // ─── @all detection (unified for all scopes) ───
+    // Scopes: all, humans, bots, lobsters
+    // Syntax variants per scope (using "all" as example):
+    //   @[所有人]()       @[](all)        @[所有人](all)
+    //   @[所有人类](humans)  @[](humans)     @[所有人类]()
+    //   @[所有BOT](bots)    @[](bots)       @[所有BOT]()
+    //   @[所有龙虾](lobsters) @[](lobsters)  @[所有龙虾]()
+    // Also bare: @all (nickname="all", id="")
+    const SCOPE_MAP: Record<string, { scope: "all" | "humans" | "bots" | "lobsters"; nicknames: string[] }> = {
+      all: { scope: "all", nicknames: ["所有人", "all"] },
+      humans: { scope: "humans", nicknames: ["所有人类", "humans"] },
+      bots: { scope: "bots", nicknames: ["所有BOT", "所有Bot", "bots"] },
+      lobsters: { scope: "lobsters", nicknames: ["所有龙虾", "lobsters"] },
+    };
 
-    // Check for scoped @all variants
-    const atAllScope: "all" | "humans" | "bots" | "lobsters" | null = isAtAllSyntax ? "all"
-      : (m.id === "humans" || (m.nickname === "所有人类" && (m.id === "" || m.id === "humans"))) ? "humans"
-      : (m.id === "bots" || (m.nickname === "所有BOT" && (m.id === "" || m.id === "bots")) || (m.nickname === "所有Bot" && (m.id === "" || m.id === "bots"))) ? "bots"
-      : (m.id === "lobsters" || (m.nickname === "所有龙虾" && (m.id === "" || m.id === "lobsters"))) ? "lobsters"
-      : null;
+    let atAllScope: "all" | "humans" | "bots" | "lobsters" | null = null;
+    for (const [key, { scope, nicknames }] of Object.entries(SCOPE_MAP)) {
+      if (
+        (nicknames.includes(m.nickname) && (m.id === "" || m.id === key)) ||
+        (m.id === key && (m.nickname === "" || nicknames.includes(m.nickname)))
+      ) {
+        atAllScope = scope;
+        break;
+      }
+    }
 
     if (atAllScope) {
+      const fallbackLabel = atAllScope === "humans" ? "@所有人类"
+        : atAllScope === "bots" ? "@所有BOT"
+        : atAllScope === "lobsters" ? "@所有龙虾"
+        : "@所有人";
+
+      let replacement = fallbackLabel;
+
       if (allMembersResolver) {
         try {
           const allMembers = await allMembersResolver();
           atAll = true;
-          // Filter members based on scope:
-          // - "all": everyone
-          // - "humans": exclude bot_ prefixed IDs
-          // - "bots": only bot_ prefixed IDs
-          // - "lobsters": only bot_ prefixed IDs (same as bots for now, since
-          //   we can't distinguish yuanbao bots from lobsters by ID alone —
-          //   but the API allows future differentiation)
+          // Filter by scope + skip self
+          const isSelf = (uid: string) => selfUserIds?.has(uid) ?? false;
           const filteredMembers = allMembers.filter(user => {
             const uid = String(user.userId ?? "");
+            if (isSelf(uid)) return false; // skip self in all scopes
             const ut = user.userType;
-            // userType: 1=human, 2=yuanbao bot, 3=lobster bot
-            // Fall back to bot_ prefix check if userType is missing
             const isBot = ut !== undefined ? (ut === 2 || ut === 3) : uid.startsWith("bot_");
-            const isYuanbao = ut !== undefined ? ut === 2 : false;
             const isLobster = ut !== undefined ? ut === 3 : uid.startsWith("bot_");
             if (atAllScope === "all") return true;
             if (atAllScope === "humans") return !isBot;
@@ -197,59 +203,32 @@ export async function parseMentions(
             if (atAllScope === "lobsters") return isLobster;
             return true;
           });
-          // Expand into individual @nickname tokens for each matching member.
-          const displayParts: string[] = [];
-          for (const user of filteredMembers) {
+          const displayParts = filteredMembers.map(u => {
             const mention: MentionInfo = {
-              userId: user.userId,
-              displayName: user.nickname || user.userId,
+              userId: u.userId,
+              displayName: u.nickname || u.userId,
               explicitNickname: true,
               startIndex: m.index,
               endIndex: m.index + m.full.length,
             };
             mentions.unshift(mention);
-            if (!mentionedUserIds.includes(user.userId)) {
-              mentionedUserIds.push(user.userId);
+            if (!mentionedUserIds.includes(u.userId)) {
+              mentionedUserIds.push(u.userId);
             }
-            displayParts.push(`@${user.nickname || user.userId}`);
-          }
-          // Replace with expanded @displayName tokens or fallback text
-          const fallbackLabel = atAllScope === "humans" ? "@所有人类"
-            : atAllScope === "bots" ? "@所有BOT"
-            : atAllScope === "lobsters" ? "@所有龙虾"
-            : "@所有人";
-          const replacement = displayParts.length > 0
-            ? displayParts.join(" ")
-            : fallbackLabel;
-          text = text.slice(0, m.index) + replacement + text.slice(m.index + m.full.length);
-          const diff = replacement.length - m.full.length;
-          for (let j = 0; j < i; j++) {
-            matches[j].index += diff;
-          }
+            return `@${u.nickname || u.userId}`;
+          });
+          if (displayParts.length > 0) replacement = displayParts.join(" ");
         } catch {
-          // Resolver failed — leave as plain text
-          const replacement = atAllScope === "humans" ? "@所有人类"
-            : atAllScope === "bots" ? "@所有BOT"
-            : atAllScope === "lobsters" ? "@所有龙虾"
-            : "@所有人";
-          text = text.slice(0, m.index) + replacement + text.slice(m.index + m.full.length);
-          const diff = replacement.length - m.full.length;
-          for (let j = 0; j < i; j++) {
-            matches[j].index += diff;
-          }
+          // Resolver failed — use fallback label
         }
       } else {
-        // No resolver — leave as plain text (still mark atAll for caller)
         atAll = true;
-        const replacement = atAllScope === "humans" ? "@所有人类"
-          : atAllScope === "bots" ? "@所有BOT"
-          : atAllScope === "lobsters" ? "@所有龙虾"
-          : "@所有人";
-        text = text.slice(0, m.index) + replacement + text.slice(m.index + m.full.length);
-        const diff = replacement.length - m.full.length;
-        for (let j = 0; j < i; j++) {
-          matches[j].index += diff;
-        }
+      }
+
+      text = text.slice(0, m.index) + replacement + text.slice(m.index + m.full.length);
+      const diff = replacement.length - m.full.length;
+      for (let j = 0; j < i; j++) {
+        matches[j].index += diff;
       }
       continue;
     }
@@ -536,13 +515,14 @@ export async function buildMentionMsgBody(
   nicknameResolver?: NicknameResolver,
   allMembersResolver?: AllMembersResolver,
   userIdResolver?: UserIdResolver,
+  selfUserIds?: Set<string>,
 ): Promise<{
   msgBody: YuanbaoMsgBodyElement[];
   cloudCustomData?: string;
   mentions: MentionInfo[];
   atAll: boolean;
 }> {
-  const parsed = await parseMentions(text, aliasStore, nicknameResolver, allMembersResolver, userIdResolver);
+  const parsed = await parseMentions(text, aliasStore, nicknameResolver, allMembersResolver, userIdResolver, selfUserIds);
 
   const msgBody: YuanbaoMsgBodyElement[] = [];
 
