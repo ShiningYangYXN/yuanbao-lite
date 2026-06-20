@@ -52,13 +52,14 @@ export function register(cmdSys: CommandSystem): void {
                 try {
                   const resp = await ctx.bot.getGroupMemberList(String(target));
                   const members = resp?.member_list ?? [];
-                  return members.map(m => ({ userId: m.user_id, nickname: m.nick_name }));
+                  return members.map(m => ({ userId: m.user_id, nickname: m.nick_name, userType: m.user_type }));
                 } catch {
                   return [];
                 }
               }
               : undefined;
-            const parsed = await parseMentions(text, ctx.bot.getAliasStore(), nicknameResolver, allMembersResolver);
+            const selfIds = new Set(ctx.bot.getSelfUserIds());
+            const parsed = await parseMentions(text, ctx.bot.getAliasStore(), nicknameResolver, allMembersResolver, undefined, selfIds);
             if (parsed.mentions.length > 0) {
               const mentionNames = parsed.mentions.map(m => `@${m.displayName}(${m.userId})`).join(", ");
               const atAllSuffix = parsed.atAll ? `（含@所有人，共 ${parsed.mentions.length} 个提及）` : "";
