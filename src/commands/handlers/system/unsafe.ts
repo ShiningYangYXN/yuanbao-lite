@@ -22,7 +22,7 @@ export function register(cmdSys: CommandSystem): void {
 
           // /unsafe help — show detailed subcommand help (globally open)
           if (subCmd === "help" || subCmd === "?") {
-            await ctx.replyDoc(
+            await ctx.reply(
               "📋 /unsafe 子命令帮助:\n\n" +
               "  /unsafe                  开启5分钟危险模式\n" +
               "  /unsafe on [分钟]        开启指定时长（默认5分钟）\n" +

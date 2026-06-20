@@ -25,7 +25,7 @@ export function register(cmdSys: CommandSystem): void {
 
           // /trust help — show detailed subcommand help (globally open)
           if (subCmd === "help" || subCmd === "?") {
-            await ctx.replyDoc(
+            await ctx.reply(
               "📋 /trust 子命令帮助:\n\n" +
               "  /trust                    查看信任列表\n" +
               "  /trust list               同上\n" +

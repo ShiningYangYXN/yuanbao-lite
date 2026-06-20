@@ -25,7 +25,7 @@ export function register(cmdSys: CommandSystem): void {
 
           // /llm help — show detailed subcommand help
           if (subCmd === "help" || subCmd === "?") {
-            await ctx.replyDoc(
+            await ctx.reply(
               "🤖 LLM 子命令帮助:\n\n" +
               "  /llm                    查看状态\n" +
               "  /llm status             同上\n" +
@@ -305,7 +305,7 @@ export function register(cmdSys: CommandSystem): void {
               if (action === "help" || action === "?") {
                 const { API_FORMATS } = await import("../../../business/llm-takeover.js");
                 const formats = API_FORMATS.map(f => `  ${f.value}: ${f.label}`).join("\n");
-                await ctx.replyDoc(
+                await ctx.reply(
                   "📋 /llm customprovider 子命令帮助:\n\n" +
                   "  /llm customprovider list              列出所有供应商\n" +
                   "  /llm customprovider add <名> <格式> <模型> <URL> [key]\n" +

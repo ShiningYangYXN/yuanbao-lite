@@ -20,7 +20,7 @@ export function register(cmdSys: CommandSystem): void {
         requireConnected: true,
         handler: async (ctx) => {
           if (ctx.args.length < 2) {
-            await ctx.replyDoc("用法: /mention <目标> <消息>\n消息中可用 @语法:\n  @[昵称](id) — 用指定昵称@指定用户\n  @[](id) — 用默认昵称@指定用户\n  @[昵称]() — 群聊中按昵称自动匹配ID\n  @[所有人]() — @所有群成员（逐个展开）");
+            await ctx.reply("用法: /mention <目标> <消息>\n消息中可用 @语法:\n  \\@[昵称](id) — 用指定昵称@指定用户\n  \\@[](id) — 用默认昵称@指定用户\n  \\@[昵称]() — 群聊中按昵称自动匹配ID\n  \\@[所有人]() — @所有群成员（逐个展开）");
             return;
           }
           const target = ctx.args[0];

@@ -25,7 +25,7 @@ export function register(cmdSys: CommandSystem): void {
 
           // /block help — show detailed subcommand help (globally open)
           if (subCmd === "help" || subCmd === "?") {
-            await ctx.replyDoc(
+            await ctx.reply(
               "📋 /block 子命令帮助:\n\n" +
               "  /block                          查看封禁列表\n" +
               "  /block list                     同上\n" +
