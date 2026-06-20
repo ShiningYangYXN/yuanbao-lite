@@ -356,7 +356,14 @@ export class CommandSystem {
     // per-user, per-command, and wildcard ("*") blocks. This check runs
     // BEFORE the dmOnly check so blocked commands are denied even in DM.
     // CLI source bypasses block (CLI is pre-authorized).
-    if (source !== "cli") {
+    //
+    // IMPORTANT: /block and /trust are management commands — they are NEVER
+    // blocked. This prevents a deadlock where a wildcard "*" block on [all]
+    // or [command] would prevent the owner from removing the block (the
+    // owner would be unable to use /block remove to clear the wildcard).
+    // Same for /unsafe (needed to toggle unsafe mode to bypass other checks).
+    const MANAGEMENT_COMMANDS = new Set(["block", "trust", "unsafe"]);
+    if (source !== "cli" && !MANAGEMENT_COMMANDS.has(commandName)) {
       try {
         const { isBlockedFromCommand, isBlockedFrom } = await import("../business/block.js");
         // Check if the user is blocked from this specific command, OR from
