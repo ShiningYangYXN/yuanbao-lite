@@ -1429,7 +1429,7 @@ export class YuanbaoBot {
     //      - CLI: send directly as chat (handled by cli/client/interactive.ts).
     let dispatchText = chatMessage.text.trim();
     if (chatMessage.chatType === "group") {
-      // Strip ALL leading @-components, [custom:...] placeholders, and whitespace
+      // Strip leading @-components, [custom:...] placeholders, and whitespace
       // before recognizing slash commands. Handles every @-shape the IM client
       // may produce:
       //   - @nickname      (bare @mention typed as plain text, e.g. "@bot")
@@ -1443,10 +1443,23 @@ export class YuanbaoBot {
       // Defensive: also strip leading [custom:...] / [link card] / [forwarded
       // records] placeholders in case the TIMCustomElem parser missed a
       // mention element (so text "[custom:unknown]/status" still becomes "/status").
+      //
+      // IMPORTANT: Only strip @-components that appear BEFORE the first slash
+      // command ("/..."). Once a "/" is found, stop stripping — inline
+      // @mentions after the command (e.g. "/echo @[小明](id) hi") must be
+      // preserved so the command can process them. Previously, the loop would
+      // strip ALL leading @-components, so "@bot @小明 /echo hi" became
+      // "/echo hi" (losing @小明), and "@bot /echo @[小明](id) hi" was fine
+      // (because /echo breaks the loop), but "@bot @[小明](id) /echo hi"
+      // lost @小明.
       const leadingJunkRe = /^(?:@(?:\[[^\]]*\]\([^)]*\)|\S+)|\[custom:[^\]]*\]|\[link card\]|\[forwarded records\])[\s\u3000]*/;
       let prev = "";
       let stripCount = 0;
-      while (dispatchText !== prev && leadingJunkRe.test(dispatchText)) {
+      // Stop if the remaining text starts with "/" (slash command) — we've
+      // stripped all the @-mentions that precede the command, and anything
+      // after "/" is the command's arguments (which may contain @mentions
+      // that must be preserved).
+      while (dispatchText !== prev && !dispatchText.startsWith("/") && leadingJunkRe.test(dispatchText)) {
         prev = dispatchText;
         dispatchText = dispatchText.replace(leadingJunkRe, "");
         stripCount++;
