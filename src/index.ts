@@ -414,7 +414,7 @@ export class YuanbaoBot {
           try {
             const resp = await this.getGroupMemberList(String(to));
             const members = resp?.member_list ?? [];
-            const member = members.find(m => m.user_id === userId);
+            const member = members.find(m => String(m.user_id) === String(userId));
             return member?.nick_name ?? null;
           } catch {
             return null;

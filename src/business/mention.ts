@@ -189,14 +189,17 @@ export async function parseMentions(
         try {
           const allMembers = await allMembersResolver();
           atAll = true;
-          // Filter by scope
-          // @所有人 includes ALL members (including self) — "必须包含任何成员"
+          // Filter by scope + skip self (except @所有人 which includes everyone)
+          const isSelf = (uid: string) => selfUserIds?.has(uid) ?? false;
           const filteredMembers = allMembers.filter(user => {
             const uid = String(user.userId ?? "");
+            // @所有人 includes ALL members (even self) — "必须包含任何成员"
+            // Scoped @all (humans/bots/lobsters) skips self
+            if (atAllScope !== "all" && isSelf(uid)) return false;
             const ut = user.userType;
             const isBot = ut !== undefined ? (ut === 2 || ut === 3) : uid.startsWith("bot_");
             const isLobster = ut !== undefined ? ut === 3 : uid.startsWith("bot_");
-            if (atAllScope === "all") return true; // include everyone, even self
+            if (atAllScope === "all") return true; // include everyone
             if (atAllScope === "humans") return !isBot;
             if (atAllScope === "bots") return isBot;
             if (atAllScope === "lobsters") return isLobster;
