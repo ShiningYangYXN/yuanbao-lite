@@ -325,7 +325,9 @@ export class CommandSystem {
     // any member trigger bot actions (e.g. /send, /atall) without the bot
     // owner's intent. Requiring @mention makes the bot's activation explicit.
     // DM (chatType=direct) is unaffected — no @mention needed in private chat.
-    if (message.chatType === "group" && this.config.requireMentionInGroup && !message.isMentioned) {
+    // CLI source bypasses this — CLI users are already authenticated and
+    // shouldn't need to @mention the bot to dispatch commands.
+    if (message.chatType === "group" && this.config.requireMentionInGroup && !message.isMentioned && source !== "cli") {
       return { handled: false };
     }
 

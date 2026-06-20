@@ -429,6 +429,13 @@ export class YuanbaoBot {
     // _atAll flag is already encoded in cloudCustomData via buildCloudCustomDataWithMentions
     void _atAll;
 
+    // Debug: log mention parsing result when mentions are detected or @[
+    // syntax is present — helps diagnose "@-not-working" reports by showing
+    // the exact text received, parsed mentions, and resulting msgBody structure.
+    if (parsedMentions.length > 0 || /(?<!\\)@\[/.test(interpolatedText)) {
+      this.log.debug(`sendText mention: text="${interpolatedText.substring(0, 100)}" isGroup=${isGroup} to=${to} mentions=${parsedMentions.length} msgBodyTypes=${mentionMsgBody.map(el => el.msg_type).join(",")}`);
+    }
+
     // Handle long messages by splitting if needed
     if (mentionMsgBody.length <= 2 && !parsedMentions.length) {
       // Simple case: just text, may need splitting
