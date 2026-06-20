@@ -611,7 +611,11 @@ export class LlmTakeoverEngine {
     try {
       const dir = dirname(this.persistencePath);
       if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-      writeFileSync(this.persistencePath, JSON.stringify(this.config, null, 2), "utf-8");
+      // Never persist systemPrompt — it's locked to DEFAULT_SYSTEM_PROMPT.
+      // Only persist userSystemPrompt (which is appended at runtime).
+      const { systemPrompt: _strip, ...persistable } = this.config;
+      void _strip;
+      writeFileSync(this.persistencePath, JSON.stringify(persistable, null, 2), "utf-8");
     } catch (e) { this.log.error(`persist failed: ${(e as Error).message}`); }
   }
 

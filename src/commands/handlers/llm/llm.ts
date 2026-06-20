@@ -726,10 +726,10 @@ export function register(cmdSys: CommandSystem): void {
         return true;
       }
 
-      // Step 6: System prompt (optional)
+      // Step 6: System prompt (optional) — stored as userSystemPrompt
       if (session.step === "systemPrompt") {
         if (input.toLowerCase() !== "skip" && input.toLowerCase() !== "done") {
-          engine.updateConfig({ systemPrompt: input });
+          engine.updateConfig({ userSystemPrompt: input });
         }
         session.step = "done";
         llmWizardSessions.delete(sessionKey);

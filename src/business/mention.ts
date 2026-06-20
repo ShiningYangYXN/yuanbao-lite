@@ -31,6 +31,8 @@ export type NicknameMatch = {
   userId: string;
   /** The display nickname */
   nickname: string;
+  /** Member type: 1=human, 2=yuanbao bot, 3=lobster bot (optional) */
+  userType?: number;
 };
 
 /**
@@ -183,10 +185,16 @@ export async function parseMentions(
           //   but the API allows future differentiation)
           const filteredMembers = allMembers.filter(user => {
             const uid = String(user.userId ?? "");
+            const ut = user.userType;
+            // userType: 1=human, 2=yuanbao bot, 3=lobster bot
+            // Fall back to bot_ prefix check if userType is missing
+            const isBot = ut !== undefined ? (ut === 2 || ut === 3) : uid.startsWith("bot_");
+            const isYuanbao = ut !== undefined ? ut === 2 : false;
+            const isLobster = ut !== undefined ? ut === 3 : uid.startsWith("bot_");
             if (atAllScope === "all") return true;
-            if (atAllScope === "humans") return !uid.startsWith("bot_");
-            if (atAllScope === "bots") return uid.startsWith("bot_");
-            if (atAllScope === "lobsters") return uid.startsWith("bot_");
+            if (atAllScope === "humans") return !isBot;
+            if (atAllScope === "bots") return isBot;
+            if (atAllScope === "lobsters") return isLobster;
             return true;
           });
           // Expand into individual @nickname tokens for each matching member.

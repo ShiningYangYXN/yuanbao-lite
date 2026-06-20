@@ -77,9 +77,12 @@ export async function sendScopedAtAll(ctx: import("../../types.js").CommandConte
       const members = resp?.member_list ?? [];
       matchCount = members.filter(m => {
         const uid = String(m.user_id ?? "");
-        if (scope === "humans") return !uid.startsWith("bot_");
-        if (scope === "bots") return uid.startsWith("bot_");
-        if (scope === "lobsters") return uid.startsWith("bot_");
+        const ut = m.user_type;
+        const isBot = ut !== undefined ? (ut === 2 || ut === 3) : uid.startsWith("bot_");
+        const isLobster = ut !== undefined ? ut === 3 : uid.startsWith("bot_");
+        if (scope === "humans") return !isBot;
+        if (scope === "bots") return isBot;
+        if (scope === "lobsters") return isLobster;
         return true;
       }).length;
     } catch { /* ignore */ }

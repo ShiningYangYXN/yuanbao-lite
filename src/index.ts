@@ -399,7 +399,7 @@ export class YuanbaoBot {
           try {
             const resp = await this.getGroupMemberList(String(to));
             const members = resp?.member_list ?? [];
-            return members.map(m => ({ userId: m.user_id, nickname: m.nick_name }));
+            return members.map(m => ({ userId: m.user_id, nickname: m.nick_name, userType: m.user_type }));
           } catch {
             return [];
           }
