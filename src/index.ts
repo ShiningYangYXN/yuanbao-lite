@@ -1444,32 +1444,47 @@ export class YuanbaoBot {
       // records] placeholders in case the TIMCustomElem parser missed a
       // mention element (so text "[custom:unknown]/status" still becomes "/status").
       //
-      // IMPORTANT: Only strip @-components that appear BEFORE the first slash
-      // command ("/..."). Once a "/" is found, stop stripping — inline
-      // @mentions after the command (e.g. "/echo @[小明](id) hi") must be
-      // preserved so the command can process them. Previously, the loop would
-      // strip ALL leading @-components, so "@bot @小明 /echo hi" became
-      // "/echo hi" (losing @小明), and "@bot /echo @[小明](id) hi" was fine
-      // (because /echo breaks the loop), but "@bot @[小明](id) /echo hi"
-      // lost @小明.
+      // IMPORTANT: Stripping ONLY happens when the message contains a slash
+      // command. If the message is pure plain text (no "/" prefix after
+      // stripping @-components), we do NOT strip any @ — the user's @mentions
+      // are preserved as-is for LLM context. This means:
+      //   - "@bot /echo hi" → strip @bot → "/echo hi" (slash command present)
+      //   - "@bot @小明 /echo hi" → strip both → "/echo hi" (slash command present)
+      //   - "@[小明](id) 你好" → NO stripping → "@[小明](id) 你好" (no slash)
+      //   - "@bot 你好" → NO stripping → "@bot 你好" (no slash)
+      // This prevents user-typed @mention syntax from being stripped when
+      // the message is not a slash command.
       const leadingJunkRe = /^(?:@(?:\[[^\]]*\]\([^)]*\)|\S+)|\[custom:[^\]]*\]|\[link card\]|\[forwarded records\])[\s\u3000]*/;
-      let prev = "";
-      let stripCount = 0;
-      // Stop if the remaining text starts with "/" (slash command) — we've
-      // stripped all the @-mentions that precede the command, and anything
-      // after "/" is the command's arguments (which may contain @mentions
-      // that must be preserved).
-      while (dispatchText !== prev && !dispatchText.startsWith("/") && leadingJunkRe.test(dispatchText)) {
-        prev = dispatchText;
-        dispatchText = dispatchText.replace(leadingJunkRe, "");
-        stripCount++;
-        if (stripCount > 20) break; // safety guard against pathological input
+      // First, check if the message would become a slash command after
+      // stripping leading @-components. If not, skip stripping entirely.
+      const wouldBeSlashCommand = (() => {
+        let test = dispatchText;
+        let prev = "";
+        let count = 0;
+        while (test !== prev && count < 20) {
+          prev = test;
+          test = test.replace(leadingJunkRe, "");
+          count++;
+        }
+        return test.startsWith("/");
+      })();
+      if (wouldBeSlashCommand) {
+        // Message is a slash command with @-prefix(es) — strip them
+        let prev = "";
+        let stripCount = 0;
+        while (dispatchText !== prev && !dispatchText.startsWith("/") && leadingJunkRe.test(dispatchText)) {
+          prev = dispatchText;
+          dispatchText = dispatchText.replace(leadingJunkRe, "");
+          stripCount++;
+          if (stripCount > 20) break; // safety guard against pathological input
+        }
+        // Final trim (handles full-width spaces too)
+        dispatchText = dispatchText.replace(/^[\s\u3000]+/, "");
+        if (stripCount > 0) {
+          this.log.debug(`stripped ${stripCount} leading @-component(s) from group message; dispatchText="${dispatchText.substring(0, 100)}"`);
+        }
       }
-      // Final trim (handles full-width spaces too)
-      dispatchText = dispatchText.replace(/^[\s\u3000]+/, "");
-      if (stripCount > 0) {
-        this.log.debug(`stripped ${stripCount} leading @-component(s) from group message; dispatchText="${dispatchText.substring(0, 100)}"`);
-      }
+      // else: not a slash command — preserve all @mentions as-is
     }
 
     // Parse multi-line commands with \ continuation support
