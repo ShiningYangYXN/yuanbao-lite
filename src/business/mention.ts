@@ -634,32 +634,43 @@ export function extractMentionsFromMsgBody(
 ): MentionInfo[] {
   const mentions: MentionInfo[] = [];
 
+  // Helper: parse a single TIMCustomElem data string and add mention if it's
+  // elem_type=1002. Used for both top-level TIMCustomElem AND TIMTextElem
+  // with embedded data field (Tencent sometimes bundles TIMCustomElem data
+  // inside a TIMTextElem's content.data).
+  const processCustomData = (rawData: string): void => {
+    try {
+      const customContent = JSON.parse(rawData);
+      if (customContent?.elem_type === 1002) {
+        // Use String() conversion since user_id may be a number from JSON
+        const userId = customContent.user_id != null ? String(customContent.user_id) : undefined;
+        const text: string | undefined = customContent.text;
+
+        if (userId) {
+          mentions.push({
+            userId,
+            displayName: text?.replace(/^@/, "") ?? userId,
+            explicitNickname: Boolean(text),
+            startIndex: -1,
+            endIndex: -1,
+          });
+        }
+      }
+    } catch {
+      // Ignore malformed JSON
+    }
+  };
+
   // Extract from TIMCustomElem elem_type=1002 (primary mechanism)
+  // ALSO extract from TIMTextElem with embedded data field (Tencent bundles
+  // TIMCustomElem data inside TIMTextElem sometimes — without this check,
+  // @mention info from real user messages is silently lost).
   if (msgBody) {
     for (const el of msgBody) {
-      if (el.msg_type !== "TIMCustomElem") continue;
       const rawData = el.msg_content?.data;
       if (!rawData || typeof rawData !== "string") continue;
-
-      try {
-        const customContent = JSON.parse(rawData);
-        if (customContent?.elem_type === 1002) {
-          // Use String() conversion since user_id may be a number from JSON
-          const userId = customContent.user_id != null ? String(customContent.user_id) : undefined;
-          const text: string | undefined = customContent.text;
-
-          if (userId) {
-            mentions.push({
-              userId,
-              displayName: text?.replace(/^@/, "") ?? userId,
-              explicitNickname: Boolean(text),
-              startIndex: -1,
-              endIndex: -1,
-            });
-          }
-        }
-      } catch {
-        // Ignore malformed JSON
+      if (el.msg_type === "TIMCustomElem" || el.msg_type === "TIMTextElem") {
+        processCustomData(rawData);
       }
     }
   }

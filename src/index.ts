@@ -1231,8 +1231,8 @@ export class YuanbaoBot {
     // them as ourselves.
     if (chatMessage.chatType === "group") {
       // Debug: log raw message structure for mention analysis
-      this.log.debug(`mention check: account.botId=${this.account.botId ?? "(none)"} botPublicIds=[${Array.from(this.botPublicIds).join(",")}] mentions=${JSON.stringify(chatMessage.mentions?.map(m => ({userId: m.userId, name: m.displayName})))} cloud_custom_data=${msg.cloud_custom_data?.substring(0, 200)}`);
-      this.log.debug(`mention check: from_account=${msg.from_account} to_account=${msg.to_account} group_code=${msg.group_code} bot_owner_id=${msg.bot_owner_id} msg_body types=${msg.msg_body?.map(e => e.msg_type).join(",")} raw text="${chatMessage.text?.substring(0, 100)}"`);
+      this.log.debug(`mention check: account.botId=${this.account.botId ?? "(none)"} botPublicIds=[${Array.from(this.botPublicIds).join(",")}] mentions=${JSON.stringify(chatMessage.mentions?.map(m => ({userId: m.userId, name: m.displayName})))} cloud_custom_data=${msg.cloud_custom_data?.substring(0, 300)}`);
+      this.log.debug(`mention check: from_account=${msg.from_account} to_account=${msg.to_account} group_code=${msg.group_code} bot_owner_id=${msg.bot_owner_id} msg_body=${JSON.stringify(msg.msg_body?.map(e => ({ type: e.msg_type, content: e.msg_content })))?.substring(0, 500)} raw text="${chatMessage.text?.substring(0, 200)}"`);
 
       // Check if any mention matches our internal botId OR any platform-provided public ID
       const mentioned = chatMessage.mentions?.some(m => this.isSelfUserId(String(m.userId)));

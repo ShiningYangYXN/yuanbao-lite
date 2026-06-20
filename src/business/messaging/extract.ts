@@ -72,6 +72,33 @@ export function extractContentFromMsgBody(
       case "TIMTextElem": {
         const text = typeof content.text === "string" ? content.text : "";
         if (text) textParts.push(text);
+        // IMPORTANT: Tencent IM sometimes bundles TIMCustomElem data INSIDE a
+        // TIMTextElem's `content.data` field (instead of sending a separate
+        // TIMCustomElem). This happens with elem_type=1013 (bot reply marker),
+        // elem_type=1002 (@mention), and others. We must check `data` here
+        // and process it the same way as a TIMCustomElem, otherwise @mention
+        // information is silently lost.
+        const embeddedData = typeof content.data === "string" ? content.data : undefined;
+        if (embeddedData) {
+          try {
+            const parsed = JSON.parse(embeddedData) as Record<string, unknown>;
+            const elemType = typeof parsed.elem_type === "number"
+              ? parsed.elem_type
+              : (typeof parsed.elemType === "number" ? parsed.elemType : undefined);
+            if (elemType === 1002) {
+              // Embedded @mention — inject @[nick](id) syntax in-place
+              hasAnyMention = true;
+              const userId = parsed.user_id != null ? String(parsed.user_id) : undefined;
+              const mentionText = typeof parsed.text === "string" ? parsed.text : undefined;
+              const displayName = mentionText ? mentionText.replace(/^@/, "") : (userId ?? "");
+              if (userId && displayName) {
+                textParts.push(`@[${displayName}](${userId}) `);
+              }
+            }
+          } catch {
+            // data is not JSON — ignore
+          }
+        }
         break;
       }
 
