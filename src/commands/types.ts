@@ -40,6 +40,23 @@ export type CommandContext = {
   showAll: boolean;
   /** Where the command was invoked from — affects coloring/output format */
   source: "chat" | "cli";
+  /**
+   * Resolve a single @-reference arg to a user ID.
+   *
+   * Supports:
+   *   @[nick](id)  → id (extracted directly from the syntax)
+   *   @nick        → looked up in message.mentions[] by displayName, then
+   *                  in group member list (if available)
+   *   @<botId>     → the bare ID (anything starting with @ that looks like an ID)
+   *
+   * Args that don't start with @ are returned unchanged.
+   * Args that start with @ but can't be resolved are returned unchanged.
+   *
+   * Handlers should call this explicitly on args that represent user IDs
+   * (NOT on args that represent message text — those must preserve
+   * @[nick](id) syntax for mention parsing).
+   */
+  resolveAtReference: (arg: string) => Promise<string>;
 };
 
 // ─── Command Definition ───

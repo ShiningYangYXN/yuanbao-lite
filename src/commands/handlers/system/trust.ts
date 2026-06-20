@@ -108,7 +108,7 @@ export function register(cmdSys: CommandSystem): void {
               await ctx.reply("用法: /trust add <ID> [昵称]");
               return;
             }
-            const targetId = ctx.args[1];
+            const targetId = await ctx.resolveAtReference(ctx.args[1]);
             const nickname = ctx.args.slice(2).join(" ");
             const result = await addTrust(targetId, nickname);
             if (result.ok) {
@@ -126,7 +126,7 @@ export function register(cmdSys: CommandSystem): void {
               await ctx.reply("用法: /trust remove <ID>");
               return;
             }
-            const targetId = ctx.args[1];
+            const targetId = await ctx.resolveAtReference(ctx.args[1]);
             const result = removeTrust(targetId);
             await ctx.reply(result.ok
               ? `✅ 已将 ${targetId} 移出信任列表`
@@ -143,7 +143,7 @@ export function register(cmdSys: CommandSystem): void {
               await ctx.reply("用法: /trust grant <用户ID> <命令名> [分钟|forever]\n默认: 5分钟, forever=永久\n命令名可加/也可不加，支持别名（如 sh = shell）\n不可授权命令: unsafe, trust, block, config, init, daemon");
               return;
             }
-            const targetId = ctx.args[1];
+            const targetId = await ctx.resolveAtReference(ctx.args[1]);
             // Resolve command name: accepts "shell", "/shell", "sh" (alias) → "shell"
             const resolved = cmdSys.resolveCommandName(ctx.args[2]);
             if (!resolved) {
@@ -177,7 +177,7 @@ export function register(cmdSys: CommandSystem): void {
               await ctx.reply("用法: /trust revoke <用户ID> <命令名>\n命令名可加/也可不加，支持别名");
               return;
             }
-            const targetId = ctx.args[1];
+            const targetId = await ctx.resolveAtReference(ctx.args[1]);
             // Resolve command name: accepts "shell", "/shell", "sh" (alias) → "shell"
             const resolved = cmdSys.resolveCommandName(ctx.args[2]);
             if (!resolved) {
@@ -195,7 +195,7 @@ export function register(cmdSys: CommandSystem): void {
 
           // /trust grants <userID> — list a user's command grants
           if (subCmd === "grants") {
-            const targetId = ctx.args[1] ?? userId;
+            const targetId = ctx.args[1] ? await ctx.resolveAtReference(ctx.args[1]) : userId;
             const grants = listCommandGrants(targetId);
             const entry = getTrustEntry(targetId);
             const name = entry?.nickname ?? targetId;

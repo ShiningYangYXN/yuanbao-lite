@@ -108,7 +108,7 @@ export function register(cmdSys: CommandSystem): void {
               );
               return;
             }
-            const targetId = ctx.args[1];
+            const targetId = ctx.args[1] === "*" ? "*" : await ctx.resolveAtReference(ctx.args[1]);
             let scope = ctx.args[2];
             const nickname = ctx.args.slice(3).join(" ");
             // If scope is not a special group ([all]/[llm]/[command]), try to
@@ -134,7 +134,7 @@ export function register(cmdSys: CommandSystem): void {
               await ctx.reply("用法: /block remove <用户ID|*> [范围]\n不指定范围则移除该用户的所有封禁");
               return;
             }
-            const targetId = ctx.args[1];
+            const targetId = ctx.args[1] === "*" ? "*" : await ctx.resolveAtReference(ctx.args[1]);
             const scope = ctx.args[2];
             const result = removeBlock(targetId, scope);
             await ctx.reply(result.ok

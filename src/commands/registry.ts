@@ -465,21 +465,18 @@ export class CommandSystem {
       return { handled: true };
     }
 
-    // ─── Resolve @-references in args to user IDs ───
-    // Allows users to reference other users by @mention syntax instead of
-    // typing the full user ID. Supports:
-    //   @[nick](id)  → id (extracted directly from the syntax)
-    //   @nick        → looked up in message.mentions[] by displayName, or
-    //                  in group member list if available
-    //   @<botId>     → the bot ID itself (bare ID with @ prefix)
-    // CLI source skips this (CLI args are pre-resolved).
-    let resolvedArgs = args;
-    if (source !== "cli" && args.length > 0) {
-      resolvedArgs = await this.resolveAtReferences(args, message, bot);
-    }
+    // ─── @-reference resolution ───
+    // Previously, ALL command args were automatically passed through
+    // resolveAtReferences, which extracted IDs from @[nick](id) syntax.
+    // This mangled args for commands like /echo, /mention that need the
+    // original @[nick](id) syntax preserved for mention parsing.
+    //
+    // Now, @-reference resolution is opt-in per handler: handlers that
+    // take a user ID arg call ctx.resolveAtReference(arg) explicitly.
+    // This keeps /echo, /mention, /atall etc. args untouched.
 
     // Build context and execute
-    const ctx = this.makeContext(bot, message, commandName, resolvedArgs, onReply, source);
+    const ctx = this.makeContext(bot, message, commandName, args, onReply, source);
 
     try {
       this.log.info(`executing command: ${commandName} (args: ${args.join(" ")})`);
@@ -500,7 +497,7 @@ export class CommandSystem {
   // ─── @-reference resolution ───
 
   /**
-   * Resolve @-references in command args to actual user IDs.
+   * Resolve a single @-reference arg to a user ID.
    *
    * Supports:
    *   @[nick](id)  → id (extracted directly from the mention syntax)
@@ -509,78 +506,67 @@ export class CommandSystem {
    *   @<botId>     → the bare ID (anything starting with @ that looks like an ID)
    *
    * Args that don't start with @ are returned unchanged.
-   * Args that start with @ but can't be resolved are returned unchanged (the
-   * command handler will deal with the invalid ID).
+   * Args that start with @ but can't be resolved are returned unchanged.
    */
-  private async resolveAtReferences(
-    args: string[],
+  private async resolveAtReference(
+    arg: string,
     message: ChatMessage,
     bot: YuanbaoBot,
-  ): Promise<string[]> {
-    const resolved: string[] = [];
-    for (const arg of args) {
-      const trimmed = arg.trim();
-      if (!trimmed.startsWith("@")) {
-        resolved.push(arg);
-        continue;
-      }
-
-      // Pattern 1: @[nick](id) — extract id directly
-      const fullMentionMatch = trimmed.match(/^@\[([^\]]*)\]\(([^)]+)\)$/);
-      if (fullMentionMatch) {
-        const id = fullMentionMatch[2];
-        resolved.push(id);
-        this.log.debug(`resolved @[nick](${id}) → ${id}`);
-        continue;
-      }
-
-      // Pattern 2: @nick — look up in message.mentions[] by displayName
-      const nick = trimmed.slice(1); // strip leading @
-      if (nick && message.mentions) {
-        // Try exact displayName match
-        const mention = message.mentions.find(m => m.displayName === nick || m.userId === nick);
-        if (mention) {
-          resolved.push(mention.userId);
-          this.log.debug(`resolved @${nick} → ${mention.userId} (from message.mentions)`);
-          continue;
-        }
-        // Try case-insensitive match
-        const mentionCI = message.mentions.find(m => m.displayName.toLowerCase() === nick.toLowerCase());
-        if (mentionCI) {
-          resolved.push(mentionCI.userId);
-          this.log.debug(`resolved @${nick} → ${mentionCI.userId} (case-insensitive from message.mentions)`);
-          continue;
-        }
-      }
-
-      // Pattern 3: @<bareId> — if the arg after @ looks like an ID (contains
-      // alphanumeric + underscore/hyphen, length > 5), treat it as a bare ID
-      if (nick.length > 5 && /^[a-zA-Z0-9_-]+$/.test(nick)) {
-        resolved.push(nick);
-        this.log.debug(`resolved @${nick} → ${nick} (bare ID)`);
-        continue;
-      }
-
-      // Pattern 4: @nick in group — try group member list lookup
-      if (nick && message.chatType === "group" && message.groupCode) {
-        try {
-          const resp = await bot.getGroupMemberList(message.groupCode);
-          const members = resp?.member_list ?? [];
-          const member = members.find(m => m.nick_name === nick || m.user_id === nick);
-          if (member) {
-            resolved.push(member.user_id);
-            this.log.debug(`resolved @${nick} → ${member.user_id} (from group members)`);
-            continue;
-          }
-        } catch {
-          // group member lookup failed — fall through
-        }
-      }
-
-      // Could not resolve — return as-is (command handler will handle)
-      resolved.push(arg);
+  ): Promise<string> {
+    const trimmed = arg.trim();
+    if (!trimmed.startsWith("@")) {
+      return arg;
     }
-    return resolved;
+
+    // Pattern 1: @[nick](id) — extract id directly
+    const fullMentionMatch = trimmed.match(/^@\[([^\]]*)\]\(([^)]+)\)$/);
+    if (fullMentionMatch) {
+      const id = fullMentionMatch[2];
+      this.log.debug(`resolved @[nick](${id}) → ${id}`);
+      return id;
+    }
+
+    // Pattern 2: @nick — look up in message.mentions[] by displayName
+    const nick = trimmed.slice(1); // strip leading @
+    if (nick && message.mentions) {
+      // Try exact displayName match
+      const mention = message.mentions.find(m => m.displayName === nick || m.userId === nick);
+      if (mention) {
+        this.log.debug(`resolved @${nick} → ${mention.userId} (from message.mentions)`);
+        return mention.userId;
+      }
+      // Try case-insensitive match
+      const mentionCI = message.mentions.find(m => m.displayName.toLowerCase() === nick.toLowerCase());
+      if (mentionCI) {
+        this.log.debug(`resolved @${nick} → ${mentionCI.userId} (case-insensitive from message.mentions)`);
+        return mentionCI.userId;
+      }
+    }
+
+    // Pattern 3: @<bareId> — if the arg after @ looks like an ID (contains
+    // alphanumeric + underscore/hyphen, length > 5), treat it as a bare ID
+    if (nick.length > 5 && /^[a-zA-Z0-9_-]+$/.test(nick)) {
+      this.log.debug(`resolved @${nick} → ${nick} (bare ID)`);
+      return nick;
+    }
+
+    // Pattern 4: @nick in group — try group member list lookup
+    if (nick && message.chatType === "group" && message.groupCode) {
+      try {
+        const resp = await bot.getGroupMemberList(message.groupCode);
+        const members = resp?.member_list ?? [];
+        const member = members.find(m => m.nick_name === nick || m.user_id === nick);
+        if (member) {
+          this.log.debug(`resolved @${nick} → ${member.user_id} (from group members)`);
+          return member.user_id;
+        }
+      } catch {
+        // group member lookup failed — fall through
+      }
+    }
+
+    // Could not resolve — return as-is
+    return arg;
   }
 
   // ─── Parsing ───
@@ -843,6 +829,12 @@ export class CommandSystem {
       filteredArgs = args.filter(a => a !== "--all" && a !== "-a");
     }
 
+    // resolveAtReference: single-arg @-reference resolver.
+    // Handlers call this on args that represent user IDs (NOT message text).
+    const resolveAtReference = async (arg: string): Promise<string> => {
+      return this.resolveAtReference(arg, message, bot);
+    };
+
     return {
       bot,
       message,
@@ -856,6 +848,7 @@ export class CommandSystem {
       groupCode,
       showAll,
       source,
+      resolveAtReference,
     };
   }
 

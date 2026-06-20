@@ -34,7 +34,8 @@ export function register(cmdSys: CommandSystem): void {
               await ctx.reply(`❌ 发送失败: ${(err as Error).message}`);
             }
           } else if (ctx.args.length >= 2) {
-            const userId = ctx.args[0];
+            // Resolve @-references in the first arg (user ID)
+            const userId = await ctx.resolveAtReference(ctx.args[0]);
             const text = ctx.args.slice(1).join(" ");
             try {
               await ctx.bot.sendDirectMessage(userId, text);

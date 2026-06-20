@@ -24,7 +24,8 @@ export function register(cmdSys: CommandSystem): void {
             await ctx.reply("用法: /dm <用户ID> <消息>");
             return;
           }
-          const rawUserId = ctx.args[0];
+          // Resolve @-references in the first arg (user ID)
+          const rawUserId = await ctx.resolveAtReference(ctx.args[0]);
           const userId = ctx.bot.getContactStore().resolve(rawUserId);
           const text = ctx.args.slice(1).join(" ");
           ctx.bot.getContactStore().touch(rawUserId);

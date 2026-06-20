@@ -89,7 +89,7 @@ export function register(cmdSys: CommandSystem): void {
 
           // /switch dm <用户ID> — push DM context
           if (subArg === "dm" && ctx.args[1]) {
-            const targetUserId = ctx.args[1];
+            const targetUserId = await ctx.resolveAtReference(ctx.args[1]);
             stack.push({ chatType: "direct", target: targetUserId, label: `私聊 ${targetUserId}`, lastActivity: Date.now() });
             cs._switchSessions.set(sessionKey, stack);
             await ctx.reply(
