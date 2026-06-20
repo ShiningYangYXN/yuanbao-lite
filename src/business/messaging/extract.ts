@@ -52,6 +52,29 @@ export type ExtractResult = {
  * media items and link URLs. This is the recommended API for new code;
  * extractTextFromMsgBody() is kept for backward compatibility.
  */
+
+/**
+ * Sanitize a nickname for safe injection into the @[nick](id) syntax.
+ * The mention parser regex `@\[([^\]]*)\]` stops at the first `]`.
+ * If a user's nickname contains `]`, the mention would be truncated.
+ *
+ * We replace `]` and `[` with full-width equivalents (】 and 【) which are
+ * visually similar and never appear in the syntax delimiters. This is a
+ * display-only transformation — the userId is kept verbatim in the `(id)`
+ * part (see note below), so @-notification still works correctly via the
+ * TIMCustomElem user_id field.
+ *
+ * Note: userId is NOT sanitized here. Real Yuanbao user IDs are base64 or
+ * hex strings that never contain `)` or `]`. If a malformed userId did
+ * contain `)`, that single mention would fail to parse, but it would not
+ * pollute other mentions or the text stream.
+ */
+function sanitizeNickname(s: string): string {
+  return s
+    .replace(/]/g, "】")
+    .replace(/\[/g, "【");
+}
+
 export function extractContentFromMsgBody(
   msgBody: YuanbaoMsgBodyElement[] | undefined,
 ): ExtractResult {
@@ -92,7 +115,7 @@ export function extractContentFromMsgBody(
               const mentionText = typeof parsed.text === "string" ? parsed.text : undefined;
               const displayName = mentionText ? mentionText.replace(/^@/, "") : (userId ?? "");
               if (userId && displayName) {
-                textParts.push(`@[${displayName}](${userId}) `);
+                textParts.push(`@[${sanitizeNickname(displayName)}](${userId}) `);
               }
             }
           } catch {
@@ -204,7 +227,9 @@ export function extractContentFromMsgBody(
               const displayName = mentionText ? mentionText.replace(/^@/, "") : (userId ?? "");
               if (userId && displayName) {
                 // Inject @[displayName](userId) syntax in-place
-                textParts.push(`@[${displayName}](${userId}) `);
+                // Sanitize ] and ) in displayName/userId to prevent breaking
+                // the @[]() syntax (user nicknames can contain these chars)
+                textParts.push(`@[${sanitizeNickname(displayName)}](${userId}) `);
               }
             } catch {
               // data is not JSON — can't extract mention info, skip
