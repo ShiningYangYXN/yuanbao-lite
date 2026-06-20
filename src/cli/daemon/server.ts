@@ -292,7 +292,15 @@ export class Daemon {
       shutdown: () => void this.stop("http-shutdown"),
     };
 
-    const result = await handleRoute(method, path, body, ctx);
+    let result: { status: number; body: unknown };
+    try {
+      result = await handleRoute(method, path, body, ctx);
+    } catch (err) {
+      const errMsg = (err as Error).message;
+      const errStack = (err as Error).stack ?? "";
+      log.error(`handleRoute FAILED: ${method} ${path} → ${errMsg}\n${errStack}`);
+      result = { status: 500, body: { ok: false, error: errMsg } };
+    }
     this.sendJson(res, result.status, result.body);
   }
 
