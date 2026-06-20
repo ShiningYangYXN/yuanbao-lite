@@ -263,9 +263,17 @@ export function extractContentFromMsgBody(
             const urlMatch = customData.match(/<url[^>]*>([^<]+)<\/url>/i)
               ?? customData.match(/<link[^>]*>([^<]+)<\/link>/i);
             if (urlMatch) extractedUrl = urlMatch[1];
-            // Try to extract title/text from XML
+            // Try to extract title/text/desc from XML
             const titleMatch = customData.match(/<title[^>]*>([^<]+)<\/title>/i);
             if (titleMatch) extractedText = titleMatch[1];
+            if (!extractedText) {
+              const descMatch = customData.match(/<desc[^>]*>([^<]+)<\/desc>/i);
+              if (descMatch) extractedText = descMatch[1];
+            }
+            if (!extractedText) {
+              const textMatch = customData.match(/<text[^>]*>([^<]+)<\/text>/i);
+              if (textMatch) extractedText = textMatch[1];
+            }
             // Also try JSON format
             try {
               const parsed = JSON.parse(customData) as Record<string, unknown>;
@@ -273,6 +281,9 @@ export function extractContentFromMsgBody(
               if (!extractedUrl && typeof parsed.link === "string") extractedUrl = parsed.link;
               if (!extractedText && typeof parsed.text === "string") extractedText = parsed.text;
               if (!extractedText && typeof parsed.title === "string") extractedText = parsed.title;
+              if (!extractedText && typeof parsed.desc === "string") extractedText = parsed.desc;
+              if (!extractedText && typeof parsed.description === "string") extractedText = parsed.description;
+              if (!extractedText && typeof parsed.name === "string") extractedText = parsed.name;
             } catch {
               // Not JSON — XML already handled above
             }
@@ -313,21 +324,40 @@ export function extractContentFromMsgBody(
           // before falling back. If nothing can be extracted, skip silently
           // (don't push "[custom:...]" placeholder — that's garbage text that
           // pollutes wizard input and LLM context).
+          //
+          // GUARD: If the data looks like a misparsed @[nick](id) mention
+          // (has text+url but url is not a real URL), reconstruct the mention
+          // syntax instead of pushing the url as plain text.
           let extractedText: string | undefined;
+          let extractedUrl: string | undefined;
           try {
             const parsed = JSON.parse(customData) as Record<string, unknown>;
             if (typeof parsed.text === "string") extractedText = parsed.text;
-            else if (typeof parsed.url === "string") extractedText = parsed.url;
-            else if (typeof parsed.content === "string") extractedText = parsed.content;
-            else if (typeof parsed.desc === "string") extractedText = parsed.desc;
+            if (typeof parsed.url === "string") extractedUrl = parsed.url;
+            else if (typeof parsed.link === "string") extractedUrl = parsed.link;
+            if (!extractedText && typeof parsed.title === "string") extractedText = parsed.title;
+            if (!extractedText && typeof parsed.content === "string") extractedText = parsed.content;
+            if (!extractedText && typeof parsed.desc === "string") extractedText = parsed.desc;
+            if (!extractedText && typeof parsed.name === "string") extractedText = parsed.name;
           } catch {
-            // Not JSON — try XML text extraction
-            const xmlTextMatch = customData.match(/<text[^>]*>([^<]+)<\/text>/i)
+            // Not JSON — try XML extraction
+            const xmlUrlMatch = customData.match(/<url[^>]*>([^<]+)<\/url>/i)
+              ?? customData.match(/<link[^>]*>([^<]+)<\/link>/i);
+            if (xmlUrlMatch) extractedUrl = xmlUrlMatch[1];
+            const xmlTextMatch = customData.match(/<title[^>]*>([^<]+)<\/title>/i)
+              ?? customData.match(/<text[^>]*>([^<]+)<\/text>/i)
               ?? customData.match(/<desc[^>]*>([^<]+)<\/desc>/i);
             if (xmlTextMatch) extractedText = xmlTextMatch[1];
           }
-          // Only push if we extracted real text; skip if empty or just placeholder
-          if (extractedText && extractedText.trim()) {
+          // Check if this is a misparsed @[nick](id) mention
+          const isRealUrl = extractedUrl && /^(https?:\/\/|[\w-]+\.[\w-]+)/i.test(extractedUrl);
+          if (extractedText && extractedUrl && !isRealUrl) {
+            // Reconstruct mention syntax
+            const nick = extractedText.replace(/^@/, "");
+            textParts.push(`@[${nick}](${extractedUrl}) `);
+            hasAnyMention = true;
+          } else if (extractedText && extractedText.trim()) {
+            // Only push if we extracted real text; skip if empty or just placeholder
             const alreadyPresent = textParts.some(tp => tp.includes(extractedText!));
             if (!alreadyPresent) {
               textParts.push(extractedText);

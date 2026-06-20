@@ -433,7 +433,7 @@ export class YuanbaoBot {
     // syntax is present — helps diagnose "@-not-working" reports by showing
     // the exact text received, parsed mentions, and resulting msgBody structure.
     if (parsedMentions.length > 0 || /@\[/.test(interpolatedText)) {
-      this.log.info(`sendText mention: text="${interpolatedText.substring(0, 100)}" isGroup=${isGroup} to=${to} mentions=${parsedMentions.length} msgBody=${JSON.stringify(mentionMsgBody).substring(0, 400)}`);
+      this.log.debug(`sendText mention: text="${interpolatedText.substring(0, 100)}" isGroup=${isGroup} to=${to} mentions=${parsedMentions.length} msgBodyTypes=${mentionMsgBody.map(el => el.msg_type).join(",")}`);
     }
 
     // Handle long messages by splitting if needed
