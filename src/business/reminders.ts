@@ -251,6 +251,11 @@ export function listReminders(userId?: string): ReminderJob[] {
 
 /**
  * Start all active jobs (call on daemon boot).
+ *
+ * Idempotent: if a job already has an active timer (e.g. from a previous
+ * startAllJobs call or after a WS reconnect), the old timer is cleared
+ * before scheduling a new one. This prevents duplicate firings and
+ * memory leaks on reconnect.
  */
 export type SendFunction = (targetId: string, message: string, isGroup: boolean) => Promise<void>;
 
@@ -258,11 +263,19 @@ export function startAllJobs(
   sendFn: SendFunction,
 ): void {
   const data = load();
+  let started = 0;
   for (const job of data.jobs) {
     if (!job.active) continue;
+    // Clear any existing timer for this job (idempotent re-schedule)
+    const existing = activeTimers.get(job.id);
+    if (existing) {
+      clearTimeout(existing);
+      activeTimers.delete(job.id);
+    }
     scheduleJob(job, sendFn);
+    started++;
   }
-  log.info(`started ${data.jobs.filter(j => j.active).length} active jobs`);
+  log.info(`started ${started} active jobs`);
 }
 
 function scheduleJob(
@@ -270,6 +283,27 @@ function scheduleJob(
   sendFn: SendFunction,
 ): void {
   const now = Date.now();
+
+  // For cron jobs with a stale fireAt (in the past), recompute the next
+  // future fire time instead of firing immediately. This avoids an
+  // annoying "catch-up" reminder when the daemon has been offline for
+  // longer than the cron interval. One-shot remind jobs DO fire
+  // immediately if past due (so the user doesn't miss the reminder).
+  if (job.type === "cron" && job.cronExpr && job.fireAt <= now) {
+    const { getNextFire } = parseCronExpression(job.cronExpr);
+    const nextFire = getNextFire(now);
+    if (nextFire > 0) {
+      job.fireAt = nextFire;
+      save();
+      log.info(`job ${job.id} cron fireAt was stale, rescheduled to ${new Date(nextFire).toISOString()}`);
+    } else {
+      log.warn(`job ${job.id} cron could not compute next fire, deactivating`);
+      job.active = false;
+      save();
+      return;
+    }
+  }
+
   const delay = Math.max(0, job.fireAt - now);
 
   if (delay > 2_147_483_647) {
@@ -298,6 +332,10 @@ function scheduleJob(
         job.fireAt = nextFire;
         save();
         scheduleJob(job, sendFn);
+      } else {
+        // No future fire time — deactivate
+        job.active = false;
+        save();
       }
     } else {
       // One-shot remind — mark inactive

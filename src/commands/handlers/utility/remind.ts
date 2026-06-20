@@ -103,7 +103,9 @@ export function register(cmdSys: CommandSystem): void {
             isGroup,
           });
 
-          // Schedule the timer
+          // Start all jobs (idempotent — re-schedules all active jobs,
+          // clearing existing timers first). This picks up the new job
+          // and ensures jobs are scheduled even if daemon just started.
           const sendFn: SendFunction = async (tid, msg, grp) => {
             if (grp) await ctx.bot.sendGroupMessage(tid, msg);
             else await ctx.bot.sendDirectMessage(tid, msg);

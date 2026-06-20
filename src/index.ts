@@ -1090,6 +1090,28 @@ export class YuanbaoBot {
     }
 
     this.emit("ready", { connectId: data.connectId });
+
+    // Restart all persisted reminder/cron jobs on (re)connection.
+    // This handles daemon restart: jobs in ~/.yuanbao-lite/reminders.json
+    // are restored and re-scheduled so /remind and /cron continue to fire.
+    // We defer this slightly (setImmediate) so the connection is fully
+    // established before scheduling sends.
+    setImmediate(() => {
+      try {
+        void import("./business/reminders.js").then(({ startAllJobs }) => {
+          const sendFn = async (targetId: string, message: string, isGroup: boolean): Promise<void> => {
+            if (isGroup) {
+              await this.sendGroupMessage(targetId, message);
+            } else {
+              await this.sendDirectMessage(targetId, message);
+            }
+          };
+          startAllJobs(sendFn);
+        });
+      } catch (err) {
+        this.log.warn(`failed to restart reminder jobs: ${(err as Error).message}`);
+      }
+    });
   }
 
   private async handleDispatch(pushEvent: WsPushEvent): Promise<void> {
