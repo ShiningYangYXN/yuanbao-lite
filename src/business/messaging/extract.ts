@@ -248,6 +248,14 @@ export function extractContentFromMsgBody(
           // push the URL again from the link card, the wizard receives the URL
           // TWICE (e.g. "https://x.comhttps://x.com"). To avoid this, we only
           // push the URL if it's NOT already present in textParts.
+          //
+          // GUARD: Only treat as a real link card if the extracted URL looks
+          // like an actual URL (starts with http://, https://, or a domain).
+          // Tencent sometimes sends elem_type=1007/1010 for non-URL content
+          // (e.g. when the user typed @[nick](id) and the platform misparsed
+          // it as a markdown link). In that case, the "url" field is actually
+          // a user ID, and we should NOT push it as a URL — instead, try to
+          // reconstruct the @[nick](id) mention syntax from the title + url.
           let extractedUrl: string | undefined;
           let extractedText: string | undefined;
           if (customData) {
@@ -269,15 +277,24 @@ export function extractContentFromMsgBody(
               // Not JSON — XML already handled above
             }
           }
-          if (extractedUrl) {
-            linkUrls.push(extractedUrl);
+          // Check if extractedUrl is a real URL (http/https scheme or domain-like)
+          const isRealUrl = extractedUrl && /^(https?:\/\/|[\w-]+\.[\w-]+)/i.test(extractedUrl);
+          if (isRealUrl) {
+            linkUrls.push(extractedUrl!);
             // Only push the URL if it's NOT already in textParts (avoid duplication
             // when TIMTextElem already contains the URL)
             const alreadyPresent = textParts.some(tp => tp.includes(extractedUrl!) || extractedUrl!.includes(tp.trim()));
             if (!alreadyPresent) {
-              textParts.push(extractedUrl);
+              textParts.push(extractedUrl!);
             }
             // If alreadyPresent, the URL was already added by TIMTextElem — skip
+          } else if (extractedText && extractedUrl) {
+            // Not a real URL — likely a misparsed @[nick](id) mention.
+            // Reconstruct the mention syntax so downstream mention parser
+            // can handle it correctly.
+            const nick = extractedText.replace(/^@/, "");
+            textParts.push(`@[${nick}](${extractedUrl}) `);
+            hasAnyMention = true;
           } else if (extractedText) {
             // No URL but has title — only push if not a duplicate
             const alreadyPresent = textParts.some(tp => tp.includes(extractedText!));
