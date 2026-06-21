@@ -176,6 +176,18 @@ export class MessageHistoryStore {
   }
 
   /**
+   * Remove a message by ID (used for recall handling).
+   * Returns true if a message was removed, false if not found.
+   */
+  removeById(id: string): boolean {
+    const idx = this.messages.findIndex(m => m.id === id);
+    if (idx < 0) return false;
+    this.messages.splice(idx, 1);
+    this.save();
+    return true;
+  }
+
+  /**
    * Get messages from a specific user.
    */
   getByUser(userId: string, limit = 50): ChatMessage[] {

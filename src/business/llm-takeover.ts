@@ -1061,7 +1061,18 @@ export class LlmTakeoverEngine {
       const result = await this.callLlm(llmMessages);
 
       const rawText = result.content;
-      if (!rawText || !rawText.trim()) { this.log.warn("LLM returned empty"); return { handled: false }; }
+      if (!rawText || !rawText.trim()) {
+        // Fallback reply: LLM returned empty content, send a default message
+        // so the user isn't left without any response.
+        this.log.warn("LLM returned empty, sending fallback reply");
+        const fallback = "暂时无法解答，你可以换个问题问问我哦";
+        try {
+          await this.sendResponse(bot, msg, fallback);
+        } catch (err) {
+          this.log.error(`fallback reply send failed: ${(err as Error).message}`);
+        }
+        return { handled: true };
+      }
 
       let processedText = this.config.markdownRawMode ? rawText : markdownToImText(rawText);
       try { processedText = await this.config.postProcess(processedText, msg); } catch { /* ignore */ }

@@ -1124,6 +1124,41 @@ export class YuanbaoBot {
     }
 
     const { msg, chatType } = converted;
+
+    // ─── Recall callback handling ───
+    // Group.CallbackAfterRecallMsg / C2C.CallbackAfterMsgWithDraw:
+    // A message was recalled. Inject a system event into LLM context so the
+    // LLM knows not to reference the recalled message.
+    const callbackCmd = msg.callback_command || "";
+    if (callbackCmd.includes("CallbackAfterRecallMsg") || callbackCmd.includes("CallbackAfterMsgWithDraw")) {
+      const recalledMsgId = String(msg.recall_msg_seq_list?.[0]?.msg_id ?? msg.msg_id ?? "");
+      const recalledSeq = msg.recall_msg_seq_list?.[0]?.msg_seq;
+      this.log.info(`recall callback: cmd=${callbackCmd} msgId=${recalledMsgId} seq=${recalledSeq}`);
+      // Remove from local history if present
+      if (recalledMsgId) {
+        const removed = this.historyStore.removeById(recalledMsgId);
+        if (removed) {
+          this.log.debug(`removed recalled message ${recalledMsgId} from history`);
+        }
+      }
+      // Inject system event into LLM context
+      const engine = this.getLlmEngine();
+      if (engine) {
+        const convKey = chatType === "group" && msg.group_code
+          ? `group:${msg.group_code}`
+          : `dm:${msg.from_account}`;
+        const tail = recalledMsgId ? recalledMsgId.slice(-8) : "?";
+        const systemEvent = `[系统] 消息 #${tail} 已被撤回，不要引用或基于该消息内容回复。忽略该消息ID的过时记录，保留过去的助手回复，无需工具回滚。`;
+        try {
+          engine.getConversationManager().addUserMessage(convKey, systemEvent);
+          this.log.debug(`injected recall system event into ${convKey}`);
+        } catch {
+          // context injection failure is non-critical
+        }
+      }
+      return; // Don't process as normal message
+    }
+
     const chatMessage = toChatMessage(msg);
 
     // ─── Skip-self guard (for dispatch) + history storage for bot's own messages ───
