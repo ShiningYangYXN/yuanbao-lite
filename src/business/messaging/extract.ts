@@ -22,6 +22,7 @@ import type {
 } from "../../types.js";
 import { extractMentionsFromMsgBody } from "../mention.js";
 import { storeContent } from "../content-store.js";
+import { parseForwardMsgData, buildForwardRecordsText } from "./forward-records.js";
 
 // ─── Structured extraction result ───
 
@@ -324,8 +325,8 @@ export function extractContentFromMsgBody(
           // "garbage text" the user complained about. Just skip silently.
         } else if (elemType === 1009) {
           // Forwarded chat records (微信转发聊天记录)
-          // Store full content in content-store, inject [content:xxx] reference.
-          // The LLM can use /query <contentId> to view the full content.
+          // Full content is in msg_content.ext_map as base64-encoded protobuf ForwardMsgData.
+          // Also try customData JSON for text summary fallback.
           let summary: string | undefined;
           if (customData) {
             try {
@@ -336,7 +337,31 @@ export function extractContentFromMsgBody(
               // Not JSON
             }
           }
-          const fullContent = summary ?? "[转发聊天记录]";
+
+          // Try to decode full ForwardMsgData from ext_map
+          let fullContent = summary ?? "[转发聊天记录]";
+          const extMap = content.ext_map as Record<string, unknown> | undefined;
+          if (extMap) {
+            try {
+              const forwardData = parseForwardMsgData(extMap);
+              if (forwardData) {
+                const built = buildForwardRecordsText(forwardData, forwardData.nick_name);
+                if (built) {
+                  fullContent = built.text;
+                  // Collect media URLs from forwarded records
+                  for (const mediaUrl of built.mediaUrls) {
+                    medias.push({ type: "file", url: mediaUrl });
+                  }
+                  for (const linkUrl of built.linkUrls) {
+                    if (!linkUrls.includes(linkUrl)) linkUrls.push(linkUrl);
+                  }
+                }
+              }
+            } catch {
+              // forward-records decode failed — use summary fallback
+            }
+          }
+
           const contentId = storeContent("forwarded_records", fullContent, `forwarded_${Date.now()}`);
           textParts.push(`[content:${contentId} 转发聊天记录]`);
         } else if (customData) {

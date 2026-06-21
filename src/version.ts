@@ -57,7 +57,7 @@ export function getVersion(): string {
   }
 
   // Fallback: hardcoded version (update when releasing)
-  cachedVersion = "11.3.2";
+  cachedVersion = "11.3.3";
   return cachedVersion;
 }
 
