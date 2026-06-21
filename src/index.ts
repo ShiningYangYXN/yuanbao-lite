@@ -41,7 +41,7 @@ import { createLog, setLogLevel, setLogPrefix } from "./logger.js";
 import type { ModuleLog, PluginLogger } from "./logger.js";
 import { getSignToken, forceRefreshSignToken, clearAllSignTokenCache } from "./access/http/request.js";
 import { resolveAccount } from "./accounts.js";
-import { toChatMessage, buildTextMsgBody, splitTextChunks } from "./business/messaging/extract.js";
+import { toChatMessage, buildTextMsgBody } from "./business/messaging/extract.js";
 import { CommandSystem } from "./commands/registry.js";
 import type { CommandSystemConfig, CommandDefinition } from "./commands/types.js";
 import { uploadMedia, downloadMedia, extractMediaInfo, downloadAllMedia, buildImageMsgBody, buildFileMsgBody } from "./access/http/media.js";
@@ -436,34 +436,30 @@ export class YuanbaoBot {
       this.log.debug(`sendText mention: text="${interpolatedText.substring(0, 100)}" isGroup=${isGroup} to=${to} mentions=${parsedMentions.length} msgBodyTypes=${mentionMsgBody.map(el => el.msg_type).join(",")}`);
     }
 
-    // Handle long messages by splitting if needed
+    // Send message (no chunking — Yuanbao platform removed bot message limits)
     if (mentionMsgBody.length <= 2 && !parsedMentions.length) {
-      // Simple case: just text, may need splitting
+      // Simple case: just text
       const textContent = mentionMsgBody.find(el => el.msg_type === "TIMTextElem")?.msg_content?.text || "";
-      const chunks = splitTextChunks(textContent, 3000);
-
-      for (const chunk of chunks) {
-        const msgBody = buildTextMsgBody(chunk);
-        if (isGroup) {
-          await this.client.sendGroupMessage({
-            group_code: to,
-            from_account: this.account.botId || "",
-            msg_body: msgBody,
-            msg_id: quoteMsgId,
-            ref_msg_id: quoteMsgId,
-            msg_seq: quoteMsgSeq,
-            cloud_custom_data: cloudCustomData,
-          });
-        } else {
-          await this.client.sendC2CMessage({
-            to_account: to,
-            from_account: this.account.botId || "",
-            msg_body: msgBody,
-            msg_id: quoteMsgId,
-            ref_msg_id: quoteMsgId,
-            cloud_custom_data: cloudCustomData,
-          });
-        }
+      const msgBody = buildTextMsgBody(textContent);
+      if (isGroup) {
+        await this.client.sendGroupMessage({
+          group_code: to,
+          from_account: this.account.botId || "",
+          msg_body: msgBody,
+          msg_id: quoteMsgId,
+          ref_msg_id: quoteMsgId,
+          msg_seq: quoteMsgSeq,
+          cloud_custom_data: cloudCustomData,
+        });
+      } else {
+        await this.client.sendC2CMessage({
+          to_account: to,
+          from_account: this.account.botId || "",
+          msg_body: msgBody,
+          msg_id: quoteMsgId,
+          ref_msg_id: quoteMsgId,
+          cloud_custom_data: cloudCustomData,
+        });
       }
     } else {
       // Has mentions or complex msg_body — send as-is (already interleaved correctly)

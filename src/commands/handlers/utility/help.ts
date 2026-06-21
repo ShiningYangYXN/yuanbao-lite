@@ -57,23 +57,37 @@ export function register(cmdSys: CommandSystem): void {
           }
 
           if (ctx.useTable) {
-            // Table mode: group by category
+            // Table mode: group by category with icon + Chinese name
             const { formatTable } = await import("../../utils/table.js");
+            const categoryLabels: Record<string, string> = {
+              info: "ℹ️ 信息",
+              system: "🔐 安全",
+              chat: "💬 聊天",
+              group: "👥 群聊",
+              media: "📎 媒体",
+              history: "📜 历史",
+              llm: "🤖 LLM",
+              utility: "🛠️ 工具",
+            };
+            const categoryOrder = ["info", "chat", "group", "media", "history", "llm", "system", "utility"];
             const categories = new Map<string, typeof visible>();
             for (const cmd of visible) {
-              const cat = cmd.category || "other";
+              const cat = cmd.category || "utility";
               if (!categories.has(cat)) categories.set(cat, []);
               categories.get(cat)!.push(cmd);
             }
             const sections: string[] = [`📖 命令帮助 (${visible.length} 个命令)`];
-            for (const [cat, cmds] of categories) {
+            for (const cat of categoryOrder) {
+              const cmds = categories.get(cat);
+              if (!cmds) continue;
+              const label = categoryLabels[cat] || cat;
               const rows = cmds.map(cmd => [
                 `${cmdSys.config.prefix}${cmd.name}`,
                 cmd.aliases?.length ? cmd.aliases.join(", ") : "",
                 cmd.description || "",
                 cmd.dmOnly ? "仅私聊" : "",
               ]);
-              sections.push(`\n### ${cat}\n${formatTable(["命令", "别名", "描述", "标记"], rows)}`);
+              sections.push(`\n### ${label}\n${formatTable(["命令", "别名", "描述", "标记"], rows)}`);
             }
             await ctx.replyDoc(sections.join("\n"));
           } else {

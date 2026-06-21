@@ -32,7 +32,7 @@ import { createLog } from "../logger.js";
 import type { ModuleLog } from "../logger.js";
 import type { ChatMessage, YuanbaoMsgBodyElement } from "../types.js";
 import type { YuanbaoBot } from "../index.js";
-import { splitTextChunks } from "./messaging/extract.js";
+// splitTextChunks removed — no longer chunking messages (platform removed limits)
 
 const _log = createLog("llm-takeover");
 void _log;
@@ -1044,12 +1044,11 @@ export class LlmTakeoverEngine {
   }
 
   private async sendResponse(bot: YuanbaoBot, msg: ChatMessage, text: string): Promise<number> {
-    const chunks = splitTextChunks(text, 3000);
-    for (const chunk of chunks) {
-      if (msg.chatType === "group" && msg.groupCode) await bot.sendGroupMessage(msg.groupCode, chunk);
-      else await bot.sendDirectMessage(msg.fromUserId, chunk);
-    }
-    return chunks.length;
+    // No chunking — Yuanbao platform removed bot message limits.
+    // Send the full text as a single message.
+    if (msg.chatType === "group" && msg.groupCode) await bot.sendGroupMessage(msg.groupCode, text);
+    else await bot.sendDirectMessage(msg.fromUserId, text);
+    return 1;
   }
 
   // ─── Main Entry ───
