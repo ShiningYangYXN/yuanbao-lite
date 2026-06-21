@@ -753,17 +753,18 @@ export class CommandSystem {
       }
     });
 
-    // replyDoc: escape @mention syntax in documentation/help text so
-    // parseMentions() doesn't interpret literal @[昵称](id), @[所有人](),
-    // @[](all) etc. as real mentions when sent to a group.
-    // Also injects the reply into LLM context (same as reply).
+    // replyDoc: send documentation/help text without interpolation.
+    // This prevents ${...} in help text (e.g. batch template variables like
+    // ${i}, ${n}) from being parsed by interpolate(). Also escapes @mention
+    // syntax so literal @[nick](id) examples aren't parsed as real mentions.
     const replyDoc = onReply ?? (async (text: string) => {
       const { escapeMentionSyntax } = await import("../business/mention.js");
       const escaped = escapeMentionSyntax(text);
+      // Use sendText with skipInterpolation to preserve ${...} literals
       if (isGroup && groupCode) {
-        await bot.sendGroupMessage(groupCode, escaped);
+        await bot.sendText({ to: groupCode, text: escaped, isGroup: true, skipInterpolation: true });
       } else {
-        await bot.sendDirectMessage(message.fromUserId, escaped);
+        await bot.sendText({ to: message.fromUserId, text: escaped, isGroup: false, skipInterpolation: true });
       }
       // Inject into LLM context (same as reply, but with escaped text)
       const engine = bot.getLlmEngine();

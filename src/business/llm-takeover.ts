@@ -872,19 +872,53 @@ export class LlmTakeoverEngine {
       } catch { /* ignore */ }
     }
 
-    // Inject available commands
+    // Inject available commands with block/grant status
     if (bot) {
       const cmdSys = bot.getCommandSystem();
       if (cmdSys) {
         const commands = cmdSys.getAll().filter(c => !c.hidden);
         const isGroup = msg.chatType === "group";
         const unsafe = cmdSys.isUnsafeMode();
+        const userId = msg.fromUserId;
+        // Load block/trust status once for all commands
+        let isBlockedFn: ((userId: string, action: string) => boolean) | undefined;
+        let isBlockedFromCmdFn: ((userId: string, cmd: string) => boolean) | undefined;
+        let hasGrantFn: ((userId: string, cmd: string) => boolean) | undefined;
+        let isTrustedFn: ((userId: string) => boolean) | undefined;
+        try {
+          const block = await import("../business/block.js");
+          isBlockedFn = block.isBlockedFrom;
+          isBlockedFromCmdFn = block.isBlockedFromCommand;
+        } catch { /* block module optional */ }
+        try {
+          const trust = await import("../business/trust.js");
+          hasGrantFn = trust.hasCommandGrant;
+          isTrustedFn = trust.isTrusted;
+        } catch { /* trust module optional */ }
+
         const cmdLines: string[] = [];
         for (const cmd of commands) {
           if (isGroup && cmd.dmOnly && !unsafe) continue;
           const aliases = cmd.aliases?.length ? ` (别名: ${cmd.aliases.join(", ")})` : "";
           const dmLabel = cmd.dmOnly ? " [仅私聊]" : "";
-          cmdLines.push(`  /${cmd.name}${aliases}${dmLabel} — ${cmd.description}${cmd.usage ? ` | 用法: ${cmd.usage}` : ""}`);
+          // Check block/grant status for this command
+          const statusTags: string[] = [];
+          if (isBlockedFromCmdFn && (isBlockedFromCmdFn(userId, cmd.name) || (isBlockedFn && isBlockedFn(userId, "all")))) {
+            statusTags.push("[已禁用]");
+          } else if (isBlockedFromCmdFn && (isBlockedFromCmdFn("*", cmd.name) || (isBlockedFn && isBlockedFn("*", "all")))) {
+            statusTags.push("[全局禁用]");
+          } else if (cmd.dmOnly && isGroup && !unsafe) {
+            // Check if user has grant or is trusted
+            if (hasGrantFn && hasGrantFn(userId, cmd.name)) {
+              statusTags.push("[已授权]");
+            } else if (isTrustedFn && isTrustedFn(userId)) {
+              statusTags.push("[受信可用]");
+            } else {
+              statusTags.push("[需授权]");
+            }
+          }
+          const status = statusTags.length > 0 ? ` ${statusTags.join(" ")}` : "";
+          cmdLines.push(`  /${cmd.name}${aliases}${dmLabel}${status} — ${cmd.description}${cmd.usage ? ` | 用法: ${cmd.usage}` : ""}`);
         }
         if (cmdLines.length > 0) {
           systemPrompt += `\n\n=== 可用命令 ===\n${cmdLines.join("\n")}\n=== 命令结束 ===`;

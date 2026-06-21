@@ -1661,6 +1661,37 @@ export class YuanbaoBot {
 
     if (!this.llmEngine.isReady) {
       this.log.debug("tryLlmAutoReply: llmEngine exists but isReady=false (enabled=false or provider not configured)");
+      // Send configuration hint to the user (once per session)
+      if (!this.llmHintSent) {
+        this.llmHintSent = true;
+        // Check if the user is the master (bot owner)
+        let isMaster: boolean;
+        try {
+          const { getMasterUserId } = await import("./business/trust.js");
+          const masterId = getMasterUserId() ?? this.account.botOwnerId;
+          isMaster = masterId === chatMessage.fromUserId;
+        } catch {
+          isMaster = this.account.botOwnerId === chatMessage.fromUserId;
+        }
+        const hint = isMaster
+          ? "🤖 LLM 尚未配置，无法自动回复。\n\n" +
+            "配置方法（私聊中执行）:\n" +
+            "  /llm config — 交互式配置向导\n" +
+            "  /llm provider <供应商> — 设置供应商\n" +
+            "  /llm key <API Key> — 设置 API Key\n" +
+            "  /llm model <模型名> — 设置模型\n\n" +
+            "配置完成后将自动恢复回复功能。"
+          : "🤖 机器人尚未配置 AI 回复功能，请联系机器人主人进行配置。";
+        try {
+          if (chatMessage.chatType === "group" && chatMessage.groupCode) {
+            await this.sendGroupMessage(chatMessage.groupCode, hint);
+          } else {
+            await this.sendDirectMessage(chatMessage.fromUserId, hint);
+          }
+        } catch {
+          // send failed — ignore
+        }
+      }
       return;
     }
 

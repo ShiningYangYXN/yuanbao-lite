@@ -88,21 +88,21 @@ export function register(cmdSys: CommandSystem): void {
           const batchType = args[0]?.toLowerCase();
           const validTypes = ["text", "sticker", "image", "file"];
           if (!validTypes.includes(batchType ?? "")) {
-            await ctx.reply(
+            await ctx.replyDoc(
               "用法:\n" +
               "  /batch [--spam] text    <目标> <数量> <间隔ms> \"模板${i}\"\n" +
               "  /batch [--spam] sticker <目标> <数量> <间隔ms> <stickerId模板>\n" +
               "  /batch [--spam] image   <目标> <数量> <间隔ms> <文件路径模板>\n" +
               "  /batch [--spam] file    <目标> <数量> <间隔ms> <文件路径模板>\n" +
               "  /batch list | stop [id] | status [id]\n" +
-              "--spam: 突破100条上限（慎用）\n" +
+              "--spam: 突破数量和频率限制（慎用）\n" +
               "模板变量: ${i}(索引), ${n}(序号), ${total}(总数), ${timestamp}(时间戳)",
             );
             return;
           }
 
           if (args.length < 5) {
-            await ctx.reply(`用法: /batch ${spam ? "--spam " : ""}${batchType} <目标> <数量> <间隔ms> <模板>`);
+            await ctx.replyDoc(`用法: /batch ${spam ? "--spam " : ""}${batchType} <目标> <数量> <间隔ms> <模板>`);
             return;
           }
           const targetArg = args[1];
@@ -115,8 +115,9 @@ export function register(cmdSys: CommandSystem): void {
             await ctx.reply(spam ? "数量必须 >= 1 (--spam 已突破上限)" : "数量范围: 1-100 (用 --spam 突破)");
             return;
           }
-          if (isNaN(intervalMs) || intervalMs < 500) {
-            await ctx.reply("间隔最小 500ms");
+          const minInterval = spam ? 0 : 500;
+          if (isNaN(intervalMs) || intervalMs < minInterval) {
+            await ctx.reply(spam ? "间隔必须 >= 0 (--spam 已突破频率限制)" : "间隔最小 500ms (用 --spam 突破)");
             return;
           }
 
