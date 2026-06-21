@@ -25,16 +25,22 @@ export function register(cmdSys: CommandSystem): void {
             return;
           }
           const filePath = ctx.args[0];
-          const target = ctx.args[1] || (ctx.isGroup ? ctx.groupCode : ctx.message.fromUserId);
-          if (!target) {
-            await ctx.reply("❌ 请指定发送目标");
-            return;
+          // Use resolveTarget if target arg provided, otherwise default to current chat
+          let target: string;
+          let isGroup: boolean;
+          if (ctx.args[1]) {
+            const resolved = await ctx.resolveTarget(ctx.args[1]);
+            target = resolved.targetId;
+            isGroup = resolved.isGroup;
+          } else {
+            target = ctx.isGroup ? (ctx.groupCode ?? ctx.message.fromUserId) : ctx.message.fromUserId;
+            isGroup = ctx.isGroup;
           }
           try {
             await ctx.bot.sendFile({
               to: target,
               filePath,
-              isGroup: ctx.isGroup,
+              isGroup,
             });
             await ctx.reply(`✅ 文件已发送到 ${target}`);
           } catch (err) {

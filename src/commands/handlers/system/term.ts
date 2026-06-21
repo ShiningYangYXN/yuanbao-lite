@@ -217,11 +217,8 @@ export function register(cmdSys: CommandSystem): void {
         : "$ ";
 
       const cleanOutput = output || "(无输出)";
-      const finalOutput = cleanOutput.length > 3000
-        ? cleanOutput.slice(0, 3000) + `\n... (截断，共 ${cleanOutput.length} 字符)`
-        : cleanOutput;
-
-      await reply(`${promptStr}${cmd}\n${finalOutput}\n[退出码: ${session.lastExitCode ?? 0}]`);
+      // Interactive terminal never truncates output — user expects full output
+      await reply(`${promptStr}${cmd}\n${cleanOutput}\n[退出码: ${session.lastExitCode ?? 0}]`);
       return true;
     };
 }

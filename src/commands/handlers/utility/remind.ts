@@ -15,7 +15,7 @@ export function register(cmdSys: CommandSystem): void {
         name: "remind",
         aliases: ["提醒", "timer"],
         description: "设置定时提醒（支持任意时长、时间点、目标，持久化）",
-        usage: "/remind <时间> <消息> [--to <目标ID>] [--group]\n/remind list|cancel <ID>",
+        usage: "/remind <时间> <消息> [--to <目标ID>]\n/remind list|cancel <ID>",
         category: "utility" as CommandCategory,
         dmOnly: true,
         handler: async (ctx) => {
@@ -53,24 +53,25 @@ export function register(cmdSys: CommandSystem): void {
               "  组合: 1d2h3m\n" +
               "  时间点: 14:30\n" +
               "  完整: 2026-06-18 14:30\n" +
-              "目标: --to <用户ID/群号> (默认当前会话), --group (发到群)\n\n" +
+              "目标: --to <用户ID/群号/别名> (默认当前会话, 自动识别群聊/私聊)\n\n" +
               "管理: /remind list | /remind cancel <ID>",
             );
             return;
           }
 
           const timeStr = ctx.args[0];
-          // Parse --to and --group flags
+          // Parse --to flag (target ID). --group is deprecated — auto-detection
+          // via resolveTarget (alias → 9-digit group → user ID) is used instead.
           const remaining = ctx.args.slice(1);
-          let targetId: string | undefined;
-          let isGroup = false;
+          let targetArg: string | undefined;
           const msgParts: string[] = [];
           for (let i = 0; i < remaining.length; i++) {
             if (remaining[i] === "--to" && remaining[i + 1]) {
-              targetId = remaining[i + 1];
+              targetArg = remaining[i + 1];
               i++;
             } else if (remaining[i] === "--group") {
-              isGroup = true;
+              // Deprecated: ignored, auto-detection handles group vs DM.
+              // Kept for backward compat — does nothing now.
             } else {
               msgParts.push(remaining[i]);
             }
@@ -87,10 +88,16 @@ export function register(cmdSys: CommandSystem): void {
             return;
           }
 
-          // Default target: current chat
-          if (!targetId) {
+          // Default target: current chat. Otherwise resolve via resolveTarget.
+          let targetId: string;
+          let isGroup: boolean;
+          if (!targetArg) {
             targetId = ctx.isGroup ? (ctx.groupCode ?? ctx.message.fromUserId) : ctx.message.fromUserId;
             isGroup = ctx.isGroup;
+          } else {
+            const resolved = await ctx.resolveTarget(targetArg);
+            targetId = resolved.targetId;
+            isGroup = resolved.isGroup;
           }
 
           const id = addReminder({

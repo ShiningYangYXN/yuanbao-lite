@@ -15,7 +15,7 @@ export function register(cmdSys: CommandSystem): void {
         name: "cron",
         aliases: ["定时任务", "周期提醒"],
         description: "设置周期性定时任务（cron表达式，持久化，可指定目标）",
-        usage: "/cron <cron表达式> <消息> [--to <目标ID>] [--group]\n/cron list|cancel <ID>",
+        usage: "/cron <cron表达式> <消息> [--to <目标ID>]\n/cron list|cancel <ID>",
         category: "utility" as CommandCategory,
         dmOnly: true,
         handler: async (ctx) => {
@@ -47,7 +47,7 @@ export function register(cmdSys: CommandSystem): void {
 
           if (ctx.args.length < 6) {
             await ctx.reply(
-              "用法: /cron <cron表达式> <消息> [--to <目标ID>] [--group]\n" +
+              "用法: /cron <cron表达式> <消息> [--to <目标ID>]\n" +
               "cron表达式: 分 时 日 月 周 (5个字段)\n" +
               "  * — 任意值\n" +
               "  star/N — 每N个单位\n" +
@@ -62,17 +62,17 @@ export function register(cmdSys: CommandSystem): void {
           }
 
           const cronExpr = ctx.args.slice(0, 5).join(" ");
-          // Parse --to and --group flags from remaining args
+          // Parse --to flag. --group is deprecated — auto-detection via
+          // resolveTarget (alias → 9-digit group → user ID) is used instead.
           const remaining = ctx.args.slice(5);
-          let targetId: string | undefined;
-          let isGroup = false;
+          let targetArg: string | undefined;
           const msgParts: string[] = [];
           for (let i = 0; i < remaining.length; i++) {
             if (remaining[i] === "--to" && remaining[i + 1]) {
-              targetId = remaining[i + 1];
+              targetArg = remaining[i + 1];
               i++;
             } else if (remaining[i] === "--group") {
-              isGroup = true;
+              // Deprecated: ignored, auto-detection handles group vs DM.
             } else {
               msgParts.push(remaining[i]);
             }
@@ -95,10 +95,16 @@ export function register(cmdSys: CommandSystem): void {
             return;
           }
 
-          // Default target: current chat
-          if (!targetId) {
+          // Default target: current chat. Otherwise resolve via resolveTarget.
+          let targetId: string;
+          let isGroup: boolean;
+          if (!targetArg) {
             targetId = ctx.isGroup ? (ctx.groupCode ?? ctx.message.fromUserId) : ctx.message.fromUserId;
             isGroup = ctx.isGroup;
+          } else {
+            const resolved = await ctx.resolveTarget(targetArg);
+            targetId = resolved.targetId;
+            isGroup = resolved.isGroup;
           }
 
           const id = addReminder({

@@ -14,8 +14,8 @@ export function register(cmdSys: CommandSystem): void {
   cmdSys.register({
         name: "batch",
         aliases: ["批量"],
-        description: "批量发送消息（text/sticker/image/file，支持JS插值模板）",
-        usage: "/batch <text|sticker|image|file> <目标> <数量> <间隔ms> <模板>\n/batch list | stop [id] | status [id]",
+        description: "批量发送消息（text/sticker/image/file，支持JS插值模板，--spam突破数量上限）",
+        usage: "/batch [--spam] <text|sticker|image|file> <目标> <数量> <间隔ms> <模板>\n/batch list | stop [id] | status [id]",
         category: "utility" as CommandCategory,
         requireConnected: true,
         dmOnly: true,
@@ -78,31 +78,41 @@ export function register(cmdSys: CommandSystem): void {
           }
 
           // ─── Batch-start sub-commands: text | sticker | image | file ───
+          // Parse --spam flag (allows突破 100 count limit)
+          let args = [...ctx.args];
+          let spam = false;
+          if (args[0] === "--spam") {
+            spam = true;
+            args = args.slice(1);
+          }
+          const batchType = args[0]?.toLowerCase();
           const validTypes = ["text", "sticker", "image", "file"];
-          if (!validTypes.includes(subCmd ?? "")) {
+          if (!validTypes.includes(batchType ?? "")) {
             await ctx.reply(
               "用法:\n" +
-              "  /batch text    <目标> <数量> <间隔ms> \"模板${i}\"\n" +
-              "  /batch sticker <目标> <数量> <间隔ms> <stickerId模板>\n" +
-              "  /batch image   <目标> <数量> <间隔ms> <文件路径模板>\n" +
-              "  /batch file    <目标> <数量> <间隔ms> <文件路径模板>\n" +
+              "  /batch [--spam] text    <目标> <数量> <间隔ms> \"模板${i}\"\n" +
+              "  /batch [--spam] sticker <目标> <数量> <间隔ms> <stickerId模板>\n" +
+              "  /batch [--spam] image   <目标> <数量> <间隔ms> <文件路径模板>\n" +
+              "  /batch [--spam] file    <目标> <数量> <间隔ms> <文件路径模板>\n" +
               "  /batch list | stop [id] | status [id]\n" +
+              "--spam: 突破100条上限（慎用）\n" +
               "模板变量: ${i}(索引), ${n}(序号), ${total}(总数), ${timestamp}(时间戳)",
             );
             return;
           }
 
-          if (ctx.args.length < 5) {
-            await ctx.reply(`用法: /batch ${subCmd} <目标> <数量> <间隔ms> <模板>`);
+          if (args.length < 5) {
+            await ctx.reply(`用法: /batch ${spam ? "--spam " : ""}${batchType} <目标> <数量> <间隔ms> <模板>`);
             return;
           }
-          const target = ctx.args[1];
-          const count = parseInt(ctx.args[2], 10);
-          const intervalMs = parseInt(ctx.args[3], 10);
-          const template = ctx.args.slice(4).join(" ");
+          const targetArg = args[1];
+          const count = parseInt(args[2], 10);
+          const intervalMs = parseInt(args[3], 10);
+          const template = args.slice(4).join(" ");
 
-          if (isNaN(count) || count < 1 || count > 100) {
-            await ctx.reply("数量范围: 1-100");
+          const maxCount = spam ? Infinity : 100;
+          if (isNaN(count) || count < 1 || count > maxCount) {
+            await ctx.reply(spam ? "数量必须 >= 1 (--spam 已突破上限)" : "数量范围: 1-100 (用 --spam 突破)");
             return;
           }
           if (isNaN(intervalMs) || intervalMs < 500) {
@@ -110,35 +120,27 @@ export function register(cmdSys: CommandSystem): void {
             return;
           }
 
-          // Determine isGroup based on target
-          const isGroup = (() => {
-            if (target.startsWith("g:")) return true;
-            if (target.includes("@")) return false;
-            const groupStore = ctx.bot.getGroupStore();
-            if (groupStore && groupStore.get(target)) return true;
-            if (/^\d{5,}$/.test(target)) return true;
-            return false;
-          })();
-          const cleanTarget = target.startsWith("g:") ? target.slice(2) : target;
+          // Use resolveTarget for automatic group/DM detection
+          const { targetId: cleanTarget, isGroup } = await ctx.resolveTarget(targetArg);
 
           // Generate a unique batch ID (so multiple batches can run concurrently)
           const batchId = `batch-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 
           const { startBatch, cleanupBatch } = await import("../../../business/batch.js");
           const config: Record<string, unknown> = {
-            type: subCmd,
+            type: batchType,
             target: cleanTarget,
             isGroup,
             count,
             intervalMs,
             template,
           };
-          if (subCmd === "sticker") config.stickerTemplate = template;
-          if (subCmd === "image" || subCmd === "file") config.fileTemplate = template;
+          if (batchType === "sticker") config.stickerTemplate = template;
+          if (batchType === "image" || batchType === "file") config.fileTemplate = template;
 
           const runner = startBatch(batchId, ctx.bot, config as never);
 
-          await ctx.reply(`🔄 批量发送已启动 [${batchId}]: ${subCmd} ${count}条, 间隔${intervalMs}ms, 目标 ${cleanTarget}`);
+          await ctx.reply(`🔄 批量发送已启动 [${batchId}]: ${batchType} ${count}条, 间隔${intervalMs}ms, 目标 ${cleanTarget}${spam ? " [--spam]" : ""}`);
 
           runner.run().then((result) => {
             cleanupBatch(batchId);
