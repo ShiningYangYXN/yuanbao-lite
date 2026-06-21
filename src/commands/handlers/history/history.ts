@@ -40,26 +40,45 @@ export function register(cmdSys: CommandSystem): void {
                 await ctx.reply(`未找到包含 "${keyword}" 的消息`);
                 return;
               }
-              const output = formatHistoryList(ctx.showAll ? results : results.slice(-20), { botId, colorize: false, title: `搜索结果 (${results.length}条)` });
-              await ctx.reply(output);
+              const display = ctx.useTable ? results : (ctx.showAll ? results : results.slice(-20));
+              if (ctx.useTable) {
+                const { formatTable } = await import("../../utils/table.js");
+                const rows = display.map(m => [
+                  new Date(m.timestamp).toLocaleString("zh-CN"),
+                  m.fromNickname || m.fromUserId,
+                  m.chatType === "group" ? (m.groupCode || "") : "DM",
+                  (m.text || "(非文本)").substring(0, 50),
+                ]);
+                await ctx.reply(`搜索结果 (${results.length}条)\n${formatTable(["时间", "发送者", "群号", "内容"], rows)}`);
+              } else {
+                const output = formatHistoryList(display, { botId, colorize: false, title: `搜索结果 (${results.length}条)` });
+                await ctx.reply(output);
+              }
               break;
             }
             case "stats":
             case "统计": {
               const stats = store.getStats();
-              await ctx.reply(
-                `📊 消息统计:\n` +
-                `  总消息: ${stats.totalMessages}\n` +
-                `  私聊: ${stats.directMessages}, 群聊: ${stats.groupMessages}\n` +
-                `  独立用户: ${stats.uniqueUsers}, 独立群组: ${stats.uniqueGroups}\n` +
-                `  时间范围: ${stats.oldestAt ? new Date(stats.oldestAt).toLocaleString("zh-CN") : "无"} ~ ${stats.newestAt ? new Date(stats.newestAt).toLocaleString("zh-CN") : "无"}`,
-              );
+              const kv: [string, string][] = [
+                ["总消息", String(stats.totalMessages)],
+                ["私聊", String(stats.directMessages)],
+                ["群聊", String(stats.groupMessages)],
+                ["独立用户", String(stats.uniqueUsers)],
+                ["独立群组", String(stats.uniqueGroups)],
+                ["最早", stats.oldestAt ? new Date(stats.oldestAt).toLocaleString("zh-CN") : "无"],
+                ["最新", stats.newestAt ? new Date(stats.newestAt).toLocaleString("zh-CN") : "无"],
+              ];
+              if (ctx.useTable) {
+                const { formatTable } = await import("../../utils/table.js");
+                await ctx.reply(`📊 消息统计\n${formatTable(["属性", "值"], kv)}`);
+              } else {
+                await ctx.reply(`📊 消息统计:\n${kv.map(([k, v]) => `  ${k}: ${v}`).join("\n")}`);
+              }
               break;
             }
             case "recent":
             case "最近": {
               const count = parseInt(ctx.args[1] || "10", 10);
-              // Filter by current conversation: group → groupCode, DM → fromUserId
               const filter = ctx.isGroup && ctx.groupCode
                 ? { groupCode: ctx.groupCode }
                 : { fromUserId: ctx.message.fromUserId };
@@ -69,8 +88,18 @@ export function register(cmdSys: CommandSystem): void {
                 return;
               }
               const scopeLabel = ctx.isGroup ? `群${ctx.groupCode}` : "当前私聊";
-              const output = formatHistoryList(recent, { botId, colorize: false, title: `${scopeLabel} 最近消息` });
-              await ctx.reply(output);
+              if (ctx.useTable) {
+                const { formatTable } = await import("../../utils/table.js");
+                const rows = recent.map(m => [
+                  new Date(m.timestamp).toLocaleString("zh-CN"),
+                  m.fromNickname || m.fromUserId,
+                  (m.text || "(非文本)").substring(0, 50),
+                ]);
+                await ctx.reply(`${scopeLabel} 最近消息\n${formatTable(["时间", "发送者", "内容"], rows)}`);
+              } else {
+                const output = formatHistoryList(recent, { botId, colorize: false, title: `${scopeLabel} 最近消息` });
+                await ctx.reply(output);
+              }
               break;
             }
             case "user": {
@@ -85,8 +114,18 @@ export function register(cmdSys: CommandSystem): void {
                 await ctx.reply(`未找到用户 ${userId} 的消息`);
                 return;
               }
-              const output = formatHistoryList(msgs, { botId, colorize: false, title: `用户 ${userId} 的消息` });
-              await ctx.reply(output);
+              if (ctx.useTable) {
+                const { formatTable } = await import("../../utils/table.js");
+                const rows = msgs.map(m => [
+                  new Date(m.timestamp).toLocaleString("zh-CN"),
+                  m.chatType === "group" ? (m.groupCode || "") : "DM",
+                  (m.text || "(非文本)").substring(0, 50),
+                ]);
+                await ctx.reply(`用户 ${userId} 的消息\n${formatTable(["时间", "群号", "内容"], rows)}`);
+              } else {
+                const output = formatHistoryList(msgs, { botId, colorize: false, title: `用户 ${userId} 的消息` });
+                await ctx.reply(output);
+              }
               break;
             }
             case "group": {
@@ -101,8 +140,18 @@ export function register(cmdSys: CommandSystem): void {
                 await ctx.reply(`未找到群 ${groupCode} 的消息`);
                 return;
               }
-              const output = formatHistoryList(msgs, { botId, colorize: false, title: `群 ${groupCode} 的消息` });
-              await ctx.reply(output);
+              if (ctx.useTable) {
+                const { formatTable } = await import("../../utils/table.js");
+                const rows = msgs.map(m => [
+                  new Date(m.timestamp).toLocaleString("zh-CN"),
+                  m.fromNickname || m.fromUserId,
+                  (m.text || "(非文本)").substring(0, 50),
+                ]);
+                await ctx.reply(`群 ${groupCode} 的消息\n${formatTable(["时间", "发送者", "内容"], rows)}`);
+              } else {
+                const output = formatHistoryList(msgs, { botId, colorize: false, title: `群 ${groupCode} 的消息` });
+                await ctx.reply(output);
+              }
               break;
             }
             default:

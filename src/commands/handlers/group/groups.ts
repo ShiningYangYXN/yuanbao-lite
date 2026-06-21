@@ -156,12 +156,23 @@ export function register(cmdSys: CommandSystem): void {
                   }
                 }
               }
-              const lines = all.map(g => {
-                const fav = g.favorite ? "⭐" : " ";
-                const displayName = g.name || g.groupName || "未知";
-                return `  ${fav} ${g.groupCode} — ${displayName}${g.tag ? ` [${g.tag}]` : ""}`;
-              });
-              await ctx.reply(`📋 收藏群聊列表:\n${lines.join("\n")}\n共 ${all.length} 个群聊`);
+              if (ctx.useTable) {
+                const { formatTable } = await import("../../utils/table.js");
+                const rows = all.map(g => [
+                  g.groupCode,
+                  g.name || g.groupName || "未知",
+                  g.tag || "",
+                  g.favorite ? "⭐" : "",
+                ]);
+                await ctx.reply(`📋 收藏群聊列表 (${all.length} 个)\n${formatTable(["群号", "名称", "标签", "收藏"], rows)}`);
+              } else {
+                const lines = all.map(g => {
+                  const fav = g.favorite ? "⭐" : " ";
+                  const displayName = g.name || g.groupName || "未知";
+                  return `  ${fav} ${g.groupCode} — ${displayName}${g.tag ? ` [${g.tag}]` : ""}`;
+                });
+                await ctx.reply(`📋 收藏群聊列表:\n${lines.join("\n")}\n共 ${all.length} 个群聊`);
+              }
               break;
             }
           }

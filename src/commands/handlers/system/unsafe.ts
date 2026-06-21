@@ -42,31 +42,35 @@ export function register(cmdSys: CommandSystem): void {
 
           // /unsafe status is globally open — no trust check, no dmOnly
           if (subCmd === "status") {
-            const lines: string[] = [];
-            if (cmdSys.isUnsafeMode()) {
-              if (cmdSys.isUnsafeForever()) {
-                lines.push("🔓 危险模式: 已永久开启");
-              } else {
-                lines.push("🔓 危险模式: 已开启");
-              }
-            } else {
-              lines.push("🔒 危险模式: 已关闭");
-            }
+            const statusLine = cmdSys.isUnsafeMode()
+              ? (cmdSys.isUnsafeForever() ? "🔓 已永久开启" : "🔓 已开启")
+              : "🔒 已关闭";
 
-            // Show authorized commands whitelist
             const allowed = cmdSys.getAllowedCommands();
-            if (allowed.length > 0) {
-              const now = Date.now();
-              lines.push("", `📋 已授权命令 (${allowed.length}):`);
-              for (const a of allowed) {
-                const expiry = a.forever ? "永久" : `${Math.ceil((a.expiresAt - now) / 60000)}分钟后过期`;
-                lines.push(`  ${a.name} — ${expiry}`);
-              }
-            } else {
-              lines.push("", "📋 已授权命令: (无)");
-            }
+            const now = Date.now();
 
-            await ctx.reply(lines.join("\n"));
+            if (ctx.useTable) {
+              const { formatTable } = await import("../../utils/table.js");
+              const kv: [string, string][] = [["危险模式", statusLine]];
+              if (allowed.length > 0) {
+                for (const a of allowed) {
+                  kv.push([a.name, a.forever ? "永久" : `${Math.ceil((a.expiresAt - now) / 60000)}分钟后过期`]);
+                }
+              }
+              await ctx.reply(`📋 危险模式状态\n${formatTable(["属性", "值"], kv)}`);
+            } else {
+              const lines: string[] = [statusLine];
+              if (allowed.length > 0) {
+                lines.push("", `📋 已授权命令 (${allowed.length}):`);
+                for (const a of allowed) {
+                  const expiry = a.forever ? "永久" : `${Math.ceil((a.expiresAt - now) / 60000)}分钟后过期`;
+                  lines.push(`  ${a.name} — ${expiry}`);
+                }
+              } else {
+                lines.push("", "📋 已授权命令: (无)");
+              }
+              await ctx.reply(lines.join("\n"));
+            }
             return;
           }
 

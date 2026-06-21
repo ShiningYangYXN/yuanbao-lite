@@ -30,15 +30,27 @@ export function register(cmdSys: CommandSystem): void {
             return;
           }
           const maxResults = ctx.showAll ? results.messages.length : 15;
-          const lines = results.messages.slice(0, maxResults).map(msg => {
-            const time = new Date(msg.timestamp).toLocaleString("zh-CN");
-            const sender = msg.fromNickname || msg.fromUserId;
-            const shortId = msg.id ? (msg.id.length > 8 ? msg.id.slice(-8) : msg.id) : "?";
-            const text = ctx.showAll ? msg.text : msg.text.substring(0, 50);
-            return `  [${time}] ${sender}(${msg.fromUserId}) #${shortId}: ${text}`;
-          });
-          const suffix = !ctx.showAll && results.messages.length > 15 ? `\n  ... 及其他 ${results.messages.length - 15} 条 (用 /hsearch --all 查看全部)` : "";
-          await ctx.reply(`🔍 历史搜索结果:\n${lines.join("\n")}${suffix}\n共 ${results.total} 条结果`);
+          const display = results.messages.slice(0, maxResults);
+          if (ctx.useTable) {
+            const { formatTable } = await import("../../utils/table.js");
+            const rows = display.map(msg => [
+              msg.id || "?",
+              new Date(msg.timestamp).toLocaleString("zh-CN"),
+              msg.fromNickname || msg.fromUserId,
+              (msg.text || "(非文本)").substring(0, 50),
+            ]);
+            await ctx.reply(`🔍 历史搜索结果 (${results.total} 条)\n${formatTable(["消息ID", "时间", "发送者", "内容"], rows)}`);
+          } else {
+            const lines = display.map(msg => {
+              const time = new Date(msg.timestamp).toLocaleString("zh-CN");
+              const sender = msg.fromNickname || msg.fromUserId;
+              const shortId = msg.id ? (msg.id.length > 8 ? msg.id.slice(-8) : msg.id) : "?";
+              const text = ctx.showAll ? msg.text : msg.text.substring(0, 50);
+              return `  [${time}] ${sender}(${msg.fromUserId}) #${shortId}: ${text}`;
+            });
+            const suffix = !ctx.showAll && results.messages.length > 15 ? `\n  ... 及其他 ${results.messages.length - 15} 条 (用 /hsearch --all 查看全部)` : "";
+            await ctx.reply(`🔍 历史搜索结果:\n${lines.join("\n")}${suffix}\n共 ${results.total} 条结果`);
+          }
         },
       });
 }

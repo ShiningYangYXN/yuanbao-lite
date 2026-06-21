@@ -67,25 +67,30 @@ export function register(cmdSys: CommandSystem): void {
             const autoReply = ctx.bot.isLlmAutoReply();
             if (engine) {
               const config = engine.getConfig();
-              const lines = [
-                "🤖 LLM 接管状态:",
-                `  已启用: ${config.enabled ? "✅" : "❌"}`,
-                `  自动回复: ${autoReply ? "🟢 已开启" : "⚪ 未开启"}`,
-                `  SDK就绪: ${engine.isReady ? "✅" : "❌"}`,
-                `  供应商: ${config.provider}`,
-                `  模型: ${config.model || "(默认)"}`,
-                `  温度: ${config.temperature}`,
-                `  Markdown模式: ${config.markdownRawMode ? "原始(raw)" : "IM格式化"}`,
-                `  群聊响应: ${config.enableInGroup ? "✅" : "❌"}`,
-                `  私聊响应: ${config.enableInDirect ? "✅" : "❌"}`,
-                `  群聊需@: ${config.requireMentionInGroup ? "✅" : "❌"}`,
-                `  消息合并窗口: ${config.mergeWindowMs}ms`,
-                `  响应冷却时间: ${config.cooldownMs}ms`,
-                `  最大迭代轮数: ${config.maxIterate === 0 ? "无限" : config.maxIterate}`,
-                `  活跃对话: ${engine.getConversationManager().size}`,
-                `  配置持久化: ${engine.getPersistencePath() ? "✅" : "❌"}`,
+              const kv: [string, string][] = [
+                ["已启用", config.enabled ? "✅" : "❌"],
+                ["自动回复", autoReply ? "🟢 已开启" : "⚪ 未开启"],
+                ["SDK就绪", engine.isReady ? "✅" : "❌"],
+                ["供应商", config.provider],
+                ["模型", config.model || "(默认)"],
+                ["温度", String(config.temperature)],
+                ["Markdown模式", config.markdownRawMode ? "原始(raw)" : "IM格式化"],
+                ["群聊响应", config.enableInGroup ? "✅" : "❌"],
+                ["私聊响应", config.enableInDirect ? "✅" : "❌"],
+                ["群聊需@", config.requireMentionInGroup ? "✅" : "❌"],
+                ["消息合并窗口", `${config.mergeWindowMs}ms`],
+                ["响应冷却时间", `${config.cooldownMs}ms`],
+                ["最大迭代轮数", config.maxIterate === 0 ? "无限" : String(config.maxIterate)],
+                ["活跃对话", String(engine.getConversationManager().size)],
+                ["配置持久化", engine.getPersistencePath() ? "✅" : "❌"],
               ];
-              await ctx.reply(lines.join("\n"));
+              if (ctx.useTable) {
+                const { formatTable } = await import("../../utils/table.js");
+                await ctx.reply(`🤖 LLM 接管状态\n${formatTable(["属性", "值"], kv)}`);
+              } else {
+                const lines = ["🤖 LLM 接管状态:", ...kv.map(([k, v]) => `  ${k}: ${v}`)];
+                await ctx.reply(lines.join("\n"));
+              }
             } else {
               await ctx.reply("🤖 LLM 未配置。请设置 llmConfig 后重启");
             }

@@ -66,12 +66,24 @@ export function register(cmdSys: CommandSystem): void {
                   await ctx.reply("暂无账号。使用 /account add 添加账号");
                   return;
                 }
-                const lines = accounts.map(a => {
-                  const marker = a.id === activeId ? "→" : " ";
-                  const state = a.state.connected ? "✅" : "❌";
-                  return `  ${marker} ${a.id} — ${a.name || "未命名"} ${state} (${a.state.status})`;
-                });
-                await ctx.reply(`📋 账号列表:\n${lines.join("\n")}`);
+                if (ctx.useTable) {
+                  const { formatTable } = await import("../../utils/table.js");
+                  const rows = accounts.map(a => [
+                    a.id,
+                    a.name || "未命名",
+                    a.id === activeId ? "→ 活跃" : "",
+                    a.state.connected ? "✅" : "❌",
+                    a.state.status,
+                  ]);
+                  await ctx.reply(`📋 账号列表 (${accounts.length} 个)\n${formatTable(["ID", "名称", "状态", "连接", "详情"], rows)}`);
+                } else {
+                  const lines = accounts.map(a => {
+                    const marker = a.id === activeId ? "→" : " ";
+                    const state = a.state.connected ? "✅" : "❌";
+                    return `  ${marker} ${a.id} — ${a.name || "未命名"} ${state} (${a.state.status})`;
+                  });
+                  await ctx.reply(`📋 账号列表:\n${lines.join("\n")}`);
+                }
               } catch (err) {
                 await ctx.reply(`❌ 获取账号列表失败: ${(err as Error).message}`);
               }

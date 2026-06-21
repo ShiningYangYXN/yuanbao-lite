@@ -23,12 +23,22 @@ export function register(cmdSys: CommandSystem): void {
             await ctx.reply("暂无可用命令");
             return;
           }
-          const lines: string[] = [`📋 所有命令 (${visible.length} 个):`];
-          for (const cmd of visible) {
-            const aliases = cmd.aliases?.length ? ` (${cmd.aliases.join(", ")})` : "";
-            lines.push(`  ${cmdSys.config.prefix}${cmd.name}${aliases}`);
+          if (ctx.useTable) {
+            const { formatTable } = await import("../../utils/table.js");
+            const rows = visible.map(cmd => [
+              `${cmdSys.config.prefix}${cmd.name}`,
+              cmd.aliases?.length ? cmd.aliases.join(", ") : "",
+              cmd.description || "",
+            ]);
+            await ctx.reply(`📋 所有命令 (${visible.length} 个)\n${formatTable(["命令", "别名", "描述"], rows)}`);
+          } else {
+            const lines: string[] = [`📋 所有命令 (${visible.length} 个):`];
+            for (const cmd of visible) {
+              const aliases = cmd.aliases?.length ? ` (${cmd.aliases.join(", ")})` : "";
+              lines.push(`  ${cmdSys.config.prefix}${cmd.name}${aliases}`);
+            }
+            await ctx.reply(lines.join("\n"));
           }
-          await ctx.reply(lines.join("\n"));
         },
       });
 }

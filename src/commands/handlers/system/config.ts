@@ -34,22 +34,27 @@ export function register(cmdSys: CommandSystem): void {
             case "show": {
               const active = store.getActiveProfileName();
               const pr = store.getActiveProfile();
-              const lines = [
-                "📋 当前配置:",
-                `  档案: ${active}`,
-                `  App Key: ${pr.appKey ? `***${pr.appKey.slice(-4)}` : "(未设置)"}`,
-                `  App Secret: ${pr.appSecret ? "***" + pr.appSecret.slice(-4) : "(未设置)"}`,
-                `  Token: ${pr.token ? "***" + pr.token.slice(-4) : "(未设置)"}`,
-                `  API域名: ${pr.apiDomain || "(默认)"}`,
-                `  WS地址: ${pr.wsUrl || "(默认)"}`,
-                `  日志级别: ${pr.logLevel || "(默认)"}`,
-                `  贴纸目录: ${pr.stickerDir || "(未设置)"}`,
-                `  下载目录: ${pr.downloadDir || store.getGlobal("downloadDir") || "(默认)"}`,
-                `  LLM供应商: ${pr.llmProvider || "(未设置)"}`,
-                `  LLM模型: ${pr.llmModel || "(未设置)"}`,
-                `  配置路径: ${store.getConfigDir()}`,
-              ];
-              await ctx.reply(lines.join("\n"));
+              const kv: [string, string][] = [
+                  ["档案", active],
+                  ["App Key", pr.appKey ? `***${pr.appKey.slice(-4)}` : "(未设置)"],
+                  ["App Secret", pr.appSecret ? "***" + pr.appSecret.slice(-4) : "(未设置)"],
+                  ["Token", pr.token ? "***" + pr.token.slice(-4) : "(未设置)"],
+                  ["API域名", pr.apiDomain || "(默认)"],
+                  ["WS地址", pr.wsUrl || "(默认)"],
+                  ["日志级别", pr.logLevel || "(默认)"],
+                  ["贴纸目录", pr.stickerDir || "(未设置)"],
+                  ["下载目录", pr.downloadDir || store.getGlobal("downloadDir") || "(默认)"],
+                  ["LLM供应商", pr.llmProvider || "(未设置)"],
+                  ["LLM模型", pr.llmModel || "(未设置)"],
+                  ["配置路径", store.getConfigDir()],
+                ];
+                if (ctx.useTable) {
+                  const { formatTable } = await import("../../utils/table.js");
+                  await ctx.reply(`📋 当前配置\n${formatTable(["属性", "值"], kv)}`);
+                } else {
+                  const lines = ["📋 当前配置:", ...kv.map(([k, v]) => `  ${k}: ${v}`)];
+                  await ctx.reply(lines.join("\n"));
+                }
               return;
             }
 

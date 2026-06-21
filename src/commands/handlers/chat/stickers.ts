@@ -30,11 +30,18 @@ export function register(cmdSys: CommandSystem): void {
               await ctx.reply(`未找到匹配 "${query}" 的贴纸`);
             } else {
               const maxStickers = ctx.showAll ? results.length : 20;
-              const lines = results.slice(0, maxStickers).map(s =>
-                `  emoji_${s.stickerId} — ${s.name}${s.description ? ` (${s.description.split(/\s+/).slice(0, 3).join(" ")})` : ""}`
-              );
-              const suffix = !ctx.showAll && results.length > 20 ? `\n  ... 及其他 ${results.length - 20} 个 (用 /stickers search --all 查看全部)` : "";
-              await ctx.reply(`🎨 搜索结果:\n${lines.join("\n")}${suffix}`);
+              const display = results.slice(0, maxStickers);
+              if (ctx.useTable) {
+                const { formatTable } = await import("../../utils/table.js");
+                const rows = display.map(s => [`emoji_${s.stickerId}`, s.name, s.description ? s.description.split(/\s+/).slice(0, 3).join(" ") : ""]);
+                await ctx.reply(`🎨 搜索结果 (${results.length} 个)\n${formatTable(["编号", "名称", "描述"], rows)}`);
+              } else {
+                const lines = display.map(s =>
+                  `  emoji_${s.stickerId} — ${s.name}${s.description ? ` (${s.description.split(/\s+/).slice(0, 3).join(" ")})` : ""}`
+                );
+                const suffix = !ctx.showAll && results.length > 20 ? `\n  ... 及其他 ${results.length - 20} 个 (用 /stickers search --all 查看全部)` : "";
+                await ctx.reply(`🎨 搜索结果:\n${lines.join("\n")}${suffix}`);
+              }
             }
           } else if (subCmd === "load" && subArgs[0]) {
             try {
@@ -46,25 +53,39 @@ export function register(cmdSys: CommandSystem): void {
           } else if (subCmd === "emojis") {
             const emojis = getBuiltinEmojis();
             const maxEmojis = ctx.showAll ? emojis.length : 30;
-            const lines = emojis.slice(0, maxEmojis).map(e =>
-              `  emoji_${e.stickerId} — ${e.name}${e.description ? ` (${e.description.split(" ").slice(0, 3).join(" ")})` : ""}`
-            );
-            const suffix = !ctx.showAll && emojis.length > 30 ? `\n  ... 及其他 ${emojis.length - 30} 个 (用 /stickers emojis --all 查看全部)` : "";
-            await ctx.reply(`🎨 内置表情 (用 /sticker emoji_编号 发送):\n${lines.join("\n")}${suffix}`);
+            const display = emojis.slice(0, maxEmojis);
+            if (ctx.useTable) {
+              const { formatTable } = await import("../../utils/table.js");
+              const rows = display.map(e => [`emoji_${e.stickerId}`, e.name, e.description ? e.description.split(" ").slice(0, 3).join(" ") : ""]);
+              await ctx.reply(`🎨 内置表情 (${emojis.length} 个)\n${formatTable(["编号", "名称", "描述"], rows)}`);
+            } else {
+              const lines = display.map(e =>
+                `  emoji_${e.stickerId} — ${e.name}${e.description ? ` (${e.description.split(" ").slice(0, 3).join(" ")})` : ""}`
+              );
+              const suffix = !ctx.showAll && emojis.length > 30 ? `\n  ... 及其他 ${emojis.length - 30} 个 (用 /stickers emojis --all 查看全部)` : "";
+              await ctx.reply(`🎨 内置表情 (用 /sticker emoji_编号 发送):\n${lines.join("\n")}${suffix}`);
+            }
           } else {
             // Default: show builtin emojis list
             const emojis = getBuiltinEmojis();
             const maxEmojis = ctx.showAll ? emojis.length : 30;
-            const lines = emojis.slice(0, maxEmojis).map(e =>
-              `  emoji_${e.stickerId} — ${e.name}${e.description ? ` (${e.description.split(" ").slice(0, 2).join(" ")})` : ""}`
-            );
-            const suffix = !ctx.showAll && emojis.length > 30 ? `\n  ... 及其他 ${emojis.length - 30} 个 (用 /stickers --all 查看全部)` : "";
-            const packs = getStickerPacks();
-            let packInfo = "";
-            if (packs.length > 0) {
-              packInfo = `\n📦 已加载 ${packs.length} 个自定义贴纸包`;
+            const display = emojis.slice(0, maxEmojis);
+            if (ctx.useTable) {
+              const { formatTable } = await import("../../utils/table.js");
+              const rows = display.map(e => [`emoji_${e.stickerId}`, e.name, e.description ? e.description.split(" ").slice(0, 2).join(" ") : ""]);
+              await ctx.reply(`🎨 内置表情 (${emojis.length} 个)\n${formatTable(["编号", "名称", "描述"], rows)}`);
+            } else {
+              const lines = display.map(e =>
+                `  emoji_${e.stickerId} — ${e.name}${e.description ? ` (${e.description.split(" ").slice(0, 2).join(" ")})` : ""}`
+              );
+              const suffix = !ctx.showAll && emojis.length > 30 ? `\n  ... 及其他 ${emojis.length - 30} 个 (用 /stickers --all 查看全部)` : "";
+              const packs = getStickerPacks();
+              let packInfo = "";
+              if (packs.length > 0) {
+                packInfo = `\n📦 已加载 ${packs.length} 个自定义贴纸包`;
+              }
+              await ctx.reply(`🎨 内置表情 (用 /sticker emoji_编号 发送):\n${lines.join("\n")}${suffix}${packInfo}\n💡 使用 /stickers search <关键词> 模糊搜索贴纸`);
             }
-            await ctx.reply(`🎨 内置表情 (用 /sticker emoji_编号 发送):\n${lines.join("\n")}${suffix}${packInfo}\n💡 使用 /stickers search <关键词> 模糊搜索贴纸`);
           }
         },
       });

@@ -113,8 +113,19 @@ export function register(cmdSys: CommandSystem): void {
             );
             return;
           }
-          const lines = stack.map((s, i) => `  ${i + 1}. ${s.label}`);
-          await ctx.reply(`📋 切换上下文栈 (层级 ${stack.length}):\n${lines.join("\n")}\n\n当前: ${stack[stack.length - 1].label}\n退出: /switch exit`);
+          if (ctx.useTable) {
+            const { formatTable } = await import("../../utils/table.js");
+            const rows = stack.map((s, i) => [
+              String(i + 1),
+              s.chatType === "group" ? "群聊" : "私聊",
+              s.target,
+              s.label,
+            ]);
+            await ctx.reply(`📋 切换上下文栈 (层级 ${stack.length})\n${formatTable(["层级", "类型", "目标", "标签"], rows)}\n\n当前: ${stack[stack.length - 1].label}\n退出: /switch exit`);
+          } else {
+            const lines = stack.map((s, i) => `  ${i + 1}. ${s.label}`);
+            await ctx.reply(`📋 切换上下文栈 (层级 ${stack.length}):\n${lines.join("\n")}\n\n当前: ${stack[stack.length - 1].label}\n退出: /switch exit`);
+          }
         },
       });
 }

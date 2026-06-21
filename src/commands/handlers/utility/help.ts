@@ -27,44 +27,63 @@ export function register(cmdSys: CommandSystem): void {
               await ctx.reply(`未知命令: ${cmdName}\n输入 /help 查看所有命令`);
               return;
             }
-            const lines = [
-              `📖 命令: ${cmdSys.config.prefix}${def.name}`,
-              `描述: ${def.description}`,
+            const kv: [string, string][] = [
+              ["命令", `${cmdSys.config.prefix}${def.name}`],
+              ["描述", def.description],
             ];
-            if (def.usage) lines.push(`用法: ${def.usage}`);
-            if (def.aliases?.length) lines.push(`别名: ${def.aliases.join(", ")}`);
-            if (def.category) lines.push(`分类: ${def.category}`);
+            if (def.usage) kv.push(["用法", def.usage]);
+            if (def.aliases?.length) kv.push(["别名", def.aliases.join(", ")]);
+            if (def.category) kv.push(["分类", def.category]);
             const flags: string[] = [];
             if (def.dmOnly) flags.push("仅私聊");
             if (def.requireConnected) flags.push("需连接");
             if (def.hidden) flags.push("隐藏");
-            if (flags.length > 0) lines.push(`标记: ${flags.join(", ")}`);
-            // Use replyDoc: command descriptions/usage may contain literal
-            // @mention syntax (e.g. "/mention ... @[所有人]()") that must NOT
-            // be interpreted as real mentions when sent to a group.
-            await ctx.replyDoc(lines.join("\n"));
+            if (flags.length > 0) kv.push(["标记", flags.join(", ")]);
+            if (ctx.useTable) {
+              const { formatTable } = await import("../../utils/table.js");
+              await ctx.replyDoc(`📖 命令帮助\n${formatTable(["属性", "值"], kv)}`);
+            } else {
+              const lines = ["📖 命令帮助:", ...kv.map(([k, v]) => `  ${k}: ${v}`)];
+              await ctx.replyDoc(lines.join("\n"));
+            }
             return;
           }
 
-          // Show all commands — auto-generated colored help
+          // Show all commands
           const visible = cmdSys.getAll().filter(c => !c.hidden);
           if (visible.length === 0) {
             await ctx.reply("暂无可用命令");
             return;
           }
 
-          // Generate colored help from command definitions
-          const helpText = generateColoredHelp(visible, {
-            prefix: cmdSys.config.prefix,
-            footer: cmdSys.config.helpFooter,
-          });
-          // Use replyDoc: help text contains command descriptions that may
-          // include literal @mention syntax (e.g. the /mention command
-          // description says "支持 @[昵称](id), @[所有人]() 内联语法").
-          // Without escaping, parseMentions would interpret these as real
-          // mentions when sent to a group, producing garbage TIMCustomElem
-          // elements and confusing the IM client.
-          await ctx.replyDoc(helpText);
+          if (ctx.useTable) {
+            // Table mode: group by category
+            const { formatTable } = await import("../../utils/table.js");
+            const categories = new Map<string, typeof visible>();
+            for (const cmd of visible) {
+              const cat = cmd.category || "other";
+              if (!categories.has(cat)) categories.set(cat, []);
+              categories.get(cat)!.push(cmd);
+            }
+            const sections: string[] = [`📖 命令帮助 (${visible.length} 个命令)`];
+            for (const [cat, cmds] of categories) {
+              const rows = cmds.map(cmd => [
+                `${cmdSys.config.prefix}${cmd.name}`,
+                cmd.aliases?.length ? cmd.aliases.join(", ") : "",
+                cmd.description || "",
+                cmd.dmOnly ? "仅私聊" : "",
+              ]);
+              sections.push(`\n### ${cat}\n${formatTable(["命令", "别名", "描述", "标记"], rows)}`);
+            }
+            await ctx.replyDoc(sections.join("\n"));
+          } else {
+            // Plain text mode: use generated colored help
+            const helpText = generateColoredHelp(visible, {
+              prefix: cmdSys.config.prefix,
+              footer: cmdSys.config.helpFooter,
+            });
+            await ctx.replyDoc(helpText);
+          }
         },
       });
 }
