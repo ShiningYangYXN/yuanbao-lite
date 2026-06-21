@@ -57,6 +57,19 @@ export type CommandContext = {
    * @[nick](id) syntax for mention parsing).
    */
   resolveAtReference: (arg: string) => Promise<string>;
+  /**
+   * Resolve a target arg to { targetId, isGroup }.
+   *
+   * Resolution order:
+   *   1. Try alias store — if alias resolves, use the resolved ID
+   *      (alias can store metadata about whether it's a group or user)
+   *   2. If not an alias, check if it's a 9-digit pure number → group
+   *   3. Otherwise → direct message (user ID)
+   *
+   * This is for commands that take a target (group or user) as first arg:
+   *   /mention <target> <msg>, /dm <target> <msg>, /group <target> <msg>, etc.
+   */
+  resolveTarget: (arg: string) => Promise<{ targetId: string; isGroup: boolean }>;
 };
 
 // ─── Command Definition ───

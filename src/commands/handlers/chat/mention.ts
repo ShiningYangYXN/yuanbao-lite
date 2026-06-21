@@ -23,11 +23,8 @@ export function register(cmdSys: CommandSystem): void {
             await ctx.reply("用法: /mention <目标> <消息>\n消息中可用 @语法:\n  \\@[昵称](id) — 用指定昵称@指定用户\n  \\@[](id) — 用默认昵称@指定用户\n  \\@[昵称]() — 群聊中按昵称自动匹配ID\n  \\@[所有人]() — @所有群成员（逐个展开）");
             return;
           }
-          const target = /^\d{5,}$/.test(ctx.args[0]) ? ctx.args[0] : await ctx.resolveAtReference(ctx.args[0]);
+          const { targetId: target, isGroup: targetIsGroup } = await ctx.resolveTarget(ctx.args[0]);
           const text = ctx.args.slice(1).join(" ");
-          // Determine if target is a group (group code is all digits, len >= 5)
-          // This allows /mention to work from DM context targeting a group.
-          const targetIsGroup = /^\d{5,}$/.test(target) || ctx.isGroup;
           try {
             // sendText handles parseMentions internally, including all resolvers
             // for @[昵称]() and @[所有人]() auto-expansion in group contexts

@@ -835,6 +835,25 @@ export class CommandSystem {
       return this.resolveAtReference(arg, message, bot);
     };
 
+    // resolveTarget: resolve a target arg to { targetId, isGroup }.
+    // Order: alias → 9-digit group code → user ID (DM)
+    const resolveTarget = async (arg: string): Promise<{ targetId: string; isGroup: boolean }> => {
+      const aliasStore = bot.getAliasStore();
+      // 1. Try alias resolution
+      const resolved = aliasStore.resolve(arg);
+      if (resolved && resolved !== arg) {
+        // Alias resolved — use the resolved ID
+        // Check if it looks like a group code (9+ digits)
+        return { targetId: resolved, isGroup: /^\d{9,}$/.test(resolved) };
+      }
+      // 2. Not an alias — check if 9-digit pure number → group
+      if (/^\d{9,}$/.test(arg)) {
+        return { targetId: arg, isGroup: true };
+      }
+      // 3. Otherwise → user ID (DM)
+      return { targetId: arg, isGroup: false };
+    };
+
     return {
       bot,
       message,
@@ -849,6 +868,7 @@ export class CommandSystem {
       showAll,
       source,
       resolveAtReference,
+      resolveTarget,
     };
   }
 

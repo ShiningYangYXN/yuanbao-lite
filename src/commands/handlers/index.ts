@@ -61,6 +61,8 @@ import { register as registerContacts } from "./utility/contacts.js";
 import { register as registerCron } from "./utility/cron.js";
 import { register as registerHelp } from "./utility/help.js";
 import { register as registerRemind } from "./utility/remind.js";
+import { register as registerQuery } from "./utility/query.js";
+import { register as registerVisit } from "./utility/visit.js";
 
 export {
   registerAtall,
@@ -120,6 +122,8 @@ export {
   registerCron,
   registerHelp,
   registerRemind,
+  registerQuery,
+  registerVisit,
 };
 
 export function registerAll(cmdSys: CommandSystem): void {
@@ -180,4 +184,6 @@ export function registerAll(cmdSys: CommandSystem): void {
   registerCron(cmdSys);
   registerHelp(cmdSys);
   registerRemind(cmdSys);
+  registerQuery(cmdSys);
+  registerVisit(cmdSys);
 }

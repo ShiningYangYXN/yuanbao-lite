@@ -21,6 +21,7 @@ import type {
   MentionInfo,
 } from "../../types.js";
 import { extractMentionsFromMsgBody } from "../mention.js";
+import { storeContent } from "../content-store.js";
 
 // ─── Structured extraction result ───
 
@@ -299,13 +300,12 @@ export function extractContentFromMsgBody(
           const isRealUrl = extractedUrl && /^(https?:\/\/|[\w-]+\.[\w-]+)/i.test(extractedUrl);
           if (isRealUrl) {
             linkUrls.push(extractedUrl!);
-            // Only push the URL if it's NOT already in textParts (avoid duplication
-            // when TIMTextElem already contains the URL)
+            // Keep the original URL in text (don't use contentId for web pages).
+            // The LLM can use /visit <URL> to fetch and inject cleaned content.
             const alreadyPresent = textParts.some(tp => tp.includes(extractedUrl!) || extractedUrl!.includes(tp.trim()));
             if (!alreadyPresent) {
               textParts.push(extractedUrl!);
             }
-            // If alreadyPresent, the URL was already added by TIMTextElem — skip
           } else if (extractedText && extractedUrl) {
             // Not a real URL — likely a misparsed @[nick](id) mention.
             // Reconstruct the mention syntax so downstream mention parser
@@ -324,9 +324,8 @@ export function extractContentFromMsgBody(
           // "garbage text" the user complained about. Just skip silently.
         } else if (elemType === 1009) {
           // Forwarded chat records (微信转发聊天记录)
-          // Full content is in msg_content.ext_map (protobuf-encoded ForwardMsgData),
-          // but ext_map is not accessible here (only content.data is).
-          // Fall back to the text summary in customData JSON.
+          // Store full content in content-store, inject [content:xxx] reference.
+          // The LLM can use /query <contentId> to view the full content.
           let summary: string | undefined;
           if (customData) {
             try {
@@ -337,11 +336,9 @@ export function extractContentFromMsgBody(
               // Not JSON
             }
           }
-          if (summary && summary.trim()) {
-            textParts.push(`[转发聊天记录: ${summary}]`);
-          } else {
-            textParts.push("[转发聊天记录]");
-          }
+          const fullContent = summary ?? "[转发聊天记录]";
+          const contentId = storeContent("forwarded_records", fullContent, `forwarded_${Date.now()}`);
+          textParts.push(`[content:${contentId} 转发聊天记录]`);
         } else if (customData) {
           // Unknown custom element — try to extract any text content from data
           // before falling back. If nothing can be extracted, skip silently
