@@ -12,16 +12,16 @@ import type { CommandCategory } from "../../types.js";
 
 export function register(cmdSys: CommandSystem): void {
   cmdSys.register({
-        name: "hclear",
-        aliases: ["清除历史"],
-        description: "清除消息历史（不可恢复）",
-        usage: "/hclear",
-        category: "history" as CommandCategory,
-        dmOnly: true,
-        handler: async (ctx) => {
-          const store = ctx.bot.getHistoryStore();
-          store.clear();
-          await ctx.reply("✅ 消息历史已清除");
-        },
-      });
+    name: "hclear",
+    aliases: ["清除历史"],
+    description: "清除消息历史（不可恢复）",
+    usage: "/hclear",
+    category: "history" as CommandCategory,
+    elevated: true,
+    handler: async (ctx) => {
+      const store = ctx.bot.getHistoryStore();
+      store.clear();
+      await ctx.reply("✅ 消息历史已清除");
+    },
+  });
 }

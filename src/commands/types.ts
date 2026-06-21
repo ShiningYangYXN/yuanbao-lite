@@ -112,7 +112,7 @@ export type CommandDefinition = {
   /** Whether this command requires the bot to be connected */
   requireConnected?: boolean;
   /** Whether this command can only be used in direct messages (not groups) */
-  dmOnly?: boolean;
+  elevated?: boolean;
   /** The handler function */
   handler: (ctx: CommandContext) => Promise<void> | void;
 };

@@ -14,9 +14,9 @@
  *   - "[command]"  — deny ALL slash commands (LLM still works, unless "[llm]"
  *                  or "[all]" is also blocked)
  *   - "<cmd>"      — deny a specific slash command (e.g. "shell", "unsafe").
- *                  Can be any command name, including non-dmOnly commands.
+ *                  Can be any command name, including non-elevated commands.
  *                  This is more granular than /unsafe allow (which only
- *                  lifts dmOnly restriction).
+ *                  lifts elevated restriction).
  *
  * IMPORTANT: The three permission groups ([all], [llm], [command]) MUST be
  * written with square brackets to distinguish them from command names.

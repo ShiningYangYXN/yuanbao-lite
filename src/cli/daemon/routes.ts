@@ -235,7 +235,7 @@ async function runCommand(ctx: RouteContext, body: Record<string, unknown>): Pro
   // consistently regardless of which mode the caller is in.
   const chatMode = (typeof body.chatMode === "string" ? body.chatMode : "direct") as "direct" | "group";
   const chatTarget = typeof body.chatTarget === "string" ? body.chatTarget : "cli";
-  // Source: "cli" (from CLI) or "chat" (from IM). Affects coloring + dmOnly bypass.
+  // Source: "cli" (from CLI) or "chat" (from IM). Affects coloring + elevated bypass.
   const source = (typeof body.source === "string" && body.source === "cli") ? "cli" : "chat";
   // Optional: override fromUserId (for testing trust-gated commands as master).
   // Defaults to "cli" for normal CLI usage.
@@ -317,10 +317,10 @@ function completions(ctx: RouteContext): RouteResult {
 
   const groups = bot
     ? bot.getGroupStore().getAll("lastActive").map(g => ({
-        groupCode: g.groupCode,
-        name: g.name ?? g.groupName ?? "",
-        tag: g.tag,
-      }))
+      groupCode: g.groupCode,
+      name: g.name ?? g.groupName ?? "",
+      tag: g.tag,
+    }))
     : [];
 
   const aliases = bot
@@ -416,7 +416,7 @@ function wizardStatus(ctx: RouteContext): RouteResult {
 
 /**
  * List all registered commands for CLI dynamic command generation.
- * Returns name, aliases, description, usage, category, dmOnly, requireConnected.
+ * Returns name, aliases, description, usage, category, elevated, requireConnected.
  */
 function listCommands(ctx: RouteContext): RouteResult {
   const bot = ctx.bot;
@@ -430,7 +430,7 @@ function listCommands(ctx: RouteContext): RouteResult {
     description: c.description,
     usage: c.usage ?? "",
     category: c.category ?? "misc",
-    dmOnly: c.dmOnly ?? false,
+    elevated: c.elevated ?? false,
     requireConnected: c.requireConnected ?? false,
     hidden: c.hidden ?? false,
   }));

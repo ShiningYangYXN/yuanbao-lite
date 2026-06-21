@@ -13,103 +13,103 @@ import type { CommandCategory } from "../../types.js";
 
 export function register(cmdSys: CommandSystem): void {
   cmdSys.register({
-        name: "term",
-        aliases: ["终端", "terminal", "shell-session"],
-        description: "进入交互式终端（阻塞，5分钟无操作自动退出，仅私聊）",
-        usage: "/term   (进入交互式终端，5分钟无操作自动退出)\n/term exit 退出终端",
-        category: "system" as CommandCategory,
-        dmOnly: true,
-        handler: async (ctx) => {
-          const sessionKey = sessionKeyFromMessage(ctx.message);
-          if (ctx.args[0]?.toLowerCase() === "exit") {
-            const sessions = (cmdSys as unknown as { _termSessions?: Map<string, unknown> })._termSessions;
-            if (sessions) {
-              const session = sessions.get(sessionKey) as { shell: { kill: (sig: string) => void } } | undefined;
-              if (session) {
-                session.shell.kill("SIGTERM");
-                sessions.delete(sessionKey);
-              }
-              await ctx.reply("🖥️ 终端已退出");
-            }
-            return;
-          }
-
-          // Start terminal session
-          const sessions = (cmdSys as unknown as { _termSessions?: Map<string, { shell: { kill: (sig: string) => void; killed: boolean; exitCode: number | null; stdout: { on: (e: string, cb: (d: Buffer) => void) => void }; stderr: { on: (e: string, cb: (d: Buffer) => void) => void }; on: (e: string, cb: (code: number | null) => void) => void; stdin: { write: (s: string) => boolean } | null } }> })._termSessions;
-          if (!sessions) {
-            await ctx.reply("❌ 终端会话管理不可用");
-            return;
-          }
-
-          // Kill existing session if re-entering
-          const existing = sessions.get(sessionKey);
-          if (existing) {
-            existing.shell.kill("SIGTERM");
+    name: "term",
+    aliases: ["终端", "terminal", "shell-session"],
+    description: "进入交互式终端（阻塞，5分钟无操作自动退出，仅私聊）",
+    usage: "/term   (进入交互式终端，5分钟无操作自动退出)\n/term exit 退出终端",
+    category: "system" as CommandCategory,
+    elevated: true,
+    handler: async (ctx) => {
+      const sessionKey = sessionKeyFromMessage(ctx.message);
+      if (ctx.args[0]?.toLowerCase() === "exit") {
+        const sessions = (cmdSys as unknown as { _termSessions?: Map<string, unknown> })._termSessions;
+        if (sessions) {
+          const session = sessions.get(sessionKey) as { shell: { kill: (sig: string) => void } } | undefined;
+          if (session) {
+            session.shell.kill("SIGTERM");
             sessions.delete(sessionKey);
           }
+          await ctx.reply("🖥️ 终端已退出");
+        }
+        return;
+      }
 
-          // Spawn a persistent shell process
-          const { spawn } = await import("node:child_process");
-          const shell = spawn("bash", ["--noprofile", "--norc"], {
-            cwd: process.env.HOME || process.cwd(),
-            env: { ...process.env, PS1: "", PS2: "" },
-            stdio: ["pipe", "pipe", "pipe"],
-          }) as unknown as {
-            kill: (sig: string) => void;
-            killed: boolean;
-            exitCode: number | null;
-            stdout: { on: (e: string, cb: (d: Buffer) => void) => void };
-            stderr: { on: (e: string, cb: (d: Buffer) => void) => void };
-            on: (e: string, cb: (code: number | null) => void) => void;
-            stdin: { write: (s: string) => boolean } | null;
-          };
+      // Start terminal session
+      const sessions = (cmdSys as unknown as { _termSessions?: Map<string, { shell: { kill: (sig: string) => void; killed: boolean; exitCode: number | null; stdout: { on: (e: string, cb: (d: Buffer) => void) => void }; stderr: { on: (e: string, cb: (d: Buffer) => void) => void }; on: (e: string, cb: (code: number | null) => void) => void; stdin: { write: (s: string) => boolean } | null } }> })._termSessions;
+      if (!sessions) {
+        await ctx.reply("❌ 终端会话管理不可用");
+        return;
+      }
 
-          const session = {
-            shell,
-            lastActivity: Date.now(),
-            lastExitCode: null as number | null,
-            outputBuffer: "",
-            commandResolve: null as (() => void) | null,
-            idleTimer: null as ReturnType<typeof setInterval> | null,
-          };
+      // Kill existing session if re-entering
+      const existing = sessions.get(sessionKey);
+      if (existing) {
+        existing.shell.kill("SIGTERM");
+        sessions.delete(sessionKey);
+      }
 
-          // Collect output
-          shell.stdout.on("data", (data: Buffer) => {
-            session.outputBuffer += data.toString();
-          });
-          shell.stderr.on("data", (data: Buffer) => {
-            session.outputBuffer += data.toString();
-          });
-          shell.on("exit", (code: number | null) => {
-            session.lastExitCode = code ?? 0;
-            if (session.commandResolve) {
-              session.commandResolve();
-              session.commandResolve = null;
-            }
-          });
+      // Spawn a persistent shell process
+      const { spawn } = await import("node:child_process");
+      const shell = spawn("bash", ["--noprofile", "--norc"], {
+        cwd: process.env.HOME || process.cwd(),
+        env: { ...process.env, PS1: "", PS2: "" },
+        stdio: ["pipe", "pipe", "pipe"],
+      }) as unknown as {
+        kill: (sig: string) => void;
+        killed: boolean;
+        exitCode: number | null;
+        stdout: { on: (e: string, cb: (d: Buffer) => void) => void };
+        stderr: { on: (e: string, cb: (d: Buffer) => void) => void };
+        on: (e: string, cb: (code: number | null) => void) => void;
+        stdin: { write: (s: string) => boolean } | null;
+      };
 
-          // Set up idle timeout check
-          session.idleTimer = setInterval(() => {
-            if (Date.now() - session.lastActivity > 5 * 60 * 1000) {
-              if (session.idleTimer) clearInterval(session.idleTimer);
-              shell.kill("SIGTERM");
-              sessions.delete(sessionKey);
-              ctx.bot.sendDirectMessage(ctx.message.fromUserId, "⏰ 终端已超时（5分钟无操作），自动退出").catch(() => {});
-            }
-          }, 30_000);
+      const session = {
+        shell,
+        lastActivity: Date.now(),
+        lastExitCode: null as number | null,
+        outputBuffer: "",
+        commandResolve: null as (() => void) | null,
+        idleTimer: null as ReturnType<typeof setInterval> | null,
+      };
 
-          sessions.set(sessionKey, session);
-
-          await ctx.reply(
-            "🖥️ 交互式终端已启动\n\n" +
-            "接下来的消息将作为 shell 命令执行。\n" +
-            "工作目录和环境变量变更会保留。\n" +
-            "发送 /term exit 退出终端。\n" +
-            "5分钟无操作自动退出。\n\n" +
-            "示例: cd /tmp, export FOO=bar, ls -la",
-          );
-        },
+      // Collect output
+      shell.stdout.on("data", (data: Buffer) => {
+        session.outputBuffer += data.toString();
       });
+      shell.stderr.on("data", (data: Buffer) => {
+        session.outputBuffer += data.toString();
+      });
+      shell.on("exit", (code: number | null) => {
+        session.lastExitCode = code ?? 0;
+        if (session.commandResolve) {
+          session.commandResolve();
+          session.commandResolve = null;
+        }
+      });
+
+      // Set up idle timeout check
+      session.idleTimer = setInterval(() => {
+        if (Date.now() - session.lastActivity > 5 * 60 * 1000) {
+          if (session.idleTimer) clearInterval(session.idleTimer);
+          shell.kill("SIGTERM");
+          sessions.delete(sessionKey);
+          ctx.bot.sendDirectMessage(ctx.message.fromUserId, "⏰ 终端已超时（5分钟无操作），自动退出").catch(() => { });
+        }
+      }, 30_000);
+
+      sessions.set(sessionKey, session);
+
+      await ctx.reply(
+        "🖥️ 交互式终端已启动\n\n" +
+        "接下来的消息将作为 shell 命令执行。\n" +
+        "工作目录和环境变量变更会保留。\n" +
+        "发送 /term exit 退出终端。\n" +
+        "5分钟无操作自动退出。\n\n" +
+        "示例: cd /tmp, export FOO=bar, ls -la",
+      );
+    },
+  });
 
   // ─── Terminal session setup ───
   // This MUST be set up so /term can find _termSessions.

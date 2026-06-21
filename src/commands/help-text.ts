@@ -256,7 +256,7 @@ export function generateDetailedHelp(
   // Indicators
   const indicators: string[] = [];
   if (cmd.requireConnected) indicators.push(chalk.dim("🔗 需要连接"));
-  if (cmd.dmOnly) indicators.push(chalk.dim("🔒 私聊专用"));
+  if (cmd.elevated) indicators.push(chalk.dim("🔒 私聊专用"));
   if (indicators.length) parts.push(indicators.join("  "));
 
   return parts.join("\n");

@@ -4,14 +4,14 @@
 
 import type { CommandSystem } from "../registry.js";
 
-import { register as registerAtall } from "./chat/atall.js";
-import { register as registerAtbots } from "./chat/atbots.js";
-import { register as registerAthumans } from "./chat/athumans.js";
-import { register as registerAtlobsters } from "./chat/atlobsters.js";
+import { register as registerAtall } from "./group/atall.js";
+import { register as registerAtbots } from "./group/atbots.js";
+import { register as registerAthumans } from "./group/athumans.js";
+import { register as registerAtlobsters } from "./group/atlobsters.js";
 import { register as registerChat } from "./chat/chat.js";
 import { register as registerDm } from "./chat/dm.js";
 import { register as registerGroup } from "./chat/group.js";
-import { register as registerMention } from "./chat/mention.js";
+import { register as registerMention } from "./group/mention.js";
 import { register as registerReply } from "./chat/reply.js";
 import { register as registerSticker } from "./chat/sticker.js";
 import { register as registerStickers } from "./chat/stickers.js";
@@ -20,13 +20,12 @@ import { register as registerGroups } from "./group/groups.js";
 import { register as registerJoin } from "./group/join.js";
 import { register as registerMembers } from "./group/members.js";
 import { register as registerSearch } from "./group/search.js";
-import { register as registerSwitch } from "./group/switch.js";
 import { register as registerHclear } from "./history/hclear.js";
 import { register as registerHistory } from "./history/history.js";
 import { register as registerHsearch } from "./history/hsearch.js";
 import { register as registerInspect } from "./history/inspect.js";
-import { register as registerCalc } from "./info/calc.js";
-import { register as registerEcho } from "./info/echo.js";
+import { register as registerCalc } from "./utility/calc.js";
+import { register as registerEcho } from "./utility/echo.js";
 import { register as registerIp } from "./info/ip.js";
 import { register as registerMyip } from "./info/myip.js";
 import { register as registerPing } from "./info/ping.js";
@@ -55,12 +54,12 @@ import { register as registerTrust } from "./system/trust.js";
 import { register as registerUnsafe } from "./system/unsafe.js";
 import { register as registerAccount } from "./utility/account.js";
 import { register as registerAlias } from "./utility/alias.js";
-import { register as registerBatch } from "./utility/batch.js";
+import { register as registerBatch } from "./chat/batch.js";
 import { register as registerCommands } from "./utility/commands.js";
 import { register as registerContacts } from "./utility/contacts.js";
-import { register as registerCron } from "./utility/cron.js";
+import { register as registerCron } from "./chat/cron.js";
 import { register as registerHelp } from "./utility/help.js";
-import { register as registerRemind } from "./utility/remind.js";
+import { register as registerRemind } from "./chat/remind.js";
 import { register as registerQuery } from "./utility/query.js";
 import { register as registerVisit } from "./utility/visit.js";
 
@@ -81,7 +80,6 @@ export {
   registerJoin,
   registerMembers,
   registerSearch,
-  registerSwitch,
   registerHclear,
   registerHistory,
   registerHsearch,
@@ -143,7 +141,6 @@ export function registerAll(cmdSys: CommandSystem): void {
   registerJoin(cmdSys);
   registerMembers(cmdSys);
   registerSearch(cmdSys);
-  registerSwitch(cmdSys);
   registerHclear(cmdSys);
   registerHistory(cmdSys);
   registerHsearch(cmdSys);

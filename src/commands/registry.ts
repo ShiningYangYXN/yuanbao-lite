@@ -41,14 +41,14 @@ export class CommandSystem {
   config: Required<CommandSystemConfig>;
   /** Logger — public so split handler files can access it. */
   log: ModuleLog;
-  /** Whether dmOnly restriction is temporarily lifted (set by /unsafe, expires after timeout) */
+  /** Whether elevated command restriction is temporarily lifted (set by /unsafe, expires after timeout) */
   private _unsafeMode = false;
   /** Timer for auto-expiring unsafe mode */
   private _unsafeTimer: ReturnType<typeof setTimeout> | null = null;
-  /** Per-command authorization with expiry: command name → { expiresAt (0=forever), timer } */
+  /** Per-command authorization with expiry: command name → { expiresAt (Infinity=forever), timer } */
   private _allowedCommands = new Map<string, { expiresAt: number; timer: ReturnType<typeof setTimeout> | null }>();
   /** Commands that cannot be authorized via /unsafe allow — public so handlers can check. */
-  static UNAUTHORIZABLE_COMMANDS = new Set(["unsafe", "trust", "block", "config", "init", "daemon"]);
+  static UNAUTHORIZABLE_COMMANDS = new Set(["unsafe", "trust", "block", "config", "init", "daemon", "shell"]);
 
   constructor(config?: CommandSystemConfig) {
     this.config = {
@@ -68,24 +68,24 @@ export class CommandSystem {
   }
 
   /**
-   * Enable unsafe mode — temporarily allows dmOnly commands in group chat.
+   * Enable unsafe mode — temporarily allows elevated commands in group chat.
    * @param durationMs - How long unsafe mode lasts (default: 5 minutes, 0 = forever)
    */
   enableUnsafeMode(durationMs = 5 * 60 * 1000): void {
     this._unsafeMode = true;
     if (this._unsafeTimer) clearTimeout(this._unsafeTimer);
-    if (durationMs > 0) {
+    if (durationMs != Infinity) {
       this._unsafeTimer = setTimeout(() => {
         this._unsafeMode = false;
         this._unsafeTimer = null;
-        this.log.info("unsafe mode expired, dmOnly restrictions restored");
+        this.log.info("unsafe mode expired, elevated restrictions restored");
       }, durationMs);
     }
-    this.log.info(`unsafe mode enabled${durationMs > 0 ? ` for ${durationMs}ms` : " (forever)"}`);
+    this.log.info(`unsafe mode enabled${durationMs != Infinity ? ` for ${durationMs}ms` : " (forever)"}`);
   }
 
   /**
-   * Disable unsafe mode — restores dmOnly restrictions.
+   * Disable unsafe mode — restores elevated restrictions.
    */
   disableUnsafeMode(): void {
     this._unsafeMode = false;
@@ -93,7 +93,7 @@ export class CommandSystem {
       clearTimeout(this._unsafeTimer);
       this._unsafeTimer = null;
     }
-    this.log.info("unsafe mode disabled, dmOnly restrictions restored");
+    this.log.info("unsafe mode disabled, elevated restrictions restored");
   }
 
   /**
@@ -111,9 +111,9 @@ export class CommandSystem {
   }
 
   /**
-   * Authorize a single command to bypass dmOnly in group chat.
+   * Authorize a single command to bypass elevated in group chat.
    * Commands in UNAUTHORIZABLE_COMMANDS cannot be authorized.
-   * Non-dmOnly commands are auto-skipped (no need to authorize).
+   * Non-elevated commands are auto-skipped (no need to authorize).
    * @param durationMs - How long the authorization lasts (default: 5 minutes, 0 = forever)
    */
   allowCommand(cmdName: string, durationMs = 5 * 60 * 1000): { ok: boolean; reason?: string } {
@@ -125,7 +125,7 @@ export class CommandSystem {
     if (!def) {
       return { ok: false, reason: `未知命令: /${normalized}` };
     }
-    if (!def.dmOnly) {
+    if (!def.elevated) {
       return { ok: false, reason: `命令 /${normalized} 不是受限命令，无需授权` };
     }
     // Clear existing timer if re-authorizing
@@ -147,7 +147,7 @@ export class CommandSystem {
 
   /**
    * Remove per-command authorization.
-   * Non-dmOnly commands cannot be disallowed (they were never restricted).
+   * Non-elevated commands cannot be disallowed (they were never restricted).
    * Returns { ok, reason? } for clear feedback.
    */
   disallowCommand(cmdName: string): { ok: boolean; reason?: string } {
@@ -156,7 +156,7 @@ export class CommandSystem {
     if (!def) {
       return { ok: false, reason: `未知命令: /${normalized}` };
     }
-    if (!def.dmOnly) {
+    if (!def.elevated) {
       return { ok: false, reason: `命令 /${normalized} 不是受限命令，无法取消授权` };
     }
     const entry = this._allowedCommands.get(normalized);
@@ -299,7 +299,7 @@ export class CommandSystem {
   /**
    * Dispatch a command with an explicit source ("chat" or "cli").
    *
-   * When source is "cli", the dmOnly and requireConnected checks are relaxed
+   * When source is "cli", the elevated and requireConnected checks are relaxed
    * (the CLI is already authorized), and command handlers can use ctx.source
    * to decide whether to apply ANSI coloring (chat = no color, cli = color).
    */
@@ -354,7 +354,7 @@ export class CommandSystem {
     // ─── Block check (HIGHEST priority — overrides unsafe + trust) ───
     // Blocked users cannot execute commands. The block module supports
     // per-user, per-command, and wildcard ("*") blocks. This check runs
-    // BEFORE the dmOnly check so blocked commands are denied even in DM.
+    // BEFORE the elevated check so blocked commands are denied even in DM.
     // CLI source bypasses block (CLI is pre-authorized).
     //
     // IMPORTANT: /block and /trust are management commands — they are NEVER
@@ -412,7 +412,7 @@ export class CommandSystem {
       if (def.aliases?.length) lines.push(`别名: ${def.aliases.join(", ")}`);
       if (def.category) lines.push(`分类: ${def.category}`);
       const flags: string[] = [];
-      if (def.dmOnly) flags.push("仅私聊");
+      if (def.elevated) flags.push("高权限");
       if (def.requireConnected) flags.push("需连接");
       if (def.hidden) flags.push("隐藏");
       if (flags.length > 0) lines.push(`标记: ${flags.join(", ")}`);
@@ -420,10 +420,10 @@ export class CommandSystem {
       return { handled: true };
     }
 
-    // Check dmOnly restriction (bypassed when unsafe mode is active, CLI source,
+    // Check elevated command restriction (bypassed when unsafe mode is active, CLI source,
     // the specific command is authorized via /unsafe allow, OR the user has a
     // per-user command grant from /trust grant)
-    if (def.dmOnly && message.chatType === "group" && !this._unsafeMode && source !== "cli" && !this.isCommandAllowed(commandName)) {
+    if (def.elevated && message.chatType === "group" && !this._unsafeMode && source !== "cli" && !this.isCommandAllowed(commandName)) {
       // Check if the user has a per-user command grant (from /trust grant)
       let hasUserGrant = false;
       try {
@@ -433,7 +433,7 @@ export class CommandSystem {
         // trust module optional
       }
       if (hasUserGrant) {
-        // User has a grant — proceed past the dmOnly check
+        // User has a grant — proceed past the elevated check
       } else {
         // Check if the user is trusted — trusted users get a hint to enable /unsafe
         let isTrustedUser = false;

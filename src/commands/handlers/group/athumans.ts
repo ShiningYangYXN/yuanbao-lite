@@ -1,6 +1,6 @@
 /**
  * /athumans command handler — @all human members (exclude bots).
- * Category: chat
+ * Category: group
  */
 
 import type { CommandSystem } from "../../registry.js";
@@ -12,9 +12,9 @@ export function register(cmdSys: CommandSystem): void {
     aliases: ["所有人类", "at-humans"],
     description: "@所有人类成员（排除机器人）并发送消息",
     usage: "/athumans <群号> <消息>   或   /athumans <消息>   (当前群聊)",
-    category: "chat" as CommandCategory,
+    category: "group" as CommandCategory,
     requireConnected: true,
-    dmOnly: true,
+    elevated: true,
     handler: async (ctx) => {
       await sendScopedAtAll(ctx, "humans");
     },
@@ -59,7 +59,7 @@ export async function sendScopedAtAll(ctx: import("../../types.js").CommandConte
 
   const scopeSyntax = scope === "humans" ? "@[所有人类](humans)"
     : scope === "bots" ? "@[所有BOT](bots)"
-    : "@[所有龙虾](lobsters)";
+      : "@[所有龙虾](lobsters)";
   const fullMessage = `${scopeSyntax} ${message}`;
 
   try {

@@ -8,6 +8,7 @@
 import chalk from "chalk";
 import Table from "cli-table3";
 import type { ChatMessage } from "../../types.js";
+import { getMasterUserId, isTrusted } from "../../business/trust.js";
 
 // Lazy-load marked + marked-terminal to avoid compatibility issues at import time
 let _markedReady = false;
@@ -54,37 +55,32 @@ function colorizeCell(cell: string): string {
 
 // ─── User type colors ───
 
-/** Special user ID that gets green color */
-const GREEN_USER_ID = "szUvRH8s4ekettawNjDREmAG4W7h+Lhb8Sy9tq/otZU=";
+/** Yuanbao's ID that gets green color */
+const YUANBAO_ID = "szUvRH8s4ekettawNjDREmAG4W7h+Lhb8Sy9tq/otZU=";
 
 /**
  * Get colored user type label based on userId.
  * - Master (bot owner): purple
- * - Green user (special ID): green
- * - Bot (bot_ prefix): magenta
- * - Human: yellow (default)
- * - Lobster (userType 3): red
+ * - Yuanbao (platform bot): green
+ * - Lobster (bot_ prefix): magenta
+ * - Trusted User: yellow
+ * - Human: cyan (default)
  */
-export function userTypeLabel(userId: string, userType?: number, isMaster?: boolean): string {
-  if (isMaster) return chalk.magenta("👑主人");
-  if (userId === GREEN_USER_ID) return chalk.green("🟢特殊");
-  if (userId.startsWith("bot_")) {
-    if (userType === 3) return chalk.red("🦐龙虾");
-    return chalk.magenta("🤖BOT");
-  }
-  return chalk.yellow("👤用户");
+export function userTypeLabel(userId: string): string {
+  if (userId === getMasterUserId()) return chalk.magenta(" 👑 主人");
+  if (userId === YUANBAO_ID) return chalk.green(" 🤖 元宝");
+  if (userId.startsWith("bot_")) return chalk.red(" 🦞 龙虾");
+  if (isTrusted(userId)) return chalk.yellow(" 🔑 受信任用户");
+  return chalk.cyan(" 👤 普通用户");
 }
 
 /**
  * Get colored nickname based on userId.
  */
-export function coloredName(userId: string, nickname: string, userType?: number, isMaster?: boolean): string {
-  if (isMaster) return chalk.magenta.bold(nickname);
-  if (userId === GREEN_USER_ID) return chalk.green.bold(nickname);
-  if (userId.startsWith("bot_")) {
-    if (userType === 3) return chalk.red(nickname);
-    return chalk.magenta(nickname);
-  }
+export function coloredName(userId: string, nickname: string): string {
+  if (userId === getMasterUserId()) return chalk.magenta.bold(nickname);
+  if (userId === YUANBAO_ID) return chalk.green.bold(nickname);
+  if (userId.startsWith("bot_")) return chalk.red(nickname);
   return chalk.yellow(nickname);
 }
 
@@ -97,17 +93,8 @@ export function coloredName(userId: string, nickname: string, userType?: number,
  */
 function colorizeMentions(text: string): string {
   // Replace @[nick](id) with colored version
-  return text.replace(/@\[([^\]]*)\]\(([^)]+)\)/g, (_match, nick, id) => {
-    const nickStr = String(nick);
-    const idStr = String(id);
-    // Color the @ prefix and nick based on id
-    if (idStr === GREEN_USER_ID) {
-      return chalk.green.bold(`@${nickStr}`);
-    }
-    if (idStr.startsWith("bot_")) {
-      return chalk.magenta(`@${nickStr}`);
-    }
-    return chalk.cyan(`@${nickStr}`);
+  return text.replace(/@\[([^\]]*)\]\(([^)]+)\)/g, (_match, nickname, userId) => {
+    return chalk.cyan(`@${coloredName(userId, nickname)}`);
   });
 }
 
@@ -131,10 +118,10 @@ export async function renderMarkdownAnsi(text: string): Promise<string> {
  * more slots: type label, nickname, group/scope, mention mark, time, text.
  *
  * Format:
- *   DM  👤用户  昵称 · 12:34:56
+ *   私  昵称 👤 类型 · 11:45:14
  *       消息文本
  *
- *   GR  👤用户  群名 / 昵称 @ · 12:34:56
+ *   群  群名 / 昵称 👤 类型 @我 · 11:45:14
  *       消息文本
  */
 export function formatInboundMessage(
@@ -144,9 +131,9 @@ export function formatInboundMessage(
 ): string {
   const time = chalk.dim(formatTime(msg.timestamp));
   const name = msg.fromNickname || msg.fromUserId;
-  const typeLabel = userTypeLabel(msg.fromUserId, undefined, isMaster);
-  const nick = coloredName(msg.fromUserId, name, undefined, isMaster);
-  const mentionMark = msg.isMentioned ? chalk.yellow(" @") : "";
+  const typeLabel = userTypeLabel(msg.fromUserId);
+  const nick = coloredName(msg.fromUserId, name);
+  const mentionMark = msg.isMentioned ? chalk.yellow(" @我") : "";
 
   // Detect attachments in text
   const hasAttachment = msg.text && (msg.text.includes("[image:") || msg.text.includes("[file:") || msg.text.includes("[video:") || msg.text.includes("[voice:") || msg.text.includes("[附件:"));
@@ -159,9 +146,9 @@ export function formatInboundMessage(
   let header: string;
   if (isGroup) {
     const group = chalk.cyan(msg.groupName || msg.groupCode || "?");
-    header = `  ${chalk.dim("GR")}  ${typeLabel}  ${group} ${chalk.dim("/")} ${nick}${mentionMark}${attachMark}${contentMark} ${chalk.dim("·")} ${time}`;
+    header = `  ${chalk.green("群")}  ${group} ${chalk.dim("/")} ${nick}${typeLabel}${mentionMark}${attachMark}${contentMark} ${chalk.dim("·")} ${time}`;
   } else {
-    header = `  ${chalk.green("DM")}  ${typeLabel}  ${nick}${attachMark}${contentMark} ${chalk.dim("·")} ${time}`;
+    header = `  ${chalk.cyan("私")}  ${nick}${typeLabel}${attachMark}${contentMark} ${chalk.dim("·")} ${time}`;
   }
   const body = `      ${msg.text || "(非文本)"}`;
   return `${header}\n${body}`;
@@ -170,13 +157,13 @@ export function formatInboundMessage(
 /**
  * Format a bot outbound message for CLI display.
  * Format:
- *   📤BOT  →  群名/DM · 12:34:56
+ *   📤出站  →  群名/DM · 11:45:14
  *       消息文本
  */
 export function formatOutboundMessage(text: string, to: string, isGroup: boolean): string {
   const time = chalk.dim(formatTime(Date.now()));
-  const scope = isGroup ? chalk.cyan(`@${to}`) : chalk.dim("@DM");
-  const header = `  ${chalk.magenta("📤BOT")}  ${chalk.dim("→")}  ${scope} ${chalk.dim("·")} ${time}`;
+  const scope = isGroup ? chalk.cyan(`群${to}`) : chalk.dim(`私聊`);
+  const header = `  ${chalk.magenta("📤 出站")}  ${chalk.dim("→")}  ${scope} ${chalk.dim("·")} ${time}`;
   const displayText = text.length > 500 ? text.substring(0, 500) + chalk.dim("...") : text;
   const body = `      ${displayText}`;
   return `${header}\n${body}`;

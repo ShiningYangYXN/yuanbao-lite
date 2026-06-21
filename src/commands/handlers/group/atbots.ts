@@ -1,6 +1,6 @@
 /**
  * /atbots command handler — @all bot members (yuanbao + lobsters).
- * Category: chat
+ * Category: group
  */
 
 import type { CommandSystem } from "../../registry.js";
@@ -12,9 +12,9 @@ export function register(cmdSys: CommandSystem): void {
     aliases: ["所有BOT", "所有Bot", "at-bots"],
     description: "@所有机器人成员并发送消息",
     usage: "/atbots <群号> <消息>   或   /atbots <消息>   (当前群聊)",
-    category: "chat" as CommandCategory,
+    category: "group" as CommandCategory,
     requireConnected: true,
-    dmOnly: true,
+    elevated: true,
     handler: async (ctx) => {
       const { sendScopedAtAll } = await import("./athumans.js");
       await sendScopedAtAll(ctx, "bots");

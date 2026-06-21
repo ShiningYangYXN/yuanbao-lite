@@ -45,7 +45,7 @@ export type TrustEntry = {
   isMaster: boolean;
   /**
    * Per-command authorization grants for this user.
-   * Map: commandName (lowercase) → { expiresAt: 0 means forever, grantedAt }
+   * Map: commandName (lowercase) → { expiresAt: Infinity means forever, grantedAt }
    * These allow the user to run specific dmOnly commands in group chat
    * without enabling global unsafe mode.
    */
@@ -232,7 +232,7 @@ export function removeTrustOnBlock(userId: string): void {
  * The user does NOT need to be trusted first — this is a standalone grant.
  * @param userId - The user to grant the command to
  * @param cmdName - The command name (lowercase, no prefix)
- * @param durationMs - Duration in ms (0 = forever)
+ * @param durationMs - Duration in ms (Infinity = forever)
  */
 export async function grantCommand(userId: string, cmdName: string, durationMs: number): Promise<{ ok: boolean; reason?: string }> {
   // Blocked users cannot receive grants
@@ -266,7 +266,7 @@ export async function grantCommand(userId: string, cmdName: string, durationMs: 
   const expiresAt = durationMs > 0 ? Date.now() + durationMs : 0;
   entry.commandGrants[normalized] = { expiresAt, grantedAt: Date.now() };
 
-  if (durationMs > 0) {
+  if (durationMs != Infinity) {
     const timer = setTimeout(() => {
       const d = load();
       const e = d.entries.find(x => x.userId === userId);
@@ -281,7 +281,7 @@ export async function grantCommand(userId: string, cmdName: string, durationMs: 
   }
 
   save();
-  log.info(`granted /${normalized} to ${userId}${durationMs > 0 ? ` for ${durationMs}ms` : " (forever)"}`);
+  log.info(`granted /${normalized} to ${userId}${durationMs != Infinity ? ` for ${durationMs}ms` : " (forever)"}`);
   return { ok: true };
 }
 

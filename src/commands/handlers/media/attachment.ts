@@ -112,7 +112,7 @@ export function register(cmdSys: CommandSystem): void {
     description: "查看和下载聊天消息中的附件（图片/文件/视频/语音，支持自定义下载路径）",
     usage: "/attachment list [消息ID或#尾号]\n/attachment download <消息ID或#尾号> <索引> [--to <保存路径>]\n/attachment url <消息ID或#尾号> [索引]\n/attachment recent [数量]",
     category: "media" as CommandCategory,
-    dmOnly: true,
+    elevated: true,
     handler: async (ctx) => {
       const subCmd = ctx.args[0]?.toLowerCase();
 
@@ -130,7 +130,7 @@ export function register(cmdSys: CommandSystem): void {
           return;
         }
         if (ctx.useTable) {
-                    const rows = withAttachments.map(m => {
+          const rows = withAttachments.map(m => {
             const atts = extractAttachments(m.rawBody);
             return [
               m.id.slice(-8),
