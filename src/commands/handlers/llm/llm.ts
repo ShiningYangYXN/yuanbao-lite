@@ -582,7 +582,6 @@ export function register(cmdSys: CommandSystem): void {
                   return;
                 }
                 const userId = ctx.message.fromUserId;
-              const sessionKey = ctx.message.chatType === "group" && ctx.groupCode ? `${userId}:group:${ctx.groupCode}` : `${userId}:dm`;
                 const now = Date.now();
                 const entry = confirmations.get(userId);
                 const WINDOW_MS = 60_000;

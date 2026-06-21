@@ -4,16 +4,12 @@
  * Usage:
  *   /visit <URL>   — fetch URL, clean HTML, inject into LLM context
  *
- * The cleaned content (title + main text) is stored in the content-store
- * and also injected directly into the LLM conversation as a user message,
- * so the LLM can reference it in its reply.
+ * Cleaning strategy (in priority order):
+ *   1. Jina Reader (https://r.jina.ai/) — cloud service, returns clean markdown
+ *   2. defuddle (local) — fallback if Jina fails
  *
- * HTML cleaning strategy (no external deps):
- *   1. fetch URL
- *   2. extract <title>
- *   3. remove <script>, <style>, <nav>, <header>, <footer>, <aside> tags
- *   4. extract text from <article>, <main>, or <body> (fallback)
- *   5. collapse whitespace, trim to reasonable length
+ * The cleaned content is stored in the content-store AND injected directly
+ * into the LLM conversation as a user message.
  *
  * Category: utility
  */
@@ -22,70 +18,95 @@ import type { CommandSystem } from "../../registry.js";
 import type { CommandCategory } from "../../types.js";
 
 const MAX_CONTENT_LENGTH = 8000;
+const JINA_READER_URL = "https://r.jina.ai/";
+const FETCH_TIMEOUT_MS = 15000;
 
-function cleanHtml(html: string): { title: string; content: string } {
-  // Extract title
-  const titleMatch = html.match(/<title[^>]*>([^<]*)<\/title>/i);
-  const title = titleMatch ? titleMatch[1].trim() : "";
-
-  // Remove script, style, nav, header, footer, aside, noscript
-  const cleaned = html
-    .replace(/<script[\s\S]*?<\/script>/gi, "")
-    .replace(/<style[\s\S]*?<\/style>/gi, "")
-    .replace(/<nav[\s\S]*?<\/nav>/gi, "")
-    .replace(/<header[\s\S]*?<\/header>/gi, "")
-    .replace(/<footer[\s\S]*?<\/footer>/gi, "")
-    .replace(/<aside[\s\S]*?<\/aside>/gi, "")
-    .replace(/<noscript[\s\S]*?<\/noscript>/gi, "")
-    .replace(/<!--[\s\S]*?-->/g, "");
-
-  // Try to extract main content: <article>, <main>, or fallback to <body>
-  let mainContent: string;
-  const articleMatch = cleaned.match(/<article[\s\S]*?<\/article>/i);
-  if (articleMatch) {
-    mainContent = articleMatch[0];
-  } else {
-    const mainMatch = cleaned.match(/<main[\s\S]*?<\/main>/i);
-    if (mainMatch) {
-      mainContent = mainMatch[0];
-    } else {
-      const bodyMatch = cleaned.match(/<body[\s\S]*?<\/body>/i);
-      mainContent = bodyMatch ? bodyMatch[0] : cleaned;
+/**
+ * Try Jina Reader to fetch and clean a URL.
+ * Returns clean markdown text, or null on failure.
+ */
+async function tryJinaReader(url: string): Promise<{ title: string; content: string } | null> {
+  try {
+    const response = await fetch(`${JINA_READER_URL}${url}`, {
+      headers: {
+        "Accept": "text/markdown",
+        "X-Return-Format": "markdown",
+      },
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
+    if (!response.ok) {
+      return null;
     }
+    const text = await response.text();
+    if (!text || !text.trim()) {
+      return null;
+    }
+    // Jina Reader returns markdown. First line is often the title.
+    // Format: "Title: xxx\n\nURL Source: ...\n\nMarkdown Content:\n\n..."
+    // Or just the page title as H1: "# Title\n\ncontent..."
+    let title = "";
+    let content = text;
+    // Try to extract title from first H1
+    const h1Match = text.match(/^#\s+(.+)$/m);
+    if (h1Match) {
+      title = h1Match[1].trim();
+    }
+    // Try to extract from "Title:" prefix
+    const titlePrefix = text.match(/^Title:\s*(.+)$/m);
+    if (titlePrefix && !title) {
+      title = titlePrefix[1].trim();
+    }
+    // Remove Jina metadata headers (Title:, URL Source:, Markdown Content:)
+    content = text
+      .replace(/^Title:\s*.+\n?/m, "")
+      .replace(/^URL Source:\s*.+\n?/m, "")
+      .replace(/^Markdown Content:\s*\n?/m, "")
+      .trim();
+    return { title: title || "(无标题)", content };
+  } catch {
+    return null;
   }
+}
 
-  // Convert common HTML elements to text markers
-  let text = mainContent
-    // Block elements → newline
-    .replace(/<\/?(p|div|section|article|h[1-6]|li|ul|ol|blockquote|pre|hr|br|tr|table)[^>]*>/gi, "\n")
-    // Remove all remaining tags
-    .replace(/<[^>]+>/g, "")
-    // Decode common HTML entities
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(parseInt(code, 10)))
-    // Collapse whitespace
-    .replace(/[ \t]+/g, " ")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-
-  // Trim to max length
-  if (text.length > MAX_CONTENT_LENGTH) {
-    text = text.substring(0, MAX_CONTENT_LENGTH) + "\n\n...(内容已截断，完整内容请访问原始URL)";
+/**
+ * Fallback: use defuddle to clean HTML locally.
+ * Uses linkedom for DOM parsing (Node.js environment).
+ */
+async function tryDefuddle(url: string): Promise<{ title: string; content: string } | null> {
+  try {
+    const { parseHTML } = await import("linkedom");
+    const Defuddle = (await import("defuddle/node")).Defuddle;
+    const response = await fetch(url, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (compatible; yuanbao-lite/11.3)",
+        "Accept": "text/html,application/xhtml+xml",
+        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+      },
+      redirect: "follow",
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
+    if (!response.ok) {
+      return null;
+    }
+    const html = await response.text();
+    const { document } = parseHTML(html);
+    const result = await Defuddle(document, url, { markdown: true });
+    const title = result.title || "(无标题)";
+    const content = result.content || "";
+    if (!content.trim()) {
+      return null;
+    }
+    return { title, content };
+  } catch {
+    return null;
   }
-
-  return { title, content: text };
 }
 
 export function register(cmdSys: CommandSystem): void {
   cmdSys.register({
     name: "visit",
     aliases: ["访问", "fetch"],
-    description: "访问网页并清洗内容注入上下文",
+    description: "访问网页并清洗内容注入上下文（Jina Reader 优先，defuddle 兜底）",
     usage: "/visit <URL>",
     category: "utility" as CommandCategory,
     handler: async (ctx) => {
@@ -99,56 +120,60 @@ export function register(cmdSys: CommandSystem): void {
         return;
       }
       await ctx.reply(`⏳ 正在访问 ${url} ...`);
-      try {
-        const response = await fetch(url, {
-          headers: {
-            "User-Agent": "Mozilla/5.0 (compatible; yuanbao-lite/11.2)",
-            "Accept": "text/html,application/xhtml+xml",
-            "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
-          },
-          redirect: "follow",
-          signal: AbortSignal.timeout(15000),
-        });
-        if (!response.ok) {
-          await ctx.reply(`❌ 访问失败: HTTP ${response.status} ${response.statusText}`);
-          return;
-        }
-        const html = await response.text();
-        const { title, content } = cleanHtml(html);
-        if (!content) {
-          await ctx.reply(`❌ 无法提取网页内容（可能是纯JS渲染页面）`);
-          return;
-        }
 
-        // Store in content-store for /query reference
-        const { storeContent } = await import("../../../business/content-store.js");
-        const fullContent = `标题: ${title || "(无标题)"}\nURL: ${url}\n\n${content}`;
-        const contentId = storeContent("web_page", fullContent, url);
+      // 1. Try Jina Reader first
+      let result = await tryJinaReader(url);
+      let method = "";
 
-        // Inject into LLM context
-        const engine = ctx.bot.getLlmEngine();
-        if (engine) {
-          const convKey = ctx.isGroup && ctx.groupCode
-            ? `group:${ctx.groupCode}`
-            : `dm:${ctx.message.fromUserId}`;
-          engine.getConversationManager().addUserMessage(
-            convKey,
-            `[网页内容 ${contentId}] ${url}\n${fullContent}`,
-          );
+      if (result) {
+        method = "Jina Reader";
+      } else {
+        // 2. Fallback to defuddle
+        result = await tryDefuddle(url);
+        if (result) {
+          method = "defuddle";
         }
-
-        const preview = content.substring(0, 200).replace(/\n/g, " ");
-        await ctx.reply(
-          `✅ 网页内容已注入上下文 [${contentId}]\n` +
-          `标题: ${title || "(无标题)"}\n` +
-          `URL: ${url}\n` +
-          `内容长度: ${content.length} 字符\n` +
-          `预览: ${preview}${content.length > 200 ? "..." : ""}\n\n` +
-          `LLM 现在可以基于此内容回复。使用 /query ${contentId} 查看完整内容。`,
-        );
-      } catch (err) {
-        await ctx.reply(`❌ 访问失败: ${(err as Error).message}`);
       }
+
+      if (!result) {
+        await ctx.reply(`❌ 无法提取网页内容（Jina Reader 和 defuddle 均失败）`);
+        return;
+      }
+
+      const { title } = result;
+      let content = result.content;
+
+      // Trim to max length
+      if (content.length > MAX_CONTENT_LENGTH) {
+        content = content.substring(0, MAX_CONTENT_LENGTH) + "\n\n...(内容已截断，完整内容请访问原始URL)";
+      }
+
+      // Store in content-store for /query reference
+      const { storeContent } = await import("../../../business/content-store.js");
+      const fullContent = `标题: ${title}\nURL: ${url}\n\n${content}`;
+      const contentId = storeContent("web_page", fullContent, url);
+
+      // Inject into LLM context
+      const engine = ctx.bot.getLlmEngine();
+      if (engine) {
+        const convKey = ctx.isGroup && ctx.groupCode
+          ? `group:${ctx.groupCode}`
+          : `dm:${ctx.message.fromUserId}`;
+        engine.getConversationManager().addUserMessage(
+          convKey,
+          `[网页内容 ${contentId}] ${url}\n${fullContent}`,
+        );
+      }
+
+      const preview = content.substring(0, 200).replace(/\n/g, " ");
+      await ctx.reply(
+        `✅ 网页内容已注入上下文 [${contentId}] (via ${method})\n` +
+        `标题: ${title}\n` +
+        `URL: ${url}\n` +
+        `内容长度: ${content.length} 字符\n` +
+        `预览: ${preview}${content.length > 200 ? "..." : ""}\n\n` +
+        `LLM 现在可以基于此内容回复。使用 /query ${contentId} 查看完整内容。`,
+      );
     },
   });
 }

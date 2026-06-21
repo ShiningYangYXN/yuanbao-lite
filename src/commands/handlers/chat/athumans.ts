@@ -26,14 +26,12 @@ export async function sendScopedAtAll(ctx: import("../../types.js").CommandConte
   let message: string;
 
   if (ctx.args.length < 1) {
-    const scopeLabel = scope === "humans" ? "人类" : scope === "bots" ? "BOT" : "龙虾";
     await ctx.reply(`用法: /at${scope} <群号> <消息>\n或: /at${scope} <消息>  (当前群聊中)`);
     return;
   }
 
   if (ctx.args.length === 1) {
     if (!ctx.isGroup || !ctx.groupCode) {
-      const scopeLabel = scope === "humans" ? "人类" : scope === "bots" ? "BOT" : "龙虾";
       await ctx.reply(`私聊中需要指定群号: /at${scope} <群号> <消息>`);
       return;
     }
