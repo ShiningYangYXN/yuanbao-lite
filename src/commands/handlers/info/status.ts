@@ -21,19 +21,23 @@ export function register(cmdSys: CommandSystem): void {
         handler: async (ctx) => {
           const state = ctx.bot.getState();
           const account = ctx.bot.getAccount();
-          const lines = [
-            "📊 机器人状态",
-            `  连接: ${state.connected ? "✅ 已连接" : "❌ 未连接"}`,
-            `  状态: ${state.status}`,
+          const kv: [string, string][] = [
+            ["连接", state.connected ? "✅ 已连接" : "❌ 未连接"],
+            ["状态", state.status],
           ];
-          if (state.connectId) lines.push(`  连接ID: ${state.connectId}`);
-          if (state.botId) lines.push(`  Bot ID: ${state.botId}`);
-          if (state.lastConnectedAt) {
-            lines.push(`  上次连接: ${new Date(state.lastConnectedAt).toLocaleString("zh-CN")}`);
+          if (state.connectId) kv.push(["连接ID", state.connectId]);
+          if (state.botId) kv.push(["Bot ID", state.botId]);
+          if (state.lastConnectedAt) kv.push(["上次连接", new Date(state.lastConnectedAt).toLocaleString("zh-CN")]);
+          if (state.lastError) kv.push(["最近错误", state.lastError]);
+          if (account.name) kv.push(["名称", account.name]);
+
+          if (ctx.useTable) {
+            const { formatTable } = await import("../../utils/table.js");
+            await ctx.reply(`📊 机器人状态\n${formatTable(["属性", "值"], kv)}`);
+          } else {
+            const lines = ["📊 机器人状态", ...kv.map(([k, v]) => `  ${k}: ${v}`)];
+            await ctx.reply(lines.join("\n"));
           }
-          if (state.lastError) lines.push(`  最近错误: ${state.lastError}`);
-          if (account.name) lines.push(`  名称: ${account.name}`);
-          await ctx.reply(lines.join("\n"));
         },
       });
 }

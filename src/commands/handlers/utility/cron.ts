@@ -30,12 +30,24 @@ export function register(cmdSys: CommandSystem): void {
               await ctx.reply("暂无定时任务");
               return;
             }
-            const lines = jobs.map(j => {
-              const next = new Date(j.fireAt).toLocaleString("zh-CN");
-              const target = j.isGroup ? `群${j.targetId}` : j.targetId ?? j.userId;
-              return `  ${j.id}: ${j.cronExpr} → ${target} 下次: ${next}\n    "${j.message}"`;
-            });
-            await ctx.reply(`📋 定时任务 (${jobs.length}):\n${lines.join("\n")}`);
+            if (ctx.useTable) {
+              const { formatTable } = await import("../../utils/table.js");
+              const rows = jobs.map(j => [
+                j.id,
+                j.cronExpr || "",
+                j.isGroup ? `群${j.targetId}` : (j.targetId ?? j.userId),
+                new Date(j.fireAt).toLocaleString("zh-CN"),
+                j.message.substring(0, 30),
+              ]);
+              await ctx.reply(`📋 定时任务 (${jobs.length}):\n${formatTable(["ID", "表达式", "目标", "下次触发", "消息"], rows)}`);
+            } else {
+              const lines = jobs.map(j => {
+                const next = new Date(j.fireAt).toLocaleString("zh-CN");
+                const target = j.isGroup ? `群${j.targetId}` : j.targetId ?? j.userId;
+                return `  ${j.id}: ${j.cronExpr} → ${target} 下次: ${next}\n    "${j.message}"`;
+              });
+              await ctx.reply(`📋 定时任务 (${jobs.length}):\n${lines.join("\n")}`);
+            }
             return;
           }
 

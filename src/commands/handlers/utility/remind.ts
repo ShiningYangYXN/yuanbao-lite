@@ -30,12 +30,23 @@ export function register(cmdSys: CommandSystem): void {
               await ctx.reply("暂无提醒");
               return;
             }
-            const lines = jobs.map(j => {
-              const time = new Date(j.fireAt).toLocaleString("zh-CN");
-              const target = j.isGroup ? `群${j.targetId}` : j.targetId ?? j.userId;
-              return `  ${j.id}: ${time} → ${target} — "${j.message}"`;
-            });
-            await ctx.reply(`📋 提醒列表 (${jobs.length}):\n${lines.join("\n")}`);
+            if (ctx.useTable) {
+              const { formatTable } = await import("../../utils/table.js");
+              const rows = jobs.map(j => [
+                j.id,
+                new Date(j.fireAt).toLocaleString("zh-CN"),
+                j.isGroup ? `群${j.targetId}` : (j.targetId ?? j.userId),
+                j.message.substring(0, 30),
+              ]);
+              await ctx.reply(`📋 提醒列表 (${jobs.length}):\n${formatTable(["ID", "触发时间", "目标", "消息"], rows)}`);
+            } else {
+              const lines = jobs.map(j => {
+                const time = new Date(j.fireAt).toLocaleString("zh-CN");
+                const target = j.isGroup ? `群${j.targetId}` : j.targetId ?? j.userId;
+                return `  ${j.id}: ${time} → ${target} — "${j.message}"`;
+              });
+              await ctx.reply(`📋 提醒列表 (${jobs.length}):\n${lines.join("\n")}`);
+            }
             return;
           }
 

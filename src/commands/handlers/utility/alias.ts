@@ -52,8 +52,14 @@ export function register(cmdSys: CommandSystem): void {
                 await ctx.reply("暂无别名");
                 return;
               }
-              const lines = all.map(e => `  ${e.alias} -> ${e.id}${e.nickname ? ` (${e.nickname})` : ""}`);
-              await ctx.reply(`📋 别名列表:\n${lines.join("\n")}`);
+              if (ctx.useTable) {
+                const { formatTable } = await import("../../utils/table.js");
+                const rows = all.map(e => [e.alias, e.id, e.nickname || ""]);
+                await ctx.reply(`📋 别名列表 (${all.length} 个):\n${formatTable(["别名", "ID", "昵称"], rows)}`);
+              } else {
+                const lines = all.map(e => `  ${e.alias} -> ${e.id}${e.nickname ? ` (${e.nickname})` : ""}`);
+                await ctx.reply(`📋 别名列表:\n${lines.join("\n")}`);
+              }
               break;
             }
             case "save": {

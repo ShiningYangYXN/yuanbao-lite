@@ -811,7 +811,10 @@ export class CommandSystem {
       await bot.sendDirectMessage(message.fromUserId, text);
     });
 
-    // Detect and strip --all/-a and --table/-t flags
+    // Detect and strip --all/-a, --table/-t, --plain flags
+    // --table: force table output (overrides default)
+    // --plain: force plain text output (overrides default)
+    // Default: chat source → table, CLI source → plain text
     // For /shell and /sh, do NOT strip --all/-a from args because they may be
     // part of the actual shell command. The /shell handler will detect the flag
     // only when it appears as the first argument (i.e. /shell --all <cmd>).
@@ -822,12 +825,15 @@ export class CommandSystem {
     if (isShellCommand) {
       const firstArg = args[0];
       showAll = firstArg === "--all" || firstArg === "-a";
-      useTable = false; // shell doesn't support --table
+      useTable = false;
       filteredArgs = showAll ? args.slice(1) : args;
     } else {
       showAll = args.includes("--all") || args.includes("-a");
-      useTable = args.includes("--table") || args.includes("-t");
-      filteredArgs = args.filter(a => a !== "--all" && a !== "-a" && a !== "--table" && a !== "-t");
+      const forceTable = args.includes("--table") || args.includes("-t");
+      const forcePlain = args.includes("--plain");
+      // Default: chat=table, CLI=plain. Explicit flags override.
+      useTable = forcePlain ? false : (forceTable ? true : source === "chat");
+      filteredArgs = args.filter(a => a !== "--all" && a !== "-a" && a !== "--table" && a !== "-t" && a !== "--plain");
     }
 
     // resolveAtReference: single-arg @-reference resolver.

@@ -30,14 +30,19 @@ export function register(cmdSys: CommandSystem): void {
               await ctx.reply("没有正在运行的批量任务");
               return;
             }
-            const lines: string[] = ["📋 运行中的批量任务:"];
-            for (const id of ids) {
+            const batchData = ids.map(id => {
               const b = getActiveBatch(id);
-              if (!b) continue;
-              const p = b.getProgress();
-              lines.push(`  ${id}: ${p.sent}/${p.total} (失败 ${p.failed})${p.cancelled ? " [已取消]" : ""}`);
+              if (!b) return null;
+              return { id, p: b.getProgress() };
+            }).filter(Boolean) as { id: string; p: { sent: number; total: number; failed: number; cancelled: boolean } }[];
+            if (ctx.useTable) {
+              const { formatTable } = await import("../../utils/table.js");
+              const rows = batchData.map(({ id, p }) => [id, `${p.sent}/${p.total}`, String(p.failed), p.cancelled ? "已取消" : ""]);
+              await ctx.reply(`📋 运行中的批量任务 (${batchData.length}):\n${formatTable(["任务ID", "进度", "失败", "状态"], rows)}`);
+            } else {
+              const lines = batchData.map(({ id, p }) => `  ${id}: ${p.sent}/${p.total} (失败 ${p.failed})${p.cancelled ? " [已取消]" : ""}`);
+              await ctx.reply(`📋 运行中的批量任务:\n${lines.join("\n")}`);
             }
-            await ctx.reply(lines.join("\n"));
             return;
           }
 

@@ -29,9 +29,20 @@ export function register(cmdSys: CommandSystem): void {
             if (info.code === 0 && info.group_info) {
               const gi = info.group_info;
               const ownerDisplay = gi.group_owner_nickname
-                ? `${gi.group_owner_nickname} (ID: ${gi.group_owner_user_id || "?"})`
+                ? `${gi.group_owner_nickname} (${gi.group_owner_user_id || "?"})`
                 : gi.group_owner_user_id || "(未知)";
-              await ctx.reply(`📋 群信息:\n  群号: ${groupCode}\n  群名: ${gi.group_name || "(未知)"}\n  👤 群主: ${ownerDisplay}\n  👥 成员数: ${gi.group_size || 0}`);
+              const kv: [string, string][] = [
+                ["群号", groupCode],
+                ["群名", gi.group_name || "(未知)"],
+                ["群主", ownerDisplay],
+                ["成员数", String(gi.group_size || 0)],
+              ];
+              if (ctx.useTable) {
+                const { formatTable } = await import("../../utils/table.js");
+                await ctx.reply(`📋 群信息\n${formatTable(["属性", "值"], kv)}`);
+              } else {
+                await ctx.reply(`📋 群信息:\n${kv.map(([k, v]) => `  ${k}: ${v}`).join("\n")}`);
+              }
             } else {
               await ctx.reply(`📋 群信息: 查询成功但无详细数据 (code: ${info.code})`);
             }

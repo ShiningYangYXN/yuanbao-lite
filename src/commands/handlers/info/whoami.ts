@@ -32,19 +32,24 @@ export function register(cmdSys: CommandSystem): void {
             groupName = entry?.groupName || entry?.name;
           }
 
-          const lines = [
-            `👤 你的信息:`,
-            `  用户ID: ${msg.fromUserId}`,
-            `  昵称: ${msg.fromNickname || "(未知)"}`,
-            `  聊天类型: ${msg.chatType === "group" ? "群聊" : "私聊"}`,
-            ...(msg.chatType === "group" ? [
-              `  群号: ${msg.groupCode || "(未知)"}`,
-              `  群名: ${groupName || "(未知)"}`,
-            ] : []),
-            `  是否受信: ${trusted ? "✅ 是" : "❌ 否"}`,
-            ...(trusted ? [`  (可使用 /unsafe on 开启危险模式)`] : []),
+          const kv: [string, string][] = [
+            ["用户ID", msg.fromUserId],
+            ["昵称", msg.fromNickname || "(未知)"],
+            ["聊天类型", msg.chatType === "group" ? "群聊" : "私聊"],
           ];
-          await ctx.reply(lines.join("\n"));
+          if (msg.chatType === "group") {
+            kv.push(["群号", msg.groupCode || "(未知)"]);
+            kv.push(["群名", groupName || "(未知)"]);
+          }
+          kv.push(["是否受信", trusted ? "✅ 是" : "❌ 否"]);
+
+          if (ctx.useTable) {
+            const { formatTable } = await import("../../utils/table.js");
+            await ctx.reply(`👤 你的信息\n${formatTable(["属性", "值"], kv)}`);
+          } else {
+            const lines = [`👤 你的信息:`, ...kv.map(([k, v]) => `  ${k}: ${v}`)];
+            await ctx.reply(lines.join("\n"));
+          }
         },
       });
 }

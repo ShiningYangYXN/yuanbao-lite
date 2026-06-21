@@ -129,13 +129,28 @@ export function register(cmdSys: CommandSystem): void {
           await ctx.reply("📋 最近没有包含附件的消息");
           return;
         }
-        const lines = withAttachments.map(m => {
-          const atts = extractAttachments(m.rawBody);
-          const time = new Date(m.timestamp).toLocaleString("zh-CN");
-          const sender = m.fromNickname ?? m.fromUserId;
-          return `  ${m.id.slice(-8)} [${time}] ${sender}: ${atts.length} 个附件 (${atts.map(a => a.type).join(", ")})`;
-        });
-        await ctx.reply(`📋 最近 ${withAttachments.length} 条含附件消息:\n${lines.join("\n")}`);
+        if (ctx.useTable) {
+          const { formatTable } = await import("../../utils/table.js");
+          const rows = withAttachments.map(m => {
+            const atts = extractAttachments(m.rawBody);
+            return [
+              m.id.slice(-8),
+              new Date(m.timestamp).toLocaleString("zh-CN"),
+              m.fromNickname ?? m.fromUserId,
+              String(atts.length),
+              atts.map(a => a.type).join(","),
+            ];
+          });
+          await ctx.reply(`📋 最近 ${withAttachments.length} 条含附件消息:\n${formatTable(["消息ID", "时间", "发送者", "附件数", "类型"], rows)}`);
+        } else {
+          const lines = withAttachments.map(m => {
+            const atts = extractAttachments(m.rawBody);
+            const time = new Date(m.timestamp).toLocaleString("zh-CN");
+            const sender = m.fromNickname ?? m.fromUserId;
+            return `  ${m.id.slice(-8)} [${time}] ${sender}: ${atts.length} 个附件 (${atts.map(a => a.type).join(", ")})`;
+          });
+          await ctx.reply(`📋 最近 ${withAttachments.length} 条含附件消息:\n${lines.join("\n")}`);
+        }
         return;
       }
 
