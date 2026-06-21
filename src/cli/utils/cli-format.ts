@@ -7,12 +7,21 @@
 
 import chalk from "chalk";
 import Table from "cli-table3";
-import { marked } from "marked";
-import markedTerminal from "marked-terminal";
 import type { ChatMessage } from "../../types.js";
 
-// Configure marked to use marked-terminal for ANSI rendering
-marked.use(markedTerminal());
+// Lazy-load marked + marked-terminal to avoid compatibility issues at import time
+let _markedReady = false;
+let _parse: ((text: string) => string) | null = null;
+async function ensureMarked(): Promise<(text: string) => string> {
+  if (!_markedReady) {
+    const { marked } = await import("marked");
+    const markedTerminal = (await import("marked-terminal")).default;
+    marked.use(markedTerminal());
+    _parse = (text: string) => marked.parse(text) as string;
+    _markedReady = true;
+  }
+  return _parse!;
+}
 
 /**
  * Format data as a colored CLI table (cli-table3 + chalk).
@@ -106,10 +115,11 @@ function colorizeMentions(text: string): string {
  * Render Markdown text as ANSI for CLI display.
  * Uses marked-terminal for rendering, with @[]() mentions pre-colored.
  */
-export function renderMarkdownAnsi(text: string): string {
+export async function renderMarkdownAnsi(text: string): Promise<string> {
   const colored = colorizeMentions(text);
   try {
-    return marked.parse(colored) as string;
+    const parse = await ensureMarked();
+    return parse(colored) as string;
   } catch {
     return colored;
   }
