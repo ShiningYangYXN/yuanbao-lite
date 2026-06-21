@@ -126,34 +126,59 @@ export async function renderMarkdownAnsi(text: string): Promise<string> {
 }
 
 /**
- * Format an inbound message for CLI display with user type colors.
+ * Format an inbound message for CLI display.
+ * Two-line layout (header + body), inspired by the old format but with
+ * more slots: type label, nickname, group/scope, mention mark, time, text.
+ *
+ * Format:
+ *   DM  👤用户  昵称 · 12:34:56
+ *       消息文本
+ *
+ *   GR  👤用户  群名 / 昵称 @ · 12:34:56
+ *       消息文本
  */
 export function formatInboundMessage(
   msg: ChatMessage,
   isGroup: boolean,
   isMaster?: boolean,
 ): string {
-  const time = formatTime(msg.timestamp);
+  const time = chalk.dim(formatTime(msg.timestamp));
   const name = msg.fromNickname || msg.fromUserId;
   const typeLabel = userTypeLabel(msg.fromUserId, undefined, isMaster);
-  const coloredNick = coloredName(msg.fromUserId, name, undefined, isMaster);
-  const scope = isGroup
-    ? chalk.cyan(`@${msg.groupName || msg.groupCode || "?"}`)
-    : chalk.dim("@DM");
+  const nick = coloredName(msg.fromUserId, name, undefined, isMaster);
   const mentionMark = msg.isMentioned ? chalk.yellow(" @") : "";
-  const header = chalk.dim(`[${time}]`) + ` ${typeLabel} ${coloredNick} ${scope}${mentionMark}`;
-  const body = `  ${msg.text || "(非文本)"}`;
+
+  // Detect attachments in text
+  const hasAttachment = msg.text && (msg.text.includes("[image:") || msg.text.includes("[file:") || msg.text.includes("[video:") || msg.text.includes("[voice:") || msg.text.includes("[附件:"));
+  const attachMark = hasAttachment ? chalk.blue(" 📎") : "";
+
+  // Detect content references
+  const hasContent = msg.text && msg.text.includes("[content:");
+  const contentMark = hasContent ? chalk.cyan(" 📄") : "";
+
+  let header: string;
+  if (isGroup) {
+    const group = chalk.cyan(msg.groupName || msg.groupCode || "?");
+    header = `  ${chalk.dim("GR")}  ${typeLabel}  ${group} ${chalk.dim("/")} ${nick}${mentionMark}${attachMark}${contentMark} ${chalk.dim("·")} ${time}`;
+  } else {
+    header = `  ${chalk.green("DM")}  ${typeLabel}  ${nick}${attachMark}${contentMark} ${chalk.dim("·")} ${time}`;
+  }
+  const body = `      ${msg.text || "(非文本)"}`;
   return `${header}\n${body}`;
 }
 
 /**
  * Format a bot outbound message for CLI display.
+ * Format:
+ *   📤BOT  →  群名/DM · 12:34:56
+ *       消息文本
  */
 export function formatOutboundMessage(text: string, to: string, isGroup: boolean): string {
-  const time = formatTime(Date.now());
+  const time = chalk.dim(formatTime(Date.now()));
   const scope = isGroup ? chalk.cyan(`@${to}`) : chalk.dim("@DM");
-  const header = chalk.dim(`[${time}]`) + ` ${chalk.magenta("📤BOT")} → ${scope}`;
-  const body = `  ${text.substring(0, 200)}${text.length > 200 ? "..." : ""}`;
+  const header = `  ${chalk.magenta("📤BOT")}  ${chalk.dim("→")}  ${scope} ${chalk.dim("·")} ${time}`;
+  const displayText = text.length > 500 ? text.substring(0, 500) + chalk.dim("...") : text;
+  const body = `      ${displayText}`;
   return `${header}\n${body}`;
 }
 
