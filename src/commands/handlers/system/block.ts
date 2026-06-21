@@ -81,14 +81,25 @@ export function register(cmdSys: CommandSystem): void {
               await ctx.reply("📋 封禁列表为空");
               return;
             }
-            const lines = entries.map(e =>
-              `  ${e.userId === "*" ? "🌟" : "🚫"} ${e.userId}` +
-              `${e.nickname ? ` (${e.nickname})` : ""}` +
-              `${e.userId === "*" ? " [全局]" : ""}` +
-              `  范围: ${e.scopes.join(", ")}` +
-              `  封禁于 ${new Date(e.blockedAt).toLocaleString("zh-CN")}`,
-            );
-            await ctx.reply(`📋 封禁列表 (${entries.length} 条):\n${lines.join("\n")}`);
+            if (ctx.useTable) {
+              const { formatTable } = await import("../../utils/table.js");
+              const rows = entries.map(e => [
+                e.userId,
+                e.nickname || "",
+                e.scopes.join(", "),
+                new Date(e.blockedAt).toLocaleString("zh-CN"),
+              ]);
+              await ctx.reply(`📋 封禁列表 (${entries.length} 条):\n${formatTable(["用户ID", "昵称", "范围", "封禁时间"], rows)}`);
+            } else {
+              const lines = entries.map(e =>
+                `  ${e.userId === "*" ? "🌟" : "🚫"} ${e.userId}` +
+                `${e.nickname ? ` (${e.nickname})` : ""}` +
+                `${e.userId === "*" ? " [全局]" : ""}` +
+                `  范围: ${e.scopes.join(", ")}` +
+                `  封禁于 ${new Date(e.blockedAt).toLocaleString("zh-CN")}`,
+              );
+              await ctx.reply(`📋 封禁列表 (${entries.length} 条):\n${lines.join("\n")}`);
+            }
             return;
           }
 

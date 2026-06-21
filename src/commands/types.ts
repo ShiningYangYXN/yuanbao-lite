@@ -38,6 +38,8 @@ export type CommandContext = {
   groupCode?: string;
   /** Whether --all/-a flag was specified (disable truncation for long-output commands) */
   showAll: boolean;
+  /** Whether --table/-t flag was specified (output as Markdown table) */
+  useTable: boolean;
   /** Where the command was invoked from — affects coloring/output format */
   source: "chat" | "cli";
   /**

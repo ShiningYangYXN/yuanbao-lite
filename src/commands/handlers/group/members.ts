@@ -35,20 +35,32 @@ export function register(cmdSys: CommandSystem): void {
               } catch { /* ignore */ }
 
               const maxMembers = ctx.showAll ? members.member_list.length : 50;
-              const lines = members.member_list.slice(0, maxMembers).map(m => {
-                const typeLabel = m.user_type === 1 ? "[人类]" : m.user_type === 2 ? "[元宝]" : m.user_type === 3 ? "[龙虾]" : "";
-                // Check if this member is our bot (本体)
-                const isSelf = ctx.bot.isSelfUserId(String(m.user_id));
-                const selfLabel = isSelf ? "[本体]" : "";
-                // Check if this member is the group owner (群主)
-                const isOwner = groupOwnerId && String(m.user_id) === String(groupOwnerId);
-                const ownerLabel = isOwner ? "[群主]" : "";
-                const displayName = m.nick_name || m.user_id;
-                const labels = [selfLabel, ownerLabel, typeLabel].filter(l => l).join(" ");
-                return `  ${displayName}${labels ? " " + labels : ""}\n    ID: ${m.user_id}`;
-              });
+              const memberList = members.member_list.slice(0, maxMembers);
               const suffix = !ctx.showAll && members.member_list.length > 50 ? `\n  ... 及其他 ${members.member_list.length - 50} 人 (用 /members --all 查看全部)` : "";
-              await ctx.reply(`👥 群成员 (${members.member_list.length}人):\n${lines.join("\n")}${suffix}`);
+
+              if (ctx.useTable) {
+                const { formatTable } = await import("../../utils/table.js");
+                const rows = memberList.map(m => {
+                  const typeLabel = m.user_type === 1 ? "人类" : m.user_type === 2 ? "元宝" : m.user_type === 3 ? "龙虾" : "?";
+                  const isSelf = ctx.bot.isSelfUserId(String(m.user_id));
+                  const isOwner = groupOwnerId && String(m.user_id) === String(groupOwnerId);
+                  const labels = [isSelf ? "本体" : "", isOwner ? "群主" : ""].filter(l => l).join(" ");
+                  return [m.nick_name || m.user_id, m.user_id, typeLabel, labels];
+                });
+                await ctx.reply(`👥 群成员 (${members.member_list.length}人):\n${formatTable(["昵称", "用户ID", "类型", "标记"], rows)}${suffix}`);
+              } else {
+                const lines = memberList.map(m => {
+                  const typeLabel = m.user_type === 1 ? "[人类]" : m.user_type === 2 ? "[元宝]" : m.user_type === 3 ? "[龙虾]" : "";
+                  const isSelf = ctx.bot.isSelfUserId(String(m.user_id));
+                  const selfLabel = isSelf ? "[本体]" : "";
+                  const isOwner = groupOwnerId && String(m.user_id) === String(groupOwnerId);
+                  const ownerLabel = isOwner ? "[群主]" : "";
+                  const displayName = m.nick_name || m.user_id;
+                  const labels = [selfLabel, ownerLabel, typeLabel].filter(l => l).join(" ");
+                  return `  ${displayName}${labels ? " " + labels : ""}\n    ID: ${m.user_id}`;
+                });
+                await ctx.reply(`👥 群成员 (${members.member_list.length}人):\n${lines.join("\n")}${suffix}`);
+              }
             } else {
               await ctx.reply(`👥 群成员: 群 ${groupCode} 暂无成员数据`);
             }

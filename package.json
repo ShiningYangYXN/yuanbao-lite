@@ -1,6 +1,6 @@
 {
   "name": "yuanbao-lite",
-  "version": "11.3.3",
+  "version": "11.3.4",
   "type": "module",
   "description": "Lightweight standalone Yuanbao bot client — chat, commands, media, stickers, LLM takeover, interactive CLI",
   "license": "MIT",
@@ -52,6 +52,7 @@
     "commander": "^15.0.0",
     "defuddle": "^0.19.0",
     "linkedom": "^0.18.12",
+    "markdown-table": "^3.0.4",
     "marked": "^18.0.5",
     "protobufjs": "^7.5.4",
     "string-width": "^8.2.1",

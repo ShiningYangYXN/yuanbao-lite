@@ -811,23 +811,23 @@ export class CommandSystem {
       await bot.sendDirectMessage(message.fromUserId, text);
     });
 
-    // Detect and strip --all/-a flag (disables truncation for long-output commands)
+    // Detect and strip --all/-a and --table/-t flags
     // For /shell and /sh, do NOT strip --all/-a from args because they may be
     // part of the actual shell command. The /shell handler will detect the flag
     // only when it appears as the first argument (i.e. /shell --all <cmd>).
     const isShellCommand = command === "shell" || command === "sh";
     let showAll: boolean;
+    let useTable: boolean;
     let filteredArgs: string[];
     if (isShellCommand) {
-      // Only treat --all/-a as the showAll flag if it's the FIRST argument
-      // This allows: /shell --all <cmd> (no truncation)
-      //         and: /shell <cmd> --all (passes --all to the actual command)
       const firstArg = args[0];
       showAll = firstArg === "--all" || firstArg === "-a";
+      useTable = false; // shell doesn't support --table
       filteredArgs = showAll ? args.slice(1) : args;
     } else {
       showAll = args.includes("--all") || args.includes("-a");
-      filteredArgs = args.filter(a => a !== "--all" && a !== "-a");
+      useTable = args.includes("--table") || args.includes("-t");
+      filteredArgs = args.filter(a => a !== "--all" && a !== "-a" && a !== "--table" && a !== "-t");
     }
 
     // resolveAtReference: single-arg @-reference resolver.
@@ -867,6 +867,7 @@ export class CommandSystem {
       isGroup,
       groupCode,
       showAll,
+      useTable,
       source,
       resolveAtReference,
       resolveTarget,

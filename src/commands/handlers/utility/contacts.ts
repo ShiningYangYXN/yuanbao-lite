@@ -133,11 +133,17 @@ export function register(cmdSys: CommandSystem): void {
                 await ctx.reply("暂无联系人。使用 /contacts add <ID> <名称> 添加");
                 return;
               }
-              const lines = all.map(c => {
-                const fav = c.favorite ? "⭐" : " ";
-                return `  ${fav} ${c.name} -> ${c.id.substring(0, 30)}${c.tag ? ` [${c.tag}]` : ""}`;
-              });
-              await ctx.reply(`📇 联系人列表:\n${lines.join("\n")}\n共 ${all.length} 个联系人`);
+              if (ctx.useTable) {
+                const { formatTable } = await import("../../utils/table.js");
+                const rows = all.map(c => [c.favorite ? "⭐" : "", c.name, c.id, c.tag || ""]);
+                await ctx.reply(`📇 联系人列表 (${all.length} 个):\n${formatTable(["收藏", "名称", "ID", "标签"], rows)}`);
+              } else {
+                const lines = all.map(c => {
+                  const fav = c.favorite ? "⭐" : " ";
+                  return `  ${fav} ${c.name} -> ${c.id.substring(0, 30)}${c.tag ? ` [${c.tag}]` : ""}`;
+                });
+                await ctx.reply(`📇 联系人列表:\n${lines.join("\n")}\n共 ${all.length} 个联系人`);
+              }
               break;
             }
           }

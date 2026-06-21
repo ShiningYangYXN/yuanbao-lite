@@ -91,15 +91,30 @@ export function register(cmdSys: CommandSystem): void {
               await ctx.reply("📋 信任列表为空");
               return;
             }
-            const lines = entries.map(e => {
-              const crown = e.isMaster || e.userId === master ? "👑" : "👤";
-              const nick = e.nickname ? ` (${e.nickname})` : "";
-              const masterTag = e.isMaster ? " [主人]" : "";
-              const grantCount = e.commandGrants ? Object.keys(e.commandGrants).length : 0;
-              const grantTag = grantCount > 0 ? ` [${grantCount}个授权]` : "";
-              return `  ${crown} ${e.userId}${nick}${masterTag}${grantTag}  受信于 ${new Date(e.trustedAt).toLocaleString("zh-CN")}`;
-            });
-            await ctx.reply(`📋 信任列表 (${entries.length} 人):\n${lines.join("\n")}`);
+            if (ctx.useTable) {
+              const { formatTable } = await import("../../utils/table.js");
+              const rows = entries.map(e => {
+                const grantCount = e.commandGrants ? Object.keys(e.commandGrants).length : 0;
+                return [
+                  e.nickname || "",
+                  e.userId,
+                  e.isMaster || e.userId === master ? "主人" : "用户",
+                  String(grantCount),
+                  new Date(e.trustedAt).toLocaleString("zh-CN"),
+                ];
+              });
+              await ctx.reply(`📋 信任列表 (${entries.length} 人):\n${formatTable(["昵称", "用户ID", "角色", "授权数", "受信时间"], rows)}`);
+            } else {
+              const lines = entries.map(e => {
+                const crown = e.isMaster || e.userId === master ? "👑" : "👤";
+                const nick = e.nickname ? ` (${e.nickname})` : "";
+                const masterTag = e.isMaster ? " [主人]" : "";
+                const grantCount = e.commandGrants ? Object.keys(e.commandGrants).length : 0;
+                const grantTag = grantCount > 0 ? ` [${grantCount}个授权]` : "";
+                return `  ${crown} ${e.userId}${nick}${masterTag}${grantTag}  受信于 ${new Date(e.trustedAt).toLocaleString("zh-CN")}`;
+              });
+              await ctx.reply(`📋 信任列表 (${entries.length} 人):\n${lines.join("\n")}`);
+            }
             return;
           }
 

@@ -44,6 +44,9 @@ importers:
       linkedom:
         specifier: ^0.18.12
         version: 0.18.12
+      markdown-table:
+        specifier: ^3.0.4
+        version: 3.0.4
       marked:
         specifier: ^18.0.5
         version: 18.0.5

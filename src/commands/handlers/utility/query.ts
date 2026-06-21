@@ -32,12 +32,23 @@ export function register(cmdSys: CommandSystem): void {
           await ctx.reply("📋 暂无存储的内容");
           return;
         }
-        const lines = all.map(e => {
-          const time = new Date(e.storedAt).toLocaleString("zh-CN");
-          const preview = e.content.substring(0, 50).replace(/\n/g, " ");
-          return `  ${e.contentId} [${e.type}] ${time}: ${preview}${e.content.length > 50 ? "..." : ""}`;
-        });
-        await ctx.reply(`📋 存储的内容 (${all.length} 个):\n${lines.join("\n")}\n\n查看: /query <contentId>`);
+        if (ctx.useTable) {
+          const { formatTable } = await import("../../utils/table.js");
+          const rows = all.map(e => [
+            e.contentId,
+            e.type,
+            new Date(e.storedAt).toLocaleString("zh-CN"),
+            e.content.substring(0, 50).replace(/\n/g, " ") + (e.content.length > 50 ? "..." : ""),
+          ]);
+          await ctx.reply(`📋 存储的内容 (${all.length} 个):\n${formatTable(["ID", "类型", "时间", "预览"], rows)}`);
+        } else {
+          const lines = all.map(e => {
+            const time = new Date(e.storedAt).toLocaleString("zh-CN");
+            const preview = e.content.substring(0, 50).replace(/\n/g, " ");
+            return `  ${e.contentId} [${e.type}] ${time}: ${preview}${e.content.length > 50 ? "..." : ""}`;
+          });
+          await ctx.reply(`📋 存储的内容 (${all.length} 个):\n${lines.join("\n")}\n\n查看: /query <contentId>`);
+        }
         return;
       }
 
