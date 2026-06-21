@@ -109,8 +109,8 @@ export function register(cmdSys: CommandSystem): void {
   cmdSys.register({
     name: "attachment",
     aliases: ["附件", "attach"],
-    description: "查看和下载聊天消息中的附件（图片/文件/视频/语音）",
-    usage: "/attachment list [消息ID或#尾号]\n/attachment download <消息ID或#尾号> <索引>\n/attachment recent [数量]",
+    description: "查看和下载聊天消息中的附件（图片/文件/视频/语音，支持自定义下载路径）",
+    usage: "/attachment list [消息ID或#尾号]\n/attachment download <消息ID或#尾号> <索引> [--to <保存路径>]\n/attachment url <消息ID或#尾号> [索引]\n/attachment recent [数量]",
     category: "media" as CommandCategory,
     dmOnly: true,
     handler: async (ctx) => {
@@ -180,10 +180,42 @@ export function register(cmdSys: CommandSystem): void {
         return;
       }
 
-      // /attachment download <消息ID或#尾号> <索引>
+      // /attachment url <消息ID或#尾号> [索引] — view attachment URLs
+      if (subCmd === "url") {
+        if (ctx.args.length < 2) {
+          await ctx.reply("用法: /attachment url <消息ID或#尾号> [索引]\n无索引=显示所有附件URL");
+          return;
+        }
+        const msg = findMessageByIdOrSuffix(ctx, ctx.args[1]);
+        if (!msg) {
+          await ctx.reply(`❌ 未找到消息: ${ctx.args[1]}`);
+          return;
+        }
+        const atts = extractAttachments(msg.rawBody);
+        if (atts.length === 0) {
+          await ctx.reply(`消息 ${msg.id.slice(-8)} 没有附件`);
+          return;
+        }
+        const idxArg = ctx.args[2];
+        if (idxArg !== undefined) {
+          const idx = parseInt(idxArg, 10);
+          if (isNaN(idx) || idx < 0 || idx >= atts.length) {
+            await ctx.reply(`❌ 无效索引 ${idxArg}，该消息有 ${atts.length} 个附件 (0-${atts.length - 1})`);
+            return;
+          }
+          const att = atts[idx];
+          await ctx.reply(`📎 附件 [${idx}] ${att.type}:\nURL: ${att.url ?? "(无URL)"}\nUUID: ${att.uuid ?? "?"}`);
+        } else {
+          const lines = atts.map(a => `  [${a.index}] ${a.type}: ${a.url ?? "(无URL)"}`);
+          await ctx.reply(`📎 消息 ${msg.id.slice(-8)} 的附件URL (${atts.length} 个):\n${lines.join("\n")}`);
+        }
+        return;
+      }
+
+      // /attachment download <消息ID或#尾号> <索引> [--to <保存路径>]
       if (subCmd === "download" || subCmd === "dl") {
         if (ctx.args.length < 3) {
-          await ctx.reply("用法: /attachment download <消息ID或#尾号> <索引>\n先用 /attachment list 查看索引");
+          await ctx.reply("用法: /attachment download <消息ID或#尾号> <索引> [--to <保存路径>]\n先用 /attachment list 查看索引");
           return;
         }
         const msg = findMessageByIdOrSuffix(ctx, ctx.args[1]);
@@ -197,6 +229,14 @@ export function register(cmdSys: CommandSystem): void {
           await ctx.reply(`❌ 无效索引 ${ctx.args[2]}，该消息有 ${atts.length} 个附件 (0-${atts.length - 1})`);
           return;
         }
+        // Parse optional --to flag for custom save path
+        let saveDir: string | undefined;
+        for (let i = 3; i < ctx.args.length; i++) {
+          if (ctx.args[i] === "--to" && ctx.args[i + 1]) {
+            saveDir = ctx.args[i + 1];
+            i++;
+          }
+        }
         const att = atts[idx];
         if (!att.url) {
           await ctx.reply(`❌ 该附件没有可下载的 URL (uuid: ${att.uuid ?? "?"})`);
@@ -205,7 +245,7 @@ export function register(cmdSys: CommandSystem): void {
         try {
           const fileName = att.fileName ?? att.uuid ?? `attachment_${idx}`;
           await ctx.reply(`⏳ 正在下载 ${att.type}: ${fileName}...`);
-          const result = await ctx.bot.downloadMedia(att.url, undefined, fileName);
+          const result = await ctx.bot.downloadMedia(att.url, saveDir, fileName);
           await ctx.reply(`✅ 下载完成: ${result.filePath} (${formatSize(result.fileSize)})`);
         } catch (err) {
           await ctx.reply(`❌ 下载失败: ${(err as Error).message}`);
@@ -215,9 +255,10 @@ export function register(cmdSys: CommandSystem): void {
 
       await ctx.reply(
         "用法:\n" +
-        "  /attachment list [消息ID或#尾号]   — 列出消息附件 (无参数=最近)\n" +
-        "  /attachment download <ID> <索引>   — 下载指定附件\n" +
-        "  /attachment recent [数量]           — 列出最近含附件的消息",
+        "  /attachment list [消息ID或#尾号]              — 列出消息附件 (无参数=最近)\n" +
+        "  /attachment download <ID> <索引> [--to <路径>] — 下载指定附件\n" +
+        "  /attachment url <ID> [索引]                    — 查看附件URL\n" +
+        "  /attachment recent [数量]                      — 列出最近含附件的消息",
       );
     },
   });

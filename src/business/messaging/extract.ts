@@ -323,9 +323,25 @@ export function extractContentFromMsgBody(
           // If we couldn't extract anything, DON'T push "[link]" — that's the
           // "garbage text" the user complained about. Just skip silently.
         } else if (elemType === 1009) {
-          // Forwarded chat records — would need protobuf decoding for full content
-          // For now, just add a placeholder
-          textParts.push("[forwarded records]");
+          // Forwarded chat records (微信转发聊天记录)
+          // Full content is in msg_content.ext_map (protobuf-encoded ForwardMsgData),
+          // but ext_map is not accessible here (only content.data is).
+          // Fall back to the text summary in customData JSON.
+          let summary: string | undefined;
+          if (customData) {
+            try {
+              const parsed = JSON.parse(customData) as Record<string, unknown>;
+              if (typeof parsed.text === "string") summary = parsed.text;
+              else if (typeof parsed.desc === "string") summary = parsed.desc;
+            } catch {
+              // Not JSON
+            }
+          }
+          if (summary && summary.trim()) {
+            textParts.push(`[转发聊天记录: ${summary}]`);
+          } else {
+            textParts.push("[转发聊天记录]");
+          }
         } else if (customData) {
           // Unknown custom element — try to extract any text content from data
           // before falling back. If nothing can be extracted, skip silently
