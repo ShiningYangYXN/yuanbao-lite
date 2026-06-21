@@ -39,6 +39,7 @@ import { register as registerWhois } from "./info/whois.js";
 import { register as registerLlm } from "./llm/llm.js";
 import { register as registerNew } from "./llm/new.js";
 import { register as registerDownload } from "./media/download.js";
+import { register as registerAttachment } from "./media/attachment.js";
 import { register as registerFile } from "./media/file.js";
 import { register as registerImg } from "./media/img.js";
 import { register as registerTempfile } from "./media/tempfile.js";
@@ -97,6 +98,7 @@ export {
   registerLlm,
   registerNew,
   registerDownload,
+  registerAttachment,
   registerFile,
   registerImg,
   registerTempfile,
@@ -156,6 +158,7 @@ export function registerAll(cmdSys: CommandSystem): void {
   registerLlm(cmdSys);
   registerNew(cmdSys);
   registerDownload(cmdSys);
+  registerAttachment(cmdSys);
   registerFile(cmdSys);
   registerImg(cmdSys);
   registerTempfile(cmdSys);

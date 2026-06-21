@@ -127,15 +127,22 @@ export function extractContentFromMsgBody(
 
       case "TIMImageElem": {
         // Image info is in image_info_array
+        // Original project logic: prefer index 1 (medium/thumbnail) over
+        // index 0 (original) to save bandwidth. Fall back to index 0.
+        // type field: 1=original, 2=thumbnail, 3=large (IM convention)
         const infoArray = content.image_info_array as Array<Record<string, unknown>> | undefined;
-        const first = infoArray?.[0];
-        const uuid = typeof first?.uuid === "string" ? first.uuid : undefined;
-        const url = typeof first?.url === "string" ? first.url : undefined;
-        const width = typeof first?.width === "number" ? first.width : undefined;
-        const height = typeof first?.height === "number" ? first.height : undefined;
+        const selected = infoArray?.[1] ?? infoArray?.[0];
+        const uuid = typeof content.uuid === "string" ? content.uuid : undefined;
+        const url = typeof selected?.url === "string" ? selected.url : undefined;
+        const width = typeof selected?.width === "number" ? selected.width : undefined;
+        const height = typeof selected?.height === "number" ? selected.height : undefined;
         if (uuid || url) {
           medias.push({ type: "image", uuid, url, width, height });
-          textParts.push(`[image:${uuid ?? "unknown"}]`);
+          // Build media name: {uuid}_{w}_{h} if dimensions available
+          const uuidStem = uuid ? uuid.replace(/\.[^.]+$/, "") : `image${medias.filter(m => m.type === "image").length}`;
+          const ext = uuid ? (uuid.match(/\.(jpg|jpeg|png|gif|webp|bmp)$/i)?.[0] ?? "") : "";
+          const name = width && height ? `${uuidStem}_${width}_${height}${ext}` : (uuid ?? `image${medias.filter(m => m.type === "image").length}`);
+          textParts.push(`[image:${name}]`);
         }
         break;
       }
