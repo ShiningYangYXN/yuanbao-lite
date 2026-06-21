@@ -32,8 +32,7 @@ export function register(cmdSys: CommandSystem): void {
           if (account.name) kv.push(["名称", account.name]);
 
           if (ctx.useTable) {
-            const { formatTable } = await import("../../utils/table.js");
-            await ctx.reply(`📊 机器人状态\n${formatTable(["属性", "值"], kv)}`);
+                        await ctx.reply(`📊 机器人状态\n${await ctx.formatTable(["属性", "值"], kv)}`);
           } else {
             const lines = ["📊 机器人状态", ...kv.map(([k, v]) => `  ${k}: ${v}`)];
             await ctx.reply(lines.join("\n"));

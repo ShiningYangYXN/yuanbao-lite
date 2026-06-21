@@ -41,9 +41,8 @@ export function register(cmdSys: CommandSystem): void {
                 return;
               }
               if (ctx.useTable) {
-                const { formatTable } = await import("../../utils/table.js");
-                const rows = results.map(r => [r.groupCode, r.groupName || "(未知)", `${r.groupSize}人`, r.matchType]);
-                await ctx.reply(`🔍 群组搜索结果 (${results.length} 个)\n${formatTable(["群号", "群名", "人数", "匹配类型"], rows)}`);
+                                const rows = results.map(r => [r.groupCode, r.groupName || "(未知)", `${r.groupSize}人`, r.matchType]);
+                await ctx.reply(`🔍 群组搜索结果 (${results.length} 个)\n${await ctx.formatTable(["群号", "群名", "人数", "匹配类型"], rows)}`);
               } else {
                 const lines = results.map(r =>
                   `  ${r.groupCode} — ${r.groupName || "(未知)"} (${r.groupSize}人) [${r.matchType}]`,
@@ -71,14 +70,13 @@ export function register(cmdSys: CommandSystem): void {
                 return;
               }
               if (ctx.useTable) {
-                const { formatTable } = await import("../../utils/table.js");
-                const rows = results.map(r => [
+                                const rows = results.map(r => [
                   r.userId,
                   r.nickName,
                   r.userType === 1 ? "人类" : r.userType === 2 ? "元宝" : r.userType === 3 ? "龙虾" : "?",
                   r.matchType,
                 ]);
-                await ctx.reply(`🔍 成员搜索结果 (${groupCode}, ${results.length} 个)\n${formatTable(["用户ID", "昵称", "类型", "匹配类型"], rows)}`);
+                await ctx.reply(`🔍 成员搜索结果 (${groupCode}, ${results.length} 个)\n${await ctx.formatTable(["用户ID", "昵称", "类型", "匹配类型"], rows)}`);
               } else {
                 const lines = results.map(r => {
                   const typeLabel = r.userType === 1 ? "[人类]" : r.userType === 2 ? "[元宝]" : r.userType === 3 ? "[龙虾]" : "";

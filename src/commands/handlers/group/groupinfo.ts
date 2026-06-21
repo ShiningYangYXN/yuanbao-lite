@@ -38,8 +38,7 @@ export function register(cmdSys: CommandSystem): void {
                 ["成员数", String(gi.group_size || 0)],
               ];
               if (ctx.useTable) {
-                const { formatTable } = await import("../../utils/table.js");
-                await ctx.reply(`📋 群信息\n${formatTable(["属性", "值"], kv)}`);
+                                await ctx.reply(`📋 群信息\n${await ctx.formatTable(["属性", "值"], kv)}`);
               } else {
                 await ctx.reply(`📋 群信息:\n${kv.map(([k, v]) => `  ${k}: ${v}`).join("\n")}`);
               }

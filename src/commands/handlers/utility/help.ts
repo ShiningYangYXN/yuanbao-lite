@@ -40,8 +40,7 @@ export function register(cmdSys: CommandSystem): void {
             if (def.hidden) flags.push("隐藏");
             if (flags.length > 0) kv.push(["标记", flags.join(", ")]);
             if (ctx.useTable) {
-              const { formatTable } = await import("../../utils/table.js");
-              await ctx.replyDoc(`📖 命令帮助\n${formatTable(["属性", "值"], kv)}`);
+                            await ctx.replyDoc(`📖 命令帮助\n${await ctx.formatTable(["属性", "值"], kv)}`);
             } else {
               const lines = ["📖 命令帮助:", ...kv.map(([k, v]) => `  ${k}: ${v}`)];
               await ctx.replyDoc(lines.join("\n"));
@@ -58,8 +57,7 @@ export function register(cmdSys: CommandSystem): void {
 
           if (ctx.useTable) {
             // Table mode: group by category with icon + Chinese name
-            const { formatTable } = await import("../../utils/table.js");
-            const categoryLabels: Record<string, string> = {
+                        const categoryLabels: Record<string, string> = {
               info: "ℹ️ 信息",
               system: "🔐 安全",
               chat: "💬 聊天",
@@ -87,7 +85,7 @@ export function register(cmdSys: CommandSystem): void {
                 cmd.description || "",
                 cmd.dmOnly ? "仅私聊" : "",
               ]);
-              sections.push(`\n### ${label}\n${formatTable(["命令", "别名", "描述", "标记"], rows)}`);
+              sections.push(`\n### ${label}\n${await ctx.formatTable(["命令", "别名", "描述", "标记"], rows)}`);
             }
             await ctx.replyDoc(sections.join("\n"));
           } else {

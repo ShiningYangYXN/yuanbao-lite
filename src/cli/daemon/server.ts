@@ -107,6 +107,11 @@ export class Daemon {
     this.bot.on("directMessage", (msg: ChatMessage) => this.broadcastSse("directMessage", msg));
     this.bot.on("groupMessage", (msg: ChatMessage) => this.broadcastSse("groupMessage", msg));
     this.bot.on("stateChange", (state: BotState) => this.broadcastSse("stateChange", state));
+    // Forward outbound messages (bot's own replies) for CLI echo
+    this.bot.on("outboundMessage", (data: { text: string; to: string; isGroup: boolean }) => {
+      this.broadcastSse("outboundMessage", data);
+      log.info(`[出站] → ${data.isGroup ? `群${data.to}` : `私聊`}: ${data.text.substring(0, 100)}`);
+    });
 
     // 3. Connect bot (fire-and-forget; HTTP server starts regardless so the
     //    client can poll /health for connection progress)

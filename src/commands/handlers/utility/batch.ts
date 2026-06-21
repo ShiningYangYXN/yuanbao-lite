@@ -36,9 +36,8 @@ export function register(cmdSys: CommandSystem): void {
               return { id, p: b.getProgress() };
             }).filter(Boolean) as { id: string; p: { sent: number; total: number; failed: number; cancelled: boolean } }[];
             if (ctx.useTable) {
-              const { formatTable } = await import("../../utils/table.js");
-              const rows = batchData.map(({ id, p }) => [id, `${p.sent}/${p.total}`, String(p.failed), p.cancelled ? "已取消" : ""]);
-              await ctx.reply(`📋 运行中的批量任务 (${batchData.length}):\n${formatTable(["任务ID", "进度", "失败", "状态"], rows)}`);
+                            const rows = batchData.map(({ id, p }) => [id, `${p.sent}/${p.total}`, String(p.failed), p.cancelled ? "已取消" : ""]);
+              await ctx.reply(`📋 运行中的批量任务 (${batchData.length}):\n${await ctx.formatTable(["任务ID", "进度", "失败", "状态"], rows)}`);
             } else {
               const lines = batchData.map(({ id, p }) => `  ${id}: ${p.sent}/${p.total} (失败 ${p.failed})${p.cancelled ? " [已取消]" : ""}`);
               await ctx.reply(`📋 运行中的批量任务:\n${lines.join("\n")}`);

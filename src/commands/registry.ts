@@ -811,30 +811,53 @@ export class CommandSystem {
       await bot.sendDirectMessage(message.fromUserId, text);
     });
 
-    // Detect and strip --all/-a, --table/-t, --plain flags
-    // --table: force table output (overrides default)
-    // --plain: force plain text output (overrides default)
-    // Default: chat source → table, CLI source → plain text
-    // For /shell and /sh, do NOT strip --all/-a from args because they may be
-    // part of the actual shell command. The /shell handler will detect the flag
-    // only when it appears as the first argument (i.e. /shell --all <cmd>).
+    // Detect and strip --all/-a, --table/-t, --plain, --ansi flags
+    // --table: force Markdown table (chat mode)
+    // --ansi: force CLI colored table (CLI mode)
+    // --plain: force plain text (no table)
+    // Default: chat=table, CLI=ansi
     const isShellCommand = command === "shell" || command === "sh";
     let showAll: boolean;
     let useTable: boolean;
+    let outputMode: "plain" | "table" | "ansi";
     let filteredArgs: string[];
     if (isShellCommand) {
       const firstArg = args[0];
       showAll = firstArg === "--all" || firstArg === "-a";
+      outputMode = "plain";
       useTable = false;
       filteredArgs = showAll ? args.slice(1) : args;
     } else {
       showAll = args.includes("--all") || args.includes("-a");
       const forceTable = args.includes("--table") || args.includes("-t");
+      const forceAnsi = args.includes("--ansi");
       const forcePlain = args.includes("--plain");
-      // Default: chat=table, CLI=plain. Explicit flags override.
-      useTable = forcePlain ? false : (forceTable ? true : source === "chat");
-      filteredArgs = args.filter(a => a !== "--all" && a !== "-a" && a !== "--table" && a !== "-t" && a !== "--plain");
+      // Determine output mode
+      if (forcePlain) outputMode = "plain";
+      else if (forceTable) outputMode = "table";
+      else if (forceAnsi) outputMode = "ansi";
+      else outputMode = source === "cli" ? "ansi" : "table";
+      useTable = outputMode !== "plain";
+      filteredArgs = args.filter(a => a !== "--all" && a !== "-a" && a !== "--table" && a !== "-t" && a !== "--plain" && a !== "--ansi");
     }
+
+    // formatTable: async table formatter.
+    // - "table" mode: Markdown table (markdown-table, already imported)
+    // - "ansi" mode: Colored CLI table (cli-table3 + chalk, dynamic import)
+    // - "plain" mode: not called (handler checks useTable first)
+    const formatTable = async (headers: string[], rows: string[][]): Promise<string> => {
+      if (outputMode === "ansi") {
+        try {
+          const { formatCliTable } = await import("../cli/utils/cli-format.js");
+          return formatCliTable(headers, rows);
+        } catch {
+          // Fallback to markdown table
+        }
+      }
+      // "table" mode or fallback: markdown table
+      const { markdownTable } = await import("markdown-table");
+      return markdownTable([headers, ...rows]);
+    };
 
     // resolveAtReference: single-arg @-reference resolver.
     // Handlers call this on args that represent user IDs (NOT message text).
@@ -873,8 +896,10 @@ export class CommandSystem {
       isGroup,
       groupCode,
       showAll,
+      outputMode,
       useTable,
       source,
+      formatTable,
       resolveAtReference,
       resolveTarget,
     };

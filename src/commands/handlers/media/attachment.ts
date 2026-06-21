@@ -130,8 +130,7 @@ export function register(cmdSys: CommandSystem): void {
           return;
         }
         if (ctx.useTable) {
-          const { formatTable } = await import("../../utils/table.js");
-          const rows = withAttachments.map(m => {
+                    const rows = withAttachments.map(m => {
             const atts = extractAttachments(m.rawBody);
             return [
               m.id.slice(-8),
@@ -141,7 +140,7 @@ export function register(cmdSys: CommandSystem): void {
               atts.map(a => a.type).join(","),
             ];
           });
-          await ctx.reply(`📋 最近 ${withAttachments.length} 条含附件消息:\n${formatTable(["消息ID", "时间", "发送者", "附件数", "类型"], rows)}`);
+          await ctx.reply(`📋 最近 ${withAttachments.length} 条含附件消息:\n${await ctx.formatTable(["消息ID", "时间", "发送者", "附件数", "类型"], rows)}`);
         } else {
           const lines = withAttachments.map(m => {
             const atts = extractAttachments(m.rawBody);

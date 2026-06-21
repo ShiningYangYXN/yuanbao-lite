@@ -72,7 +72,10 @@ export type BotEventType =
   | "error"
   | "ready"
   | "close"
-  | "kickout";
+  | "kickout"
+  | "outboundMessage";
+
+export type OutboundMessageData = { text: string; to: string; isGroup: boolean };
 
 export type BotEventHandler<T extends BotEventType> = T extends "message"
   ? (msg: ChatMessage) => void
@@ -90,7 +93,9 @@ export type BotEventHandler<T extends BotEventType> = T extends "message"
               ? () => void
               : T extends "kickout"
                 ? (data: { status: number; reason: string }) => void
-                : never;
+                : T extends "outboundMessage"
+                  ? (data: OutboundMessageData) => void
+                  : never;
 
 // ─── Bot config ───
 
@@ -490,14 +495,16 @@ export class YuanbaoBot {
    * Send a direct (C2C) text message.
    */
   async sendDirectMessage(userId: string, text: string): Promise<void> {
-    return this.sendText({ to: userId, text, isGroup: false });
+    await this.sendText({ to: userId, text, isGroup: false });
+    this.emit("outboundMessage", { text, to: userId, isGroup: false });
   }
 
   /**
    * Send a group text message.
    */
   async sendGroupMessage(groupCode: string, text: string): Promise<void> {
-    return this.sendText({ to: groupCode, text, isGroup: true });
+    await this.sendText({ to: groupCode, text, isGroup: true });
+    this.emit("outboundMessage", { text, to: groupCode, isGroup: true });
   }
 
   /**
@@ -1706,6 +1713,12 @@ export class YuanbaoBot {
   }
 
   private emitMessageEvents(chatMessage: ChatMessage, chatType: "c2c" | "group"): void {
+    // Log inbound message with user type
+    const uid = chatMessage.fromUserId;
+    const userType = uid.startsWith("bot_") ? "BOT" : "USER";
+    const scope = chatType === "group" ? `群${chatMessage.groupCode}` : "私聊";
+    this.log.info(`[入站] [${userType}] ${chatMessage.fromNickname || uid} @${scope}: ${chatMessage.text?.substring(0, 100) ?? "(非文本)"}`);
+
     // Emit generic message event
     this.emit("message", chatMessage);
 

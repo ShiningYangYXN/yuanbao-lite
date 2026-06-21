@@ -134,9 +134,8 @@ export function register(cmdSys: CommandSystem): void {
                 return;
               }
               if (ctx.useTable) {
-                const { formatTable } = await import("../../utils/table.js");
-                const rows = all.map(c => [c.favorite ? "⭐" : "", c.name, c.id, c.tag || ""]);
-                await ctx.reply(`📇 联系人列表 (${all.length} 个):\n${formatTable(["收藏", "名称", "ID", "标签"], rows)}`);
+                                const rows = all.map(c => [c.favorite ? "⭐" : "", c.name, c.id, c.tag || ""]);
+                await ctx.reply(`📇 联系人列表 (${all.length} 个):\n${await ctx.formatTable(["收藏", "名称", "ID", "标签"], rows)}`);
               } else {
                 const lines = all.map(c => {
                   const fav = c.favorite ? "⭐" : " ";

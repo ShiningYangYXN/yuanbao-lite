@@ -44,8 +44,7 @@ export function register(cmdSys: CommandSystem): void {
           kv.push(["是否受信", trusted ? "✅ 是" : "❌ 否"]);
 
           if (ctx.useTable) {
-            const { formatTable } = await import("../../utils/table.js");
-            await ctx.reply(`👤 你的信息\n${formatTable(["属性", "值"], kv)}`);
+                        await ctx.reply(`👤 你的信息\n${await ctx.formatTable(["属性", "值"], kv)}`);
           } else {
             const lines = [`👤 你的信息:`, ...kv.map(([k, v]) => `  ${k}: ${v}`)];
             await ctx.reply(lines.join("\n"));

@@ -387,11 +387,16 @@ function handleSseEvent(event: string, data: unknown): void {
     case "ready":
       break;
     case "directMessage":
-      printDirectMessage(data as ChatMessage);
+      void printInboundMessage(data as ChatMessage, false);
       break;
     case "groupMessage":
-      printGroupMessage(data as ChatMessage);
+      void printInboundMessage(data as ChatMessage, true);
       break;
+    case "outboundMessage": {
+      const d = data as { text: string; to: string; isGroup: boolean };
+      void printOutboundMessage(d.text, d.to, d.isGroup);
+      break;
+    }
     case "stateChange":
       printStateChange(data as BotState);
       break;
@@ -400,23 +405,18 @@ function handleSseEvent(event: string, data: unknown): void {
   }
 }
 
-function printDirectMessage(msg: ChatMessage): void {
+async function printInboundMessage(msg: ChatMessage, isGroup: boolean): Promise<void> {
   if (msg.fromUserId === "cli") return;
-  const name = msg.fromNickname || msg.fromUserId;
+  const { formatInboundMessage } = await import("../utils/cli-format.js");
   process.stdout.write("\n");
-  console.log(`  ${COLORS.success("DM")}  ${COLORS.value(name)} ${COLORS.dim("·")} ${COLORS.dim(formatTime(msg.timestamp))}`);
-  console.log(`      ${msg.text}`);
+  console.log(formatInboundMessage(msg, isGroup));
   process.stdout.write("\n");
 }
 
-function printGroupMessage(msg: ChatMessage): void {
-  if (msg.fromUserId === "cli") return;
-  const group = msg.groupName || msg.groupCode || "(unknown group)";
-  const name = msg.fromNickname || msg.fromUserId;
-  const mentionMark = msg.isMentioned ? COLORS.warn(" @") : "";
+async function printOutboundMessage(text: string, to: string, isGroup: boolean): Promise<void> {
+  const { formatOutboundMessage } = await import("../utils/cli-format.js");
   process.stdout.write("\n");
-  console.log(`  ${COLORS.brandSoft("GR")}  ${COLORS.h3(group)} ${COLORS.dim("/")} ${COLORS.value(name)}${mentionMark} ${COLORS.dim(formatTime(msg.timestamp))}`);
-  console.log(`      ${msg.text}`);
+  console.log(formatOutboundMessage(text, to, isGroup));
   process.stdout.write("\n");
 }
 
@@ -428,14 +428,7 @@ function printStateChange(s: BotState): void {
   }
 }
 
-function formatTime(ts: number): string {
-  const d = new Date(ts);
-  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
-}
-
-function pad2(n: number): string {
-  return n < 10 ? `0${n}` : String(n);
-}
+// formatTime/pad2 moved to cli-format.ts
 
 // ─── Prompt rendering ───
 

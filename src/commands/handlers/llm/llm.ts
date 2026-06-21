@@ -85,8 +85,7 @@ export function register(cmdSys: CommandSystem): void {
                 ["配置持久化", engine.getPersistencePath() ? "✅" : "❌"],
               ];
               if (ctx.useTable) {
-                const { formatTable } = await import("../../utils/table.js");
-                await ctx.reply(`🤖 LLM 接管状态\n${formatTable(["属性", "值"], kv)}`);
+                                await ctx.reply(`🤖 LLM 接管状态\n${await ctx.formatTable(["属性", "值"], kv)}`);
               } else {
                 const lines = ["🤖 LLM 接管状态:", ...kv.map(([k, v]) => `  ${k}: ${v}`)];
                 await ctx.reply(lines.join("\n"));

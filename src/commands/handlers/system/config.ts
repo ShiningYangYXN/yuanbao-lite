@@ -49,8 +49,7 @@ export function register(cmdSys: CommandSystem): void {
                   ["配置路径", store.getConfigDir()],
                 ];
                 if (ctx.useTable) {
-                  const { formatTable } = await import("../../utils/table.js");
-                  await ctx.reply(`📋 当前配置\n${formatTable(["属性", "值"], kv)}`);
+                                    await ctx.reply(`📋 当前配置\n${await ctx.formatTable(["属性", "值"], kv)}`);
                 } else {
                   const lines = ["📋 当前配置:", ...kv.map(([k, v]) => `  ${k}: ${v}`)];
                   await ctx.reply(lines.join("\n"));

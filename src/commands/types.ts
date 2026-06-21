@@ -38,10 +38,20 @@ export type CommandContext = {
   groupCode?: string;
   /** Whether --all/-a flag was specified (disable truncation for long-output commands) */
   showAll: boolean;
-  /** Whether --table/-t flag was specified (output as Markdown table) */
+  /** Output mode: "plain" (纯文本), "table" (Markdown表格), "ansi" (CLI彩色表格) */
+  outputMode: "plain" | "table" | "ansi";
+  /** Whether table output is requested (true when outputMode is "table" or "ansi") */
   useTable: boolean;
   /** Where the command was invoked from — affects coloring/output format */
   source: "chat" | "cli";
+  /**
+   * Format data as a table. Async because CLI mode uses dynamic import
+   * for cli-table3 + chalk.
+   * - "table" mode: Markdown table (markdown-table)
+   * - "ansi" mode: Colored CLI table (cli-table3 + chalk)
+   * - "plain" mode: not called (handler checks useTable first)
+   */
+  formatTable: (headers: string[], rows: string[][]) => Promise<string>;
   /**
    * Resolve a single @-reference arg to a user ID.
    *

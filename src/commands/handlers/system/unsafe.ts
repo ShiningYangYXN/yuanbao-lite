@@ -50,14 +50,13 @@ export function register(cmdSys: CommandSystem): void {
             const now = Date.now();
 
             if (ctx.useTable) {
-              const { formatTable } = await import("../../utils/table.js");
-              const kv: [string, string][] = [["危险模式", statusLine]];
+                            const kv: [string, string][] = [["危险模式", statusLine]];
               if (allowed.length > 0) {
                 for (const a of allowed) {
                   kv.push([a.name, a.forever ? "永久" : `${Math.ceil((a.expiresAt - now) / 60000)}分钟后过期`]);
                 }
               }
-              await ctx.reply(`📋 危险模式状态\n${formatTable(["属性", "值"], kv)}`);
+              await ctx.reply(`📋 危险模式状态\n${await ctx.formatTable(["属性", "值"], kv)}`);
             } else {
               const lines: string[] = [statusLine];
               if (allowed.length > 0) {

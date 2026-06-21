@@ -92,8 +92,7 @@ export function register(cmdSys: CommandSystem): void {
               return;
             }
             if (ctx.useTable) {
-              const { formatTable } = await import("../../utils/table.js");
-              const rows = entries.map(e => {
+                            const rows = entries.map(e => {
                 const grantCount = e.commandGrants ? Object.keys(e.commandGrants).length : 0;
                 return [
                   e.nickname || "",
@@ -103,7 +102,7 @@ export function register(cmdSys: CommandSystem): void {
                   new Date(e.trustedAt).toLocaleString("zh-CN"),
                 ];
               });
-              await ctx.reply(`📋 信任列表 (${entries.length} 人):\n${formatTable(["昵称", "用户ID", "角色", "授权数", "受信时间"], rows)}`);
+              await ctx.reply(`📋 信任列表 (${entries.length} 人):\n${await ctx.formatTable(["昵称", "用户ID", "角色", "授权数", "受信时间"], rows)}`);
             } else {
               const lines = entries.map(e => {
                 const crown = e.isMaster || e.userId === master ? "👑" : "👤";

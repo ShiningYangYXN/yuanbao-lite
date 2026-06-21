@@ -32,9 +32,8 @@ export function register(cmdSys: CommandSystem): void {
               const maxStickers = ctx.showAll ? results.length : 20;
               const display = results.slice(0, maxStickers);
               if (ctx.useTable) {
-                const { formatTable } = await import("../../utils/table.js");
-                const rows = display.map(s => [`emoji_${s.stickerId}`, s.name, s.description ? s.description.split(/\s+/).slice(0, 3).join(" ") : ""]);
-                await ctx.reply(`🎨 搜索结果 (${results.length} 个)\n${formatTable(["编号", "名称", "描述"], rows)}`);
+                                const rows = display.map(s => [`emoji_${s.stickerId}`, s.name, s.description ? s.description.split(/\s+/).slice(0, 3).join(" ") : ""]);
+                await ctx.reply(`🎨 搜索结果 (${results.length} 个)\n${await ctx.formatTable(["编号", "名称", "描述"], rows)}`);
               } else {
                 const lines = display.map(s =>
                   `  emoji_${s.stickerId} — ${s.name}${s.description ? ` (${s.description.split(/\s+/).slice(0, 3).join(" ")})` : ""}`
@@ -55,9 +54,8 @@ export function register(cmdSys: CommandSystem): void {
             const maxEmojis = ctx.showAll ? emojis.length : 30;
             const display = emojis.slice(0, maxEmojis);
             if (ctx.useTable) {
-              const { formatTable } = await import("../../utils/table.js");
-              const rows = display.map(e => [`emoji_${e.stickerId}`, e.name, e.description ? e.description.split(" ").slice(0, 3).join(" ") : ""]);
-              await ctx.reply(`🎨 内置表情 (${emojis.length} 个)\n${formatTable(["编号", "名称", "描述"], rows)}`);
+                            const rows = display.map(e => [`emoji_${e.stickerId}`, e.name, e.description ? e.description.split(" ").slice(0, 3).join(" ") : ""]);
+              await ctx.reply(`🎨 内置表情 (${emojis.length} 个)\n${await ctx.formatTable(["编号", "名称", "描述"], rows)}`);
             } else {
               const lines = display.map(e =>
                 `  emoji_${e.stickerId} — ${e.name}${e.description ? ` (${e.description.split(" ").slice(0, 3).join(" ")})` : ""}`
@@ -71,9 +69,8 @@ export function register(cmdSys: CommandSystem): void {
             const maxEmojis = ctx.showAll ? emojis.length : 30;
             const display = emojis.slice(0, maxEmojis);
             if (ctx.useTable) {
-              const { formatTable } = await import("../../utils/table.js");
-              const rows = display.map(e => [`emoji_${e.stickerId}`, e.name, e.description ? e.description.split(" ").slice(0, 2).join(" ") : ""]);
-              await ctx.reply(`🎨 内置表情 (${emojis.length} 个)\n${formatTable(["编号", "名称", "描述"], rows)}`);
+                            const rows = display.map(e => [`emoji_${e.stickerId}`, e.name, e.description ? e.description.split(" ").slice(0, 2).join(" ") : ""]);
+              await ctx.reply(`🎨 内置表情 (${emojis.length} 个)\n${await ctx.formatTable(["编号", "名称", "描述"], rows)}`);
             } else {
               const lines = display.map(e =>
                 `  emoji_${e.stickerId} — ${e.name}${e.description ? ` (${e.description.split(" ").slice(0, 2).join(" ")})` : ""}`

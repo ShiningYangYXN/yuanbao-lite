@@ -31,15 +31,14 @@ export function register(cmdSys: CommandSystem): void {
               return;
             }
             if (ctx.useTable) {
-              const { formatTable } = await import("../../utils/table.js");
-              const rows = jobs.map(j => [
+                            const rows = jobs.map(j => [
                 j.id,
                 j.cronExpr || "",
                 j.isGroup ? `群${j.targetId}` : (j.targetId ?? j.userId),
                 new Date(j.fireAt).toLocaleString("zh-CN"),
                 j.message.substring(0, 30),
               ]);
-              await ctx.reply(`📋 定时任务 (${jobs.length}):\n${formatTable(["ID", "表达式", "目标", "下次触发", "消息"], rows)}`);
+              await ctx.reply(`📋 定时任务 (${jobs.length}):\n${await ctx.formatTable(["ID", "表达式", "目标", "下次触发", "消息"], rows)}`);
             } else {
               const lines = jobs.map(j => {
                 const next = new Date(j.fireAt).toLocaleString("zh-CN");
