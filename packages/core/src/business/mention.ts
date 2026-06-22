@@ -117,7 +117,6 @@ export async function parseMentions(
   nicknameResolver?: NicknameResolver,
   allMembersResolver?: AllMembersResolver,
   userIdResolver?: UserIdResolver,
-  selfUserIds?: Set<string>,
 ): Promise<ParsedMentions> {
   const store = aliasStore ?? getGlobalAliasStore();
   const mentions: MentionInfo[] = [];
@@ -196,13 +195,8 @@ export async function parseMentions(
         try {
           const allMembers = await allMembersResolver();
           atAll = true;
-          // Filter by scope + skip self (except @所有人 which includes everyone)
-          const isSelf = (uid: string) => selfUserIds?.has(uid) ?? false;
           const filteredMembers = allMembers.filter((user) => {
             const uid = String(user.userId ?? "");
-            // @所有人 includes ALL members (even self) — "必须包含任何成员"
-            // Scoped @all (humans/bots/lobsters) skips self
-            if (atAllScope !== "all" && isSelf(uid)) return false;
             const ut = user.userType;
             const isBot =
               ut !== undefined ? ut === 2 || ut === 3 : uid.startsWith("bot_");
@@ -565,7 +559,6 @@ export async function buildMentionMsgBody(
   nicknameResolver?: NicknameResolver,
   allMembersResolver?: AllMembersResolver,
   userIdResolver?: UserIdResolver,
-  selfUserIds?: Set<string>,
 ): Promise<{
   msgBody: YuanbaoMsgBodyElement[];
   cloudCustomData?: string;
@@ -578,7 +571,6 @@ export async function buildMentionMsgBody(
     nicknameResolver,
     allMembersResolver,
     userIdResolver,
-    selfUserIds,
   );
 
   const msgBody: YuanbaoMsgBodyElement[] = [];

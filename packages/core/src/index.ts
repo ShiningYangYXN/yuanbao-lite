@@ -156,22 +156,22 @@ export type OutboundMessageData = {
 export type BotEventHandler<T extends BotEventType> = T extends "message"
   ? (msg: ChatMessage) => void
   : T extends "directMessage"
-    ? (msg: ChatMessage) => void
-    : T extends "groupMessage"
-      ? (msg: ChatMessage) => void
-      : T extends "outboundMessage"
-        ? (data: OutboundMessageData) => void
-        : T extends "stateChange"
-          ? (state: BotState) => void
-          : T extends "error"
-            ? (error: Error) => void
-            : T extends "ready"
-              ? (data: { connectId: string }) => void
-              : T extends "close"
-                ? () => void
-                : T extends "kickout"
-                  ? (data: { status: number; reason: string }) => void
-                  : never;
+  ? (msg: ChatMessage) => void
+  : T extends "groupMessage"
+  ? (msg: ChatMessage) => void
+  : T extends "outboundMessage"
+  ? (data: OutboundMessageData) => void
+  : T extends "stateChange"
+  ? (state: BotState) => void
+  : T extends "error"
+  ? (error: Error) => void
+  : T extends "ready"
+  ? (data: { connectId: string }) => void
+  : T extends "close"
+  ? () => void
+  : T extends "kickout"
+  ? (data: { status: number; reason: string }) => void
+  : never;
 
 // ─── Bot config ───
 
@@ -262,15 +262,6 @@ export class YuanbaoBot {
   private llmAutoReply: boolean;
   private llmHintSent = false;
   private multiAccountManager: MultiAccountManager | null = null;
-  /**
-   * Set of "public" bot user IDs that the IM platform assigns to this bot for
-   * group membership. Tencent Yuanbao uses TWO different IDs for the same bot:
-   *   - account.botId (from sign-token) — used for sending messages
-   *   - "public" bot IDs (visible to group members) — what users @mention
-   * We auto-learn public IDs from inbound @bot_* mentions and treat them all
-   * as "self" for the purpose of mention detection and skip-self guard.
-   */
-  private botPublicIds: Set<string> = new Set();
 
   private currentState: BotState = {
     status: "disconnected",
@@ -734,54 +725,54 @@ export class YuanbaoBot {
     const interpolatedText = skipInterpolation
       ? text
       : interpolate(
-          text,
-          buildMessageContext(
-            contextMsg
-              ? chatContextFromMessage(contextMsg, this.account.botId)
-              : undefined,
-          ),
-          { sanitize: shouldSanitize },
-        );
+        text,
+        buildMessageContext(
+          contextMsg
+            ? chatContextFromMessage(contextMsg, this.account.botId)
+            : undefined,
+        ),
+        { sanitize: shouldSanitize },
+      );
 
     // Step 2: Build @mention msg_body with interleaved TIMCustomElem elements
     // Build nickname resolver for @[昵称]() auto-matching in groups
     const nicknameResolver =
       isGroup && to
         ? async (nickname: string) => {
-            try {
-              const searchEngine = new SearchEngine(this);
-              const results = await searchEngine.searchGroupMembers(
-                String(to),
-                nickname,
-              );
-              // Only return exact or very close matches
-              const exactMatches = results.filter((r) => r.score >= 0.8);
-              return exactMatches.map((r) => ({
-                userId: r.userId,
-                nickname: r.nickName,
-              }));
-            } catch {
-              return [];
-            }
+          try {
+            const searchEngine = new SearchEngine(this);
+            const results = await searchEngine.searchGroupMembers(
+              String(to),
+              nickname,
+            );
+            // Only return exact or very close matches
+            const exactMatches = results.filter((r) => r.score >= 0.8);
+            return exactMatches.map((r) => ({
+              userId: r.userId,
+              nickname: r.nickName,
+            }));
+          } catch {
+            return [];
           }
+        }
         : undefined;
 
     // Build all-members resolver for @[所有人]() / @[](all) @all syntax
     const allMembersResolver =
       isGroup && to
         ? async () => {
-            try {
-              const resp = await this.getGroupMemberList(String(to));
-              const members = resp?.member_list ?? [];
-              return members.map((m) => ({
-                userId: m.user_id,
-                nickname: m.nick_name,
-                userType: m.user_type,
-              }));
-            } catch {
-              return [];
-            }
+          try {
+            const resp = await this.getGroupMemberList(String(to));
+            const members = resp?.member_list ?? [];
+            return members.map((m) => ({
+              userId: m.user_id,
+              nickname: m.nick_name,
+              userType: m.user_type,
+            }));
+          } catch {
+            return [];
           }
+        }
         : undefined;
 
     // Build userId resolver for @[](id) auto-nickname fetch
@@ -790,17 +781,17 @@ export class YuanbaoBot {
     const userIdResolver =
       isGroup && to
         ? async (userId: string): Promise<string | null> => {
-            try {
-              const resp = await this.getGroupMemberList(String(to));
-              const members = resp?.member_list ?? [];
-              const member = members.find(
-                (m) => String(m.user_id) === String(userId),
-              );
-              return member?.nick_name ?? null;
-            } catch {
-              return null;
-            }
+          try {
+            const resp = await this.getGroupMemberList(String(to));
+            const members = resp?.member_list ?? [];
+            const member = members.find(
+              (m) => String(m.user_id) === String(userId),
+            );
+            return member?.nick_name ?? null;
+          } catch {
+            return null;
           }
+        }
         : undefined;
 
     // Use buildMentionMsgBody which interleaves TIMCustomElem at correct positions
@@ -816,7 +807,6 @@ export class YuanbaoBot {
       nicknameResolver,
       allMembersResolver,
       userIdResolver,
-      new Set(this.getSelfUserIds()),
     );
     // _atAll flag is already encoded in cloudCustomData via buildCloudCustomDataWithMentions
     void _atAll;
@@ -1387,7 +1377,7 @@ export class YuanbaoBot {
     if (!this.aliasStore) {
       throw new Error(
         "AliasStore not initialized — call `await bot.init()` first. " +
-          "(This happens automatically when using `await bot.start()`.)",
+        "(This happens automatically when using `await bot.start()`.)",
       );
     }
     return this.aliasStore;
@@ -1482,7 +1472,7 @@ export class YuanbaoBot {
     if (!userId) return false;
     const uid = String(userId);
     if (this.account.botId && uid === String(this.account.botId)) return true;
-    return this.botPublicIds.has(uid);
+    else return false;
   }
 
   /**
@@ -1499,12 +1489,7 @@ export class YuanbaoBot {
    * Get the set of all known "self" user IDs (internal botId + auto-learned
    * public IDs). Useful for logging and diagnostics.
    */
-  getSelfUserIds(): string[] {
-    const ids = new Set<string>();
-    if (this.account.botId) ids.add(String(this.account.botId));
-    for (const id of this.botPublicIds) ids.add(id);
-    return Array.from(ids);
-  }
+
 
   /**
    * Enable or disable LLM auto-reply.
@@ -1625,18 +1610,7 @@ export class YuanbaoBot {
             // that group members see when they @mention the bot. Using it
             // directly (instead of auto-learning from mentions) is more
             // reliable and avoids false positives.
-            if (rsp.botId && rsp.botId !== this.account.botId) {
-              this.botPublicIds.add(rsp.botId);
-              this.log.info(
-                `platform-provided public bot ID: ${rsp.botId} (sign-token botId=${this.account.botId})`,
-              );
-            } else if (rsp.botId) {
-              // Same as sign-token ID — still add to the set for uniform checking
-              this.botPublicIds.add(rsp.botId);
-              this.log.info(
-                `platform-provided bot ID matches sign-token ID: ${rsp.botId}`,
-              );
-            }
+
             if (rsp.ownerId) {
               this.account.botOwnerId = rsp.ownerId;
               this.log.info(`bot owner cached: ownerId=${rsp.ownerId}`);
@@ -1895,7 +1869,7 @@ export class YuanbaoBot {
     if (chatMessage.chatType === "group") {
       // Debug: log raw message structure for mention analysis
       this.log.debug(
-        `mention check: account.botId=${this.account.botId ?? "(none)"} botPublicIds=[${Array.from(this.botPublicIds).join(",")}] mentions=${JSON.stringify(chatMessage.mentions?.map((m) => ({ userId: m.userId, name: m.displayName })))} cloud_custom_data=${msg.cloud_custom_data?.substring(0, 300)}`,
+        `mention check: account.botId=${this.account.botId ?? "(none)"} mentions=${JSON.stringify(chatMessage.mentions?.map((m) => ({ userId: m.userId, name: m.displayName })))} cloud_custom_data=${msg.cloud_custom_data?.substring(0, 300)}`,
       );
       this.log.debug(
         `mention check: from_account=${msg.from_account} to_account=${msg.to_account} group_code=${msg.group_code} bot_owner_id=${msg.bot_owner_id} msg_body=${JSON.stringify(msg.msg_body?.map((e) => ({ type: e.msg_type, content: e.msg_content })))?.substring(0, 500)} raw text="${chatMessage.text?.substring(0, 200)}"`,
@@ -2406,12 +2380,12 @@ export class YuanbaoBot {
         }
         const hint = isMaster
           ? "🤖 LLM 尚未配置，无法自动回复。\n\n" +
-            "配置方法（私聊中执行）:\n" +
-            "  /llm config — 交互式配置向导\n" +
-            "  /llm provider <供应商> — 设置供应商\n" +
-            "  /llm key <API Key> — 设置 API Key\n" +
-            "  /llm model <模型名> — 设置模型\n\n" +
-            "配置完成后将自动恢复回复功能。"
+          "配置方法（私聊中执行）:\n" +
+          "  /llm config — 交互式配置向导\n" +
+          "  /llm provider <供应商> — 设置供应商\n" +
+          "  /llm key <API Key> — 设置 API Key\n" +
+          "  /llm model <模型名> — 设置模型\n\n" +
+          "配置完成后将自动恢复回复功能。"
           : "🤖 机器人尚未配置 AI 回复功能，请联系机器人主人进行配置。";
         try {
           if (chatMessage.chatType === "group" && chatMessage.groupCode) {
