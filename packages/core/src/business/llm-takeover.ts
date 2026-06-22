@@ -932,9 +932,7 @@ export class LlmTakeoverEngine {
 
   // ─── LLM Call ───
 
-  private async callLlm(
-    messages: ConversationHistory[],
-  ): Promise<{
+  private async callLlm(messages: ConversationHistory[]): Promise<{
     content: string;
     tokensUsed?: number;
     promptTokens?: number;

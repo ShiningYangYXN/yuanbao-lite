@@ -156,22 +156,22 @@ export type OutboundMessageData = {
 export type BotEventHandler<T extends BotEventType> = T extends "message"
   ? (msg: ChatMessage) => void
   : T extends "directMessage"
-  ? (msg: ChatMessage) => void
-  : T extends "groupMessage"
-  ? (msg: ChatMessage) => void
-  : T extends "outboundMessage"
-  ? (data: OutboundMessageData) => void
-  : T extends "stateChange"
-  ? (state: BotState) => void
-  : T extends "error"
-  ? (error: Error) => void
-  : T extends "ready"
-  ? (data: { connectId: string }) => void
-  : T extends "close"
-  ? () => void
-  : T extends "kickout"
-  ? (data: { status: number; reason: string }) => void
-  : never;
+    ? (msg: ChatMessage) => void
+    : T extends "groupMessage"
+      ? (msg: ChatMessage) => void
+      : T extends "outboundMessage"
+        ? (data: OutboundMessageData) => void
+        : T extends "stateChange"
+          ? (state: BotState) => void
+          : T extends "error"
+            ? (error: Error) => void
+            : T extends "ready"
+              ? (data: { connectId: string }) => void
+              : T extends "close"
+                ? () => void
+                : T extends "kickout"
+                  ? (data: { status: number; reason: string }) => void
+                  : never;
 
 // ─── Bot config ───
 
@@ -725,54 +725,54 @@ export class YuanbaoBot {
     const interpolatedText = skipInterpolation
       ? text
       : interpolate(
-        text,
-        buildMessageContext(
-          contextMsg
-            ? chatContextFromMessage(contextMsg, this.account.botId)
-            : undefined,
-        ),
-        { sanitize: shouldSanitize },
-      );
+          text,
+          buildMessageContext(
+            contextMsg
+              ? chatContextFromMessage(contextMsg, this.account.botId)
+              : undefined,
+          ),
+          { sanitize: shouldSanitize },
+        );
 
     // Step 2: Build @mention msg_body with interleaved TIMCustomElem elements
     // Build nickname resolver for @[昵称]() auto-matching in groups
     const nicknameResolver =
       isGroup && to
         ? async (nickname: string) => {
-          try {
-            const searchEngine = new SearchEngine(this);
-            const results = await searchEngine.searchGroupMembers(
-              String(to),
-              nickname,
-            );
-            // Only return exact or very close matches
-            const exactMatches = results.filter((r) => r.score >= 0.8);
-            return exactMatches.map((r) => ({
-              userId: r.userId,
-              nickname: r.nickName,
-            }));
-          } catch {
-            return [];
+            try {
+              const searchEngine = new SearchEngine(this);
+              const results = await searchEngine.searchGroupMembers(
+                String(to),
+                nickname,
+              );
+              // Only return exact or very close matches
+              const exactMatches = results.filter((r) => r.score >= 0.8);
+              return exactMatches.map((r) => ({
+                userId: r.userId,
+                nickname: r.nickName,
+              }));
+            } catch {
+              return [];
+            }
           }
-        }
         : undefined;
 
     // Build all-members resolver for @[所有人]() / @[](all) @all syntax
     const allMembersResolver =
       isGroup && to
         ? async () => {
-          try {
-            const resp = await this.getGroupMemberList(String(to));
-            const members = resp?.member_list ?? [];
-            return members.map((m) => ({
-              userId: m.user_id,
-              nickname: m.nick_name,
-              userType: m.user_type,
-            }));
-          } catch {
-            return [];
+            try {
+              const resp = await this.getGroupMemberList(String(to));
+              const members = resp?.member_list ?? [];
+              return members.map((m) => ({
+                userId: m.user_id,
+                nickname: m.nick_name,
+                userType: m.user_type,
+              }));
+            } catch {
+              return [];
+            }
           }
-        }
         : undefined;
 
     // Build userId resolver for @[](id) auto-nickname fetch
@@ -781,17 +781,17 @@ export class YuanbaoBot {
     const userIdResolver =
       isGroup && to
         ? async (userId: string): Promise<string | null> => {
-          try {
-            const resp = await this.getGroupMemberList(String(to));
-            const members = resp?.member_list ?? [];
-            const member = members.find(
-              (m) => String(m.user_id) === String(userId),
-            );
-            return member?.nick_name ?? null;
-          } catch {
-            return null;
+            try {
+              const resp = await this.getGroupMemberList(String(to));
+              const members = resp?.member_list ?? [];
+              const member = members.find(
+                (m) => String(m.user_id) === String(userId),
+              );
+              return member?.nick_name ?? null;
+            } catch {
+              return null;
+            }
           }
-        }
         : undefined;
 
     // Use buildMentionMsgBody which interleaves TIMCustomElem at correct positions
@@ -1377,7 +1377,7 @@ export class YuanbaoBot {
     if (!this.aliasStore) {
       throw new Error(
         "AliasStore not initialized — call `await bot.init()` first. " +
-        "(This happens automatically when using `await bot.start()`.)",
+          "(This happens automatically when using `await bot.start()`.)",
       );
     }
     return this.aliasStore;
@@ -1489,7 +1489,6 @@ export class YuanbaoBot {
    * Get the set of all known "self" user IDs (internal botId + auto-learned
    * public IDs). Useful for logging and diagnostics.
    */
-
 
   /**
    * Enable or disable LLM auto-reply.
@@ -2380,12 +2379,12 @@ export class YuanbaoBot {
         }
         const hint = isMaster
           ? "🤖 LLM 尚未配置，无法自动回复。\n\n" +
-          "配置方法（私聊中执行）:\n" +
-          "  /llm config — 交互式配置向导\n" +
-          "  /llm provider <供应商> — 设置供应商\n" +
-          "  /llm key <API Key> — 设置 API Key\n" +
-          "  /llm model <模型名> — 设置模型\n\n" +
-          "配置完成后将自动恢复回复功能。"
+            "配置方法（私聊中执行）:\n" +
+            "  /llm config — 交互式配置向导\n" +
+            "  /llm provider <供应商> — 设置供应商\n" +
+            "  /llm key <API Key> — 设置 API Key\n" +
+            "  /llm model <模型名> — 设置模型\n\n" +
+            "配置完成后将自动恢复回复功能。"
           : "🤖 机器人尚未配置 AI 回复功能，请联系机器人主人进行配置。";
         try {
           if (chatMessage.chatType === "group" && chatMessage.groupCode) {
@@ -2644,8 +2643,6 @@ export type {
   MediaInfo,
   MediaType,
 } from "./access/http/media.js";
-export { uploadToGoFile, uploadAndFormatLink } from "./access/http/gofile.js";
-export type { GoFileUploadResult } from "./access/http/gofile.js";
 // CommandSystem is re-exported as TYPE ONLY from the main entry to keep the
 // 53 command handlers (and their transitive node:* imports) out of any
 // bundler's static graph for `src/index.ts`. To obtain the runtime class,

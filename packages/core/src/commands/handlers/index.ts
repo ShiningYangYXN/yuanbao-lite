@@ -4,10 +4,6 @@
 
 import type { CommandSystem } from "../registry.js";
 
-import { register as registerAtall } from "./group/atall.js";
-import { register as registerAtbots } from "./group/atbots.js";
-import { register as registerAthumans } from "./group/athumans.js";
-import { register as registerAtlobsters } from "./group/atlobsters.js";
 import { register as registerChat } from "./chat/chat.js";
 import { register as registerDm } from "./chat/dm.js";
 import { register as registerGroup } from "./chat/group.js";
@@ -17,10 +13,8 @@ import { register as registerSticker } from "./chat/sticker.js";
 import { register as registerStickers } from "./chat/stickers.js";
 import { register as registerGroupinfo } from "./group/groupinfo.js";
 import { register as registerGroups } from "./group/groups.js";
-import { register as registerJoin } from "./group/join.js";
 import { register as registerMembers } from "./group/members.js";
 import { register as registerSearch } from "./group/search.js";
-import { register as registerHclear } from "./history/hclear.js";
 import { register as registerHistory } from "./history/history.js";
 import { register as registerHsearch } from "./history/hsearch.js";
 import { register as registerInspect } from "./history/inspect.js";
@@ -41,7 +35,6 @@ import { register as registerDownload } from "./media/download.js";
 import { register as registerAttachment } from "./media/attachment.js";
 import { register as registerFile } from "./media/file.js";
 import { register as registerImg } from "./media/img.js";
-import { register as registerTempfile } from "./media/tempfile.js";
 import { register as registerUpload } from "./media/upload.js";
 import { register as registerBlock } from "./system/block.js";
 import { register as registerConfig } from "./system/config.js";
@@ -64,10 +57,6 @@ import { register as registerQuery } from "./utility/query.js";
 import { register as registerVisit } from "./utility/visit.js";
 
 export {
-  registerAtall,
-  registerAtbots,
-  registerAthumans,
-  registerAtlobsters,
   registerChat,
   registerDm,
   registerGroup,
@@ -77,10 +66,8 @@ export {
   registerStickers,
   registerGroupinfo,
   registerGroups,
-  registerJoin,
   registerMembers,
   registerSearch,
-  registerHclear,
   registerHistory,
   registerHsearch,
   registerInspect,
@@ -101,7 +88,6 @@ export {
   registerAttachment,
   registerFile,
   registerImg,
-  registerTempfile,
   registerUpload,
   registerBlock,
   registerConfig,
@@ -125,10 +111,6 @@ export {
 };
 
 export function registerAll(cmdSys: CommandSystem): void {
-  registerAtall(cmdSys);
-  registerAtbots(cmdSys);
-  registerAthumans(cmdSys);
-  registerAtlobsters(cmdSys);
   registerChat(cmdSys);
   registerDm(cmdSys);
   registerGroup(cmdSys);
@@ -138,10 +120,8 @@ export function registerAll(cmdSys: CommandSystem): void {
   registerStickers(cmdSys);
   registerGroupinfo(cmdSys);
   registerGroups(cmdSys);
-  registerJoin(cmdSys);
   registerMembers(cmdSys);
   registerSearch(cmdSys);
-  registerHclear(cmdSys);
   registerHistory(cmdSys);
   registerHsearch(cmdSys);
   registerInspect(cmdSys);
@@ -162,7 +142,6 @@ export function registerAll(cmdSys: CommandSystem): void {
   registerAttachment(cmdSys);
   registerFile(cmdSys);
   registerImg(cmdSys);
-  registerTempfile(cmdSys);
   registerUpload(cmdSys);
   registerBlock(cmdSys);
   registerConfig(cmdSys);
