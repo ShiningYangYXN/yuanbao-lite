@@ -30,12 +30,14 @@
     "daemon:restart": "node dist/index.js daemon restart"
   },
   "dependencies": {
-    "@yuanbao-lite/core": "*",
     "@clack/prompts": "^1.5.1",
+    "@yuanbao-lite/core": "workspace:*",
     "chalk": "^5.6.2",
     "cli-table3": "^0.6.5",
     "commander": "^15.0.0",
+    "marked": "^18.0.5",
     "marked-terminal": "^7.3.0",
+    "string-width": "^8.2.1",
     "table": "^6.9.0"
   },
   "devDependencies": {
