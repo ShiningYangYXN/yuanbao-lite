@@ -414,6 +414,61 @@ await bot.start(); // 仍会因 ws / http 模块的 node:* 依赖报错（见下
   `new Function("return (require)")()` 模式在 ESM 中 `require` 未定义，改为
   `await import("node:module")` + `createRequire`（top-level await）。
 
+### API 变更（v11.6.0）
+
+完成 Phase 3 —— **命令系统 + 所有 access/business 模块均浏览器可用**。
+彻底移除 `require()` 间接调用模式，全部改用 ESM 动态 `import()`。
+
+重大变更：
+- **移除所有 `require()` 调用** —— `adapter.ts`、`version.ts`、`sticker.ts`、
+  `request.ts` 中的 `indirectRequire` / `createRequire` / `new Function("return (require)")`
+  模式全部移除。改用：
+  - `await import("node:*")` 加载 Node 内置模块（在 `typeof process` 守卫下）
+  - `getNodeModules()` 同步访问已缓存的 Node 模块命名空间
+  - `nodeModulesReady` Promise 用于在 app 启动时确保模块已加载
+- **命令系统浏览器可用** —— 所有 53 个命令 handler 已重构：
+  - `shell.ts` / `term.ts`：`node:child_process` 改为 `await import()` + try/catch，
+    浏览器调用时返回明确错误信息
+  - `config.ts` / `log.ts` / `llm.ts`：文件操作改用 `PersistenceAdapter`
+  - `myip.ts`：`node:os.networkInterfaces` 改用 `getNodeModules().os`
+  - `tempfile.ts` / `stickers.ts` (chat)：`node:fs` / `node:path` 改用 `getNodeModules()`
+- **`http/media.ts` 浏览器可用** —— `node:crypto` 的 `createHmac`/`createHash`/`randomBytes`
+  全部替换：
+  - HMAC-SHA1 → Web Crypto API (`crypto.subtle.importKey` + `sign`)
+  - SHA-1 → `crypto.subtle.digest`
+  - MD5 → 纯 JS 实现（Web Crypto 不支持 MD5，腾讯 COS 上传协议需要）
+  - `randomBytes` → `crypto.getRandomValues`
+  - 文件读写 → `getNodeModules().fs`（浏览器抛出明确错误）
+- **`http/gofile.ts` + `http/tempfile.ts` 浏览器可用** —— 同上模式
+- **`shared/config.ts` 浏览器可用** —— 改用 `PersistenceAdapter` + `joinPath`
+- **`cli/client/daemon-client.ts` 浏览器可用** —— `node:child_process`/`node:url`/`node:path`
+  改为动态导入 + `getNodeModules()`
+
+esbuild `--platform=browser` 验证：
+```
+src/index.ts → 成功打包（仅 external: ai, @ai-sdk/*, protobufjs, marked, node:*, util, os）
+```
+所有 `node:*` 模块通过 `--external:node:*` 标记为外部依赖（运行时由 Node 提供，
+浏览器中通过 `typeof process` 守卫跳过加载）。
+
+`PersistenceAdapter` 接口扩展：
+- 新增可选方法 `remove(path)` —— 删除文件/key
+- 新增可选方法 `listDir(path)` —— 列出目录/前缀下的条目
+- `NodeFsAdapter` 实现了上述两个方法
+
+`YuanbaoBot` 构造函数行为变更：
+- 当使用默认 Node 持久化时，store 构造推迟到 `init()` 中（因为需要
+  `await nodeModulesReady` 确保 `node:fs`/`node:path`/`node:os` 已加载）
+- 当 `persistence: null`（禁用）或 `{ adapter, dir }`（完全显式）时，
+  store 在构造函数中同步构建（无异步开销）
+- Store getter 方法（`getAliasStore()` 等）在 `init()` 之前调用会抛出
+  明确错误；新增 `getAliasStoreOrNull()` 等 null-safe 变体
+
+`version.ts` 改为异步加载：
+- 顶层 `await import("node:fs")` 等，在 `typeof process` 守卫下
+- 导出 `versionReady` Promise，调用方可 `await versionReady` 确保版本已解析
+- `getVersion()` 在 Promise 完成前返回 fallback 常量
+
 ### API 变更（v11.5.3）
 
 完成 Phase 2c —— 核心 access 层（HTTP 签名 + WebSocket）已迁移到 Web Crypto API

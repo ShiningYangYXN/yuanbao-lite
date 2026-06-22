@@ -5,13 +5,17 @@
  * Handler logic is copied verbatim from the original registerBuiltinCommands()
  * method, with only `this.X` → `cmdSys.X` substitutions and relative import
  * path fixes.
+ *
+ * Node-only: reads a local file from disk to upload it. Browser callers
+ * cannot use this command (no filesystem access). Use /upload with a
+ * URL-based media source instead, or implement a browser-specific file
+ * picker handler.
  */
 
 import type { CommandSystem } from "../../registry.js";
 import type { CommandCategory } from "../../types.js";
 import { uploadToLitterbox, uploadAndFormatLink as tempfileFormatLink } from "../../../access/http/tempfile.js";
-import { existsSync } from "node:fs";
-import { resolve } from "node:path";
+import { getNodeModules } from "../../../access/persistence/adapter.js";
 
 export function register(cmdSys: CommandSystem): void {
   cmdSys.register({
@@ -22,6 +26,13 @@ export function register(cmdSys: CommandSystem): void {
     category: "media" as CommandCategory,
     elevated: true,
     handler: async (ctx) => {
+      // Node-only command — requires node:fs and node:path to read local files.
+      const { fs, path } = getNodeModules();
+      if (!fs || !path) {
+        await ctx.reply("❌ /tempfile 需要 Node.js 运行时（读取本地文件）。浏览器无法使用此命令。");
+        return;
+      }
+
       if (ctx.args.length === 0) {
         await ctx.reply(
           "用法: /tempfile <文件路径> [描述]\n" +
@@ -44,15 +55,15 @@ export function register(cmdSys: CommandSystem): void {
           await ctx.reply(`❌ 请指定文件路径: /tempfile ${provider} <路径> [选项]`);
           return;
         }
-        filePath = resolve(ctx.args[1]);
+        filePath = path.resolve(ctx.args[1]);
         descParts = ctx.args.slice(2);
       } else {
         provider = undefined;
-        filePath = resolve(ctx.args[0]);
+        filePath = path.resolve(ctx.args[0]);
         descParts = ctx.args.slice(1);
       }
 
-      if (!existsSync(filePath)) {
+      if (!fs.existsSync(filePath)) {
         await ctx.reply(`❌ 文件不存在: ${filePath}`);
         return;
       }
@@ -90,3 +101,4 @@ export function register(cmdSys: CommandSystem): void {
     },
   });
 }
+

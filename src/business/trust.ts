@@ -30,7 +30,7 @@ import type { PersistenceAdapter } from "../access/persistence/adapter.js";
 import {
   getDefaultPersistenceAdapter,
   getDefaultPersistenceDir,
-  nodePathJoin,
+  joinPath,
 } from "../access/persistence/adapter.js";
 
 const log = createLog("trust");
@@ -58,14 +58,7 @@ export function initTrustStore(config?: {
 
 function getPath(): string {
   if (trustPersistencePath) return trustPersistencePath;
-  return nodePathJoin
-    ? nodePathJoin(getDefaultPersistenceDir(), "trust.json")
-    : (() => {
-        throw new Error(
-          "Trust module: no persistencePath configured and no Node default available. " +
-            "Call initTrustStore({ persistencePath, persistenceAdapter }) first.",
-        );
-      })();
+  return joinPath(getDefaultPersistenceDir(), "trust.json");
 }
 
 function getAdapter(): PersistenceAdapter {

@@ -13,13 +13,224 @@
  * Fallback: If COS upload fails, falls back to the old /api/v5/robotLogic/upload endpoint.
  */
 
-import { existsSync, mkdirSync, statSync } from "node:fs";
-import { readFile, writeFile } from "node:fs/promises";
-import { basename, extname, join } from "node:path";
-import { randomBytes, createHash, createHmac } from "node:crypto";
 import { createLog } from "../../logger.js";
 import type { ResolvedYuanbaoAccount, YuanbaoMsgBodyElement } from "../../types.js";
 import { getAuthHeaders, yuanbaoPost, yuanbaoGet } from "./request.js";
+import { getNodeModules } from "../persistence/adapter.js";
+
+// ─── Web Crypto helpers (browser-safe) ───
+
+/**
+ * Encode a UTF-8 string as Uint8Array via TextEncoder (universal).
+ */
+function encodeUtf8(input: string): Uint8Array {
+  return new TextEncoder().encode(input);
+}
+
+/**
+ * Convert a Uint8Array to a lowercase hex string.
+ */
+function bytesToHex(bytes: Uint8Array): string {
+  let out = "";
+  for (let i = 0; i < bytes.length; i++) {
+    out += bytes[i].toString(16).padStart(2, "0");
+  }
+  return out;
+}
+
+/**
+ * Compute SHA-1 hash of a string, returning hex.
+ * Uses Web Crypto API (available in Node 18+ and all modern browsers).
+ */
+async function sha1Hex(input: string): Promise<string> {
+  const buf = await globalThis.crypto.subtle.digest("SHA-1", encodeUtf8(input) as BufferSource);
+  return bytesToHex(new Uint8Array(buf));
+}
+
+/**
+ * Compute MD5 hash of a Uint8Array, returning hex.
+ *
+ * Web Crypto API does NOT support MD5 (deliberately — it's broken for
+ * security-sensitive use). We use a pure-JS MD5 implementation for
+ * compatibility with Tencent's COS upload protocol, which still requires
+ * MD5 for file deduplication.
+ *
+ * Implementation: a minimal RFC 1321 MD5 — small, dependency-free, and
+ * fast enough for the upload path (called once per file upload).
+ *
+ * Marked `async` for API consistency with the other Web Crypto helpers
+ * (sha1Hex, hmacSha1Hex) — the implementation is actually synchronous
+ * but may be made async in the future if we switch to a worker-based impl.
+ */
+async function md5Hex(data: Uint8Array): Promise<string> {
+  return pureJsMd5Hex(data);
+}
+
+/**
+ * Compute HMAC-SHA1 with the given key and message, returning hex.
+ * Uses Web Crypto API.
+ */
+async function hmacSha1Hex(key: string, message: string): Promise<string> {
+  const keyBytes = encodeUtf8(key);
+  const msgBytes = encodeUtf8(message);
+  const cryptoKey = await globalThis.crypto.subtle.importKey(
+    "raw",
+    keyBytes as BufferSource,
+    { name: "HMAC", hash: "SHA-1" },
+    false,
+    ["sign"],
+  );
+  const sig = await globalThis.crypto.subtle.sign("HMAC", cryptoKey, msgBytes as BufferSource);
+  return bytesToHex(new Uint8Array(sig));
+}
+
+/**
+ * Generate cryptographically random hex of the given byte length.
+ */
+function randomHex(byteLength: number): string {
+  const bytes = new Uint8Array(byteLength);
+  globalThis.crypto.getRandomValues(bytes);
+  return bytesToHex(bytes);
+}
+
+// ─── Path helpers (use Node modules when available, pure-JS fallback) ───
+
+/**
+ * Get the file extension (including the leading dot, lowercased).
+ *
+ * Uses `node:path.extname` under Node; falls back to a pure-JS impl
+ * under browser (sufficient for filename parsing).
+ */
+function extname(filename: string): string {
+  const path = getNodeModules().path;
+  if (path) return path.extname(filename).toLowerCase();
+  // Pure-JS fallback: last dot after last slash
+  const lastSlash = Math.max(filename.lastIndexOf("/"), filename.lastIndexOf("\\"));
+  const lastDot = filename.lastIndexOf(".");
+  if (lastDot <= lastSlash) return "";
+  return filename.slice(lastDot).toLowerCase();
+}
+
+/**
+ * Get the basename of a path (filename without directory, with extension).
+ *
+ * Uses `node:path.basename` under Node; falls back to pure-JS.
+ */
+function basename(filePath: string): string {
+  const path = getNodeModules().path;
+  if (path) return path.basename(filePath);
+  const lastSlash = Math.max(filePath.lastIndexOf("/"), filePath.lastIndexOf("\\"));
+  return filePath.slice(lastSlash + 1);
+}
+
+// ─── Pure-JS MD5 implementation (RFC 1321) ───
+//
+// Web Crypto API does not support MD5. Tencent's COS upload protocol
+// requires MD5 for file deduplication (the `uuid` field is the MD5 of
+// the file content). We implement MD5 here in pure JS to avoid pulling
+// in a third-party dependency and to keep the module browser-compatible.
+//
+// This implementation is not constant-time and should NOT be used for
+// security-sensitive purposes. It's only used for content-addressable
+// file IDs, which is MD5's appropriate use case.
+
+const MD5_S = [
+  7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22,
+  5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20,
+  4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23,
+  6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21,
+];
+
+const MD5_K = [
+  0xd76aa478, 0xe8c7b756, 0x242070db, 0xc1bdceee,
+  0xf57c0faf, 0x4787c62a, 0xa8304613, 0xfd469501,
+  0x698098d8, 0x8b44f7af, 0xffff5bb1, 0x895cd7be,
+  0x6b901122, 0xfd987193, 0xa679438e, 0x49b40821,
+  0xf61e2562, 0xc040b340, 0x265e5a51, 0xe9b6c7aa,
+  0xd62f105d, 0x02441453, 0xd8a1e681, 0xe7d3fbc8,
+  0x21e1cde6, 0xc33707d6, 0xf4d50d87, 0x455a14ed,
+  0xa9e3e905, 0xfcefa3f8, 0x676f02d9, 0x8d2a4c8a,
+  0xfffa3942, 0x8771f681, 0x6d9d6122, 0xfde5380c,
+  0xa4beea44, 0x4bdecfa9, 0xf6bb4b60, 0xbebfbc70,
+  0x289b7ec6, 0xeaa127fa, 0xd4ef3085, 0x04881d05,
+  0xd9d4d039, 0xe6db99e5, 0x1fa27cf8, 0xc4ac5665,
+  0xf4292244, 0x432aff97, 0xab9423a7, 0xfc93a039,
+  0x655b59c3, 0x8f0ccc92, 0xffeff47d, 0x85845dd1,
+  0x6fa87e4f, 0xfe2ce6e0, 0xa3014314, 0x4e0811a1,
+  0xf7537e82, 0xbd3af235, 0x2ad7d2bb, 0xeb86d391,
+];
+
+function pureJsMd5Hex(data: Uint8Array): string {
+  // Pre-processing: adding a single 1 bit, then padding with 0s to (len ≡ 448 mod 512) bits, then append original length as 64-bit LE.
+  const originalBitLen = BigInt(data.length) * 8n;
+  const withOneBit = new Uint8Array(data.length + 1);
+  withOneBit.set(data);
+  withOneBit[data.length] = 0x80;
+
+  // Pad to (len ≡ 56 mod 64) bytes
+  const padLen = (56 - (withOneBit.length % 64) + 64) % 64;
+  const padded = new Uint8Array(withOneBit.length + padLen + 8);
+  padded.set(withOneBit);
+  // Append 64-bit LE length
+  const lenView = new DataView(padded.buffer, padded.length - 8, 8);
+  // Use BigInt to write 64-bit LE — DataView doesn't have setBigUint64 in older runtimes, so write two 32-bit halves.
+  const lenLo = Number(originalBitLen & 0xffffffffn);
+  const lenHi = Number((originalBitLen >> 32n) & 0xffffffffn);
+  lenView.setUint32(0, lenLo, true);
+  lenView.setUint32(4, lenHi, true);
+
+  // Initialize hash state
+  let a0 = 0x67452301;
+  let b0 = 0xefcdab89;
+  let c0 = 0x98badcfe;
+  let d0 = 0x10325476;
+
+  // Process each 512-bit (64-byte) chunk
+  for (let off = 0; off < padded.length; off += 64) {
+    const M = new Uint32Array(16);
+    const dv = new DataView(padded.buffer, off, 64);
+    for (let i = 0; i < 16; i++) {
+      M[i] = dv.getUint32(i * 4, true);
+    }
+
+    let A = a0, B = b0, C = c0, D = d0;
+    for (let i = 0; i < 64; i++) {
+      let F: number;
+      let g: number;
+      if (i < 16) {
+        F = (B & C) | (~B & D);
+        g = i;
+      } else if (i < 32) {
+        F = (D & B) | (~D & C);
+        g = (5 * i + 1) % 16;
+      } else if (i < 48) {
+        F = B ^ C ^ D;
+        g = (3 * i + 5) % 16;
+      } else {
+        F = C ^ (B | ~D);
+        g = (7 * i) % 16;
+      }
+      F = (F + A + MD5_K[i] + M[g]) >>> 0;
+      A = D;
+      D = C;
+      C = B;
+      B = (B + ((F << MD5_S[i]) | (F >>> (32 - MD5_S[i])))) >>> 0;
+    }
+    a0 = (a0 + A) >>> 0;
+    b0 = (b0 + B) >>> 0;
+    c0 = (c0 + C) >>> 0;
+    d0 = (d0 + D) >>> 0;
+  }
+
+  // Output as little-endian hex
+  const out = new Uint8Array(16);
+  const outDv = new DataView(out.buffer);
+  outDv.setUint32(0, a0, true);
+  outDv.setUint32(4, b0, true);
+  outDv.setUint32(8, c0, true);
+  outDv.setUint32(12, d0, true);
+  return bytesToHex(out);
+}
 
 // ─── Types ───
 
@@ -394,15 +605,17 @@ async function uploadBufferToCos(params: {
   const cosUrl = `https://${host}${config.location}`;
 
   // Build COS Authorization header using HMAC-SHA1 signing (v1 signature)
+  // Uses Web Crypto API (async) — works in both Node 18+ and browsers.
   const signTime = `${config.startTime || Math.floor(Date.now() / 1000)};${config.expiredTime || Math.floor(Date.now() / 1000) + 3600}`;
   const keyTime = signTime;
-  const signKey = createHmac("sha1", secretKey).update(keyTime).digest("hex");
+  const signKey = await hmacSha1Hex(secretKey, keyTime);
 
   // httpString: METHOD\nPATH\nQUERY\nHEADERS
   const cosPath = config.location;
   const httpString = `put\n${cosPath}\n\nhost=${host}\n`;
-  const stringToSign = `sha1\n${signTime}\n${createHash("sha1").update(httpString).digest("hex")}\n`;
-  const signature = createHmac("sha1", signKey).update(stringToSign).digest("hex");
+  const httpStringHash = await sha1Hex(httpString);
+  const stringToSign = `sha1\n${signTime}\n${httpStringHash}\n`;
+  const signature = await hmacSha1Hex(signKey, stringToSign);
 
   const authorization = `q-sign-algorithm=sha1&q-ak=${secretId}&q-sign-time=${signTime}&q-key-time=${keyTime}&q-header-list=host&q-url-param-list=&q-signature=${signature}`;
 
@@ -468,11 +681,22 @@ export async function uploadMediaToCos(
 ): Promise<UploadResult> {
   const log = createLog("media-upload");
 
-  if (!existsSync(filePath)) {
+  // File system access — Node-only. Under browser, callers must provide
+  // the file content directly via a different code path (TODO: add a
+  // Blob/File-based uploadMedia overload for browsers).
+  const { fs, path } = getNodeModules();
+  if (!fs || !path) {
+    throw new Error(
+      "uploadMedia requires Node.js runtime (node:fs, node:path) to read local files. " +
+        "Browser callers should use uploadMediaBuffer() with a Uint8Array instead.",
+    );
+  }
+
+  if (!fs.existsSync(filePath)) {
     throw new Error(`File not found: ${filePath}`);
   }
 
-  const fileStat = statSync(filePath);
+  const fileStat = fs.statSync(filePath);
   const fileSizeMB = fileStat.size / (1024 * 1024);
   const maxSizeMB = account.mediaMaxMb || MAX_FILE_SIZE_MB;
 
@@ -486,9 +710,9 @@ export async function uploadMediaToCos(
   log.info(`uploading (COS): ${fileName} (${fileSizeMB.toFixed(1)}MB, type=${mediaType})`);
 
   // Read file content
-  const fileBuffer = await readFile(filePath);
-  const fileId = randomBytes(16).toString("hex");
-  const uuid = createHash("md5").update(fileBuffer).digest("hex");
+  const fileBuffer = await fs.promises.readFile(filePath);
+  const fileId = randomHex(16);
+  const uuid = await md5Hex(new Uint8Array(fileBuffer));
   const imageInfo = mediaType === "image" ? parseImageSize(fileBuffer) : undefined;
   const mimeType = guessMimeType(fileName);
 
@@ -532,18 +756,26 @@ async function uploadMediaLegacy(
 ): Promise<UploadResult> {
   const log = createLog("media-upload-legacy");
 
-  if (!existsSync(filePath)) {
+  // File system access — Node-only (same as uploadMedia).
+  const { fs, path } = getNodeModules();
+  if (!fs || !path) {
+    throw new Error(
+      "uploadMediaLegacy requires Node.js runtime (node:fs, node:path) to read local files.",
+    );
+  }
+
+  if (!fs.existsSync(filePath)) {
     throw new Error(`File not found: ${filePath}`);
   }
 
-  const fileStat = statSync(filePath);
+  const fileStat = fs.statSync(filePath);
   const fileName = basename(filePath);
   const mediaType = detectMediaType(filePath, options?.mediaType);
 
   log.info(`uploading (legacy): ${fileName}`);
 
-  const fileBuffer = await readFile(filePath);
-  const boundary = `----FormBoundary${randomBytes(8).toString("hex")}`;
+  const fileBuffer = await fs.promises.readFile(filePath);
+  const boundary = `----FormBoundary${randomHex(8)}`;
   const formData = buildMultipartFormData(boundary, fileBuffer, fileName, mediaType);
 
   const authHeaders = await getAuthHeaders(account);
@@ -656,10 +888,20 @@ export async function downloadMedia(
   fileName?: string,
 ): Promise<DownloadResult> {
   const log = createLog("media-download");
-  const targetDir = saveDir || join(process.cwd(), "downloads");
+  // File system access — Node-only. Under browser, callers should use
+  // the returned buffer directly (TODO: split into downloadMediaBuffer()
+  // for browser and downloadMedia() for Node).
+  const { fs, path } = getNodeModules();
+  if (!fs || !path) {
+    throw new Error(
+      "downloadMedia requires Node.js runtime (node:fs, node:path) to write local files. " +
+        "Browser callers should fetch the URL directly and handle the Blob.",
+    );
+  }
+  const targetDir = saveDir || path.join(process.cwd(), "downloads");
 
-  if (!existsSync(targetDir)) {
-    mkdirSync(targetDir, { recursive: true });
+  if (!fs.existsSync(targetDir)) {
+    fs.mkdirSync(targetDir, { recursive: true });
   }
 
   log.info(`downloading: ${url}`);
@@ -671,11 +913,11 @@ export async function downloadMedia(
   }
 
   const finalFileName = fileName || extractFileNameFromUrl(url) || `media_${Date.now()}`;
-  const filePath = join(targetDir, finalFileName);
+  const filePath = path.join(targetDir, finalFileName);
 
   const arrayBuffer = await response.arrayBuffer();
   const buffer = Buffer.from(arrayBuffer);
-  await writeFile(filePath, buffer);
+  await fs.promises.writeFile(filePath, buffer);
 
   log.info(`downloaded: ${filePath} (${buffer.length} bytes)`);
 

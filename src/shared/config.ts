@@ -13,9 +13,12 @@
  * @module cli/config
  */
 
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
-import { join, resolve } from "node:path";
-import { homedir } from "node:os";
+import {
+  getDefaultPersistenceAdapter,
+  getDefaultPersistenceDir,
+  joinPath,
+  getNodeModules,
+} from "../access/persistence/adapter.js";
 // LlmProviderType removed — use string for provider names
 type LlmProviderType = string;
 
@@ -86,7 +89,7 @@ export type CliConfigData = {
 
 // ─── Constants ───
 
-const DEFAULT_CONFIG_DIR = join(homedir(), ".yuanbao-lite");
+const DEFAULT_CONFIG_DIR = getDefaultPersistenceDir();
 const DEFAULT_CONFIG_FILE = "config.json";
 const CURRENT_VERSION = 1;
 
@@ -98,8 +101,11 @@ const CURRENT_VERSION = 1;
  */
 export function normalizePath(p: string | undefined): string | undefined {
   if (!p || !p.trim()) return undefined;
-  // Resolve to absolute path and remove trailing slashes
-  let normalized = resolve(p);
+  // Resolve to absolute path and remove trailing slashes.
+  // Uses node:path.resolve under Node; under browser, returns the path
+  // as-is (no filesystem-relative resolution possible).
+  const path = getNodeModules().path;
+  let normalized = path ? path.resolve(p) : p;
   // Remove trailing slashes (but keep root "/")
   while (normalized.length > 1 && normalized.endsWith("/")) {
     normalized = normalized.slice(0, -1);
@@ -128,7 +134,7 @@ export class ConfigStore {
     autoSave?: boolean;
   }) {
     this.configDir = normalizePath(options?.configDir) || DEFAULT_CONFIG_DIR;
-    this.configPath = join(this.configDir, DEFAULT_CONFIG_FILE);
+    this.configPath = joinPath(this.configDir, DEFAULT_CONFIG_FILE);
     this.autoSave = options?.autoSave ?? true;
     this.data = this.createDefaultData();
 
@@ -184,7 +190,7 @@ export class ConfigStore {
 
   /** Check if the config file exists. */
   exists(): boolean {
-    return existsSync(this.configPath);
+    return getDefaultPersistenceAdapter().exists(this.configPath);
   }
 
   /** Check if the active profile has credentials configured. */
@@ -270,10 +276,8 @@ export class ConfigStore {
   /** Save config to disk. */
   save(): boolean {
     try {
-      if (!existsSync(this.configDir)) {
-        mkdirSync(this.configDir, { recursive: true });
-      }
-      writeFileSync(this.configPath, JSON.stringify(this.data, null, 2), "utf-8");
+      const adapter = getDefaultPersistenceAdapter();
+      adapter.write(this.configPath, JSON.stringify(this.data, null, 2));
       return true;
     } catch (err) {
       return false;
@@ -283,10 +287,11 @@ export class ConfigStore {
   /** Load config from disk. */
   load(): boolean {
     try {
-      if (!existsSync(this.configPath)) {
+      const adapter = getDefaultPersistenceAdapter();
+      if (!adapter.exists(this.configPath)) {
         return false;
       }
-      const raw = readFileSync(this.configPath, "utf-8");
+      const raw = adapter.read(this.configPath);
       const parsed = JSON.parse(raw) as CliConfigData;
 
       // Validate structure — if malformed, treat as corrupt
@@ -382,7 +387,7 @@ export class ConfigStore {
         default: this.createDefaultProfile("default"),
       },
       global: {
-        downloadDir: normalizeDir(join(homedir(), "Downloads", "yuanbao-lite")),
+        downloadDir: normalizeDir(joinPath(getDefaultPersistenceDir(), "..", "Downloads", "yuanbao-lite")),
       },
     };
   }

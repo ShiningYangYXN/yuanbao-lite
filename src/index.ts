@@ -39,11 +39,15 @@ import type { ModuleLog, PluginLogger } from "./logger.js";
 import { getSignToken, forceRefreshSignToken, clearAllSignTokenCache } from "./access/http/request.js";
 import { resolveAccount } from "./accounts.js";
 import { toChatMessage, buildTextMsgBody } from "./business/messaging/extract.js";
-// CommandSystem is loaded LAZILY via dynamic import() in init() so that
-// browser/edge bundlers can tree-shake the 53 command handlers (several of
-// which import node:child_process / node:os / node:fs) out of the browser
-// bundle. The type import below is erased at compile time and does NOT
-// contribute to the runtime import graph.
+// CommandSystem is imported as a TYPE only here to keep the bundler's static
+// import graph clean — the runtime class is loaded via dynamic import() in
+// init() below. This is no longer strictly necessary (commands/registry.ts
+// and all 53 handlers are now browser-safe), but keeping the type-only import
+// preserves the lazy-loading behavior which reduces initial bundle size.
+//
+// To get the runtime CommandSystem class:
+//   - Use `bot.getCommandSystem()` after `await bot.init()`
+//   - Or import directly: `import { CommandSystem } from "yuanbao-lite/commands"`
 import type { CommandSystem } from "./commands/registry.js";
 import type { CommandSystemConfig, CommandDefinition } from "./commands/types.js";
 import type { PersistenceAdapter } from "./access/persistence/adapter.js";
@@ -51,6 +55,7 @@ import {
   getDefaultPersistenceAdapter,
   getDefaultPersistenceDir,
   joinPath,
+  nodeModulesReady,
 } from "./access/persistence/adapter.js";
 import { uploadMedia, downloadMedia, extractMediaInfo, downloadAllMedia, buildImageMsgBody, buildFileMsgBody } from "./access/http/media.js";
 import type { UploadResult, DownloadResult, MediaInfo } from "./access/http/media.js";
@@ -175,14 +180,21 @@ export class YuanbaoBot {
   private pendingCommandConfig?: CommandSystemConfig;
   private pendingCustomCommands?: CommandDefinition[];
   /**
+   * Pending persistence config — saved by the constructor when persistence
+   * isn't fully resolvable synchronously (i.e. default Node path resolution
+   * which needs `await nodeModulesReady`). `init()` consumes this and calls
+   * `initStores()` once the Node modules are loaded.
+   */
+  private pendingPersistenceConfig?: { adapter?: PersistenceAdapter; dir?: string };
+  /**
    * In-flight init promise — ensures `init()` is idempotent even when called
    * concurrently from `start()` and external code.
    */
   private initPromise: Promise<void> | null = null;
-  private aliasStore: AliasStore;
-  private contactStore: ContactStore;
-  private groupStore: GroupStore;
-  private historyStore: MessageHistoryStore;
+  private aliasStore: AliasStore | null = null;
+  private contactStore: ContactStore | null = null;
+  private groupStore: GroupStore | null = null;
+  private historyStore: MessageHistoryStore | null = null;
 
   private llmEngine: LlmTakeoverEngine | null = null;
   private llmAutoReply: boolean;
@@ -225,11 +237,76 @@ export class YuanbaoBot {
     //      adapter and base directory.
     //   3. `config.persistence === undefined` (default) — use Node default
     //      (`~/.yuanbao-lite/` with NodeFsAdapter). Throws in browser.
+    //
+    // The persistence path resolution is deferred to `init()` because it
+    // may require awaiting the ESM dynamic import of node:os / node:path
+    // (see adapter.ts `nodeModulesReady`). The constructor only records
+    // the user's intent; `init()` does the actual resolution + store
+    // construction.
+    //
+    // For backward compatibility, if persistence is null (disabled) or
+    // both adapter and dir are explicitly provided, we can construct
+    // stores synchronously — no async preloading needed.
     const persistenceDisabled = config.persistence === null;
-    const persistenceDir = persistenceDisabled
-      ? null
-      : config.persistence?.dir ?? getDefaultPersistenceDir();
-    const persistenceAdapter = persistenceDisabled ? undefined : config.persistence?.adapter;
+    const explicitAdapter = config.persistence?.adapter;
+    const explicitDir = config.persistence?.dir;
+
+    if (persistenceDisabled) {
+      this.initStores(null, undefined);
+    } else if (explicitAdapter && explicitDir) {
+      // Fully synchronous — explicit config, no Node module preload needed.
+      this.initStores(explicitDir, explicitAdapter);
+    } else {
+      // Default Node path resolution — needs async preload.
+      // Defer to init(). Stores will be `null` until init() resolves.
+      this.pendingPersistenceConfig = {
+        adapter: explicitAdapter,
+        dir: explicitDir,
+      };
+    }
+
+    // Initialize command system — DEFERRED to init().
+    //
+    // We do NOT statically import CommandSystem here (see import note above).
+    // The constructor only records the user's intent (config + custom commands);
+    // the actual `await import("./commands/registry.js")` happens in init() so
+    // that browser bundles can omit the entire 53-handler chain.
+    //
+    // `config.commands === false` is honored: we set the `commandsDisabled`
+    // flag and init() will short-circuit without touching the registry.
+    if (config.commands !== false) {
+      this.pendingCommandConfig = typeof config.commands === "object" ? config.commands : undefined;
+      this.pendingCustomCommands = config.customCommands;
+    } else {
+      this.commandsDisabled = true;
+    }
+
+    // Initialize LLM engine — always create so /llm commands work.
+    // When no llmConfig is provided, use defaults (engine exists but isReady=false
+    // until a provider is configured). When llmConfig IS provided, respect it fully.
+    // llmAutoReply defaults to true — bot responds when @mentioned in groups or DM'd.
+    // The LLM engine's requireMentionInGroup (default true) ensures it only replies
+    // to @mentions in groups, preventing spam.
+    this.llmAutoReply = config.llmAutoReply ?? true;
+    // LLM engine is constructed in initStores() once persistence path is known.
+  }
+
+  /**
+   * Construct + wire up all per-instance stores (alias, contact, group,
+   * history, LLM engine). Called from the constructor when persistence is
+   * fully resolvable synchronously, OR from `init()` after the Node module
+   * preload completes.
+   *
+   * @param persistenceDir - Resolved persistence directory, or `null` if
+   *   persistence is disabled (in-memory mode).
+   * @param persistenceAdapter - Explicit adapter, or `undefined` to use
+   *   the runtime default (NodeFsAdapter under Node).
+   */
+  private initStores(
+    persistenceDir: string | null,
+    persistenceAdapter: PersistenceAdapter | undefined,
+  ): void {
+    const persistenceDisabled = persistenceDir === null;
 
     // Helper: build a persistence path under the configured dir. Returns
     // undefined if persistence is disabled (in-memory mode).
@@ -298,32 +375,10 @@ export class YuanbaoBot {
       persistenceAdapter,
     });
 
-    // Initialize command system — DEFERRED to init().
-    //
-    // We do NOT statically import CommandSystem here (see import note above).
-    // The constructor only records the user's intent (config + custom commands);
-    // the actual `await import("./commands/registry.js")` happens in init() so
-    // that browser bundles can omit the entire 53-handler chain.
-    //
-    // `config.commands === false` is honored: we set the `commandsDisabled`
-    // flag and init() will short-circuit without touching the registry.
-    if (config.commands !== false) {
-      this.pendingCommandConfig = typeof config.commands === "object" ? config.commands : undefined;
-      this.pendingCustomCommands = config.customCommands;
-    } else {
-      this.commandsDisabled = true;
-    }
-
-    // Initialize LLM engine — always create so /llm commands work.
-    // When no llmConfig is provided, use defaults (engine exists but isReady=false
-    // until a provider is configured). When llmConfig IS provided, respect it fully.
-    // llmAutoReply defaults to true — bot responds when @mentioned in groups or DM'd.
-    // The LLM engine's requireMentionInGroup (default true) ensures it only replies
-    // to @mentions in groups, preventing spam.
-    this.llmAutoReply = config.llmAutoReply ?? true;
+    // Initialize LLM engine
     const llmPersistencePath = pathFor("llm-config.json");
     this.llmEngine = createLlmTakeover({
-      ...(config.llmConfig ?? {}),
+      ...(this.config.llmConfig ?? {}),
       ...(llmPersistencePath ? { persistencePath: llmPersistencePath } : {}),
       ...(persistenceAdapter ? { persistenceAdapter } : {}),
     });
@@ -369,23 +424,30 @@ export class YuanbaoBot {
   // ─── Lifecycle ───
 
   /**
-   * Initialize the bot's heavy sub-systems (currently: the command system).
+   * Initialize the bot's heavy sub-systems.
+   *
+   * Currently does two things:
+   *   1. Resolves the persistence configuration (if deferred from the
+   *      constructor) by awaiting the ESM dynamic import of node:os /
+   *      node:path (see adapter.ts `nodeModulesReady`), then constructs
+   *      all per-instance stores.
+   *   2. Loads the command system via `await import("./commands/registry.js")`
+   *      (unless `config.commands === false`).
    *
    * This is called automatically by {@link start}, but advanced users can
    * call it explicitly to:
-   *   - Fail fast if `./commands/registry.js` (and its 53 handlers) cannot load.
+   *   - Fail fast if `./commands/registry.js` (and its handlers) cannot load.
    *   - Pre-warm the command system before registering custom commands via
    *     {@link registerCommand} (which is now async and awaits `init()`).
    *   - Verify that the command system is available before calling
    *     {@link getCommandSystem}.
    *
    * Idempotent: concurrent calls share the same in-flight promise; subsequent
-   * calls after success are no-ops. Returns immediately if `config.commands`
-   * was set to `false` (in which case the command system is never loaded and
-   * `getCommandSystem()` will return `null`).
+   * calls after success are no-ops.
    *
-   * Browser/edge callers that set `config.commands = false` can safely call
-   * `init()` — it resolves without touching any Node-only module.
+   * Browser/edge callers that set `config.commands = false` AND provide
+   * an explicit `config.persistence` can safely call `init()` — it resolves
+   * without touching any Node-only module.
    */
   async init(): Promise<void> {
     if (this.initPromise) return this.initPromise;
@@ -399,8 +461,23 @@ export class YuanbaoBot {
   }
 
   private async doInit(): Promise<void> {
+    // ─── Step 1: Resolve persistence + construct stores ───
+    //
+    // If the constructor deferred store construction (because default Node
+    // path resolution needs `await nodeModulesReady`), do it now.
+    if (this.pendingPersistenceConfig !== undefined) {
+      const pending = this.pendingPersistenceConfig;
+      this.pendingPersistenceConfig = undefined; // clear before constructing
+      // Wait for the ESM dynamic import of node:os / node:path / node:fs
+      // to complete (no-op under browser — the promise resolves to false).
+      await nodeModulesReady;
+      const dir = pending.dir ?? getDefaultPersistenceDir();
+      this.initStores(dir, pending.adapter);
+    }
+
+    // ─── Step 2: Load command system ───
+    //
     // Skip if the user explicitly disabled commands at construction time.
-    // We track this via the `commandsDisabled` flag set in the constructor.
     if (this.commandsDisabled) return;
     // Already initialized (e.g. via a prior registerCommand() call).
     if (this.commandSystem) {
@@ -619,7 +696,7 @@ export class YuanbaoBot {
     // Use buildMentionMsgBody which interleaves TIMCustomElem at correct positions
     // (matching the original project's resolveAtMentions approach)
     const { msgBody: mentionMsgBody, cloudCustomData, mentions: parsedMentions, atAll: _atAll } =
-      await buildMentionMsgBody(interpolatedText, this.aliasStore, nicknameResolver, allMembersResolver, userIdResolver, new Set(this.getSelfUserIds()));
+      await buildMentionMsgBody(interpolatedText, this.aliasStore!, nicknameResolver, allMembersResolver, userIdResolver, new Set(this.getSelfUserIds()));
     // _atAll flag is already encoded in cloudCustomData via buildCloudCustomDataWithMentions
     void _atAll;
 
@@ -855,7 +932,7 @@ export class YuanbaoBot {
         ? chatContextFromMessage(params.contextMsg, this.account.botId)
         : undefined;
       const interpolatedMentions = interpolate(params.mentions, buildMessageContext(chatCtx));
-      const mentionResult = await parseMentions(interpolatedMentions, this.aliasStore);
+      const mentionResult = await parseMentions(interpolatedMentions, this.aliasStore!);
       if (mentionResult.mentionedUserIds.length > 0) {
         cloudCustomData = buildCloudCustomDataWithMentions(undefined, mentionResult);
       }
@@ -909,7 +986,7 @@ export class YuanbaoBot {
         ? chatContextFromMessage(params.contextMsg, this.account.botId)
         : undefined;
       const interpolatedMentions = interpolate(params.mentions, buildMessageContext(chatCtx));
-      const mentionResult = await parseMentions(interpolatedMentions, this.aliasStore);
+      const mentionResult = await parseMentions(interpolatedMentions, this.aliasStore!);
       if (mentionResult.mentionedUserIds.length > 0) {
         cloudCustomData = buildCloudCustomDataWithMentions(undefined, mentionResult);
       }
@@ -956,7 +1033,7 @@ export class YuanbaoBot {
     // Handle mentions via cloud_custom_data
     let cloudCustomData: string | undefined;
     if (params.mentions) {
-      const mentionResult = await parseMentions(params.mentions, this.aliasStore);
+      const mentionResult = await parseMentions(params.mentions, this.aliasStore!);
       if (mentionResult.mentionedUserIds.length > 0) {
         cloudCustomData = buildCloudCustomDataWithMentions(undefined, mentionResult);
       }
@@ -965,7 +1042,7 @@ export class YuanbaoBot {
     // Handle text overlay with interpolation + mentions
     if (params.text) {
       const interpolatedText = interpolate(params.text, buildMessageContext());
-      const mentionResult = await parseMentions(interpolatedText, this.aliasStore);
+      const mentionResult = await parseMentions(interpolatedText, this.aliasStore!);
       if (mentionResult.mentionedUserIds.length > 0) {
         cloudCustomData = buildCloudCustomDataWithMentions(cloudCustomData, mentionResult);
       }
@@ -1001,7 +1078,7 @@ export class YuanbaoBot {
     // Handle mentions
     let cloudCustomData: string | undefined;
     if (params.mentions) {
-      const mentionResult = await parseMentions(params.mentions, this.aliasStore);
+      const mentionResult = await parseMentions(params.mentions, this.aliasStore!);
       if (mentionResult.mentionedUserIds.length > 0) {
         cloudCustomData = buildCloudCustomDataWithMentions(undefined, mentionResult);
       }
@@ -1097,29 +1174,80 @@ export class YuanbaoBot {
 
   /**
    * Get the alias store instance.
+   *
+   * Throws if called before {@link init} (or {@link start}) resolves when
+   * using default Node persistence — the constructor defers store
+   * construction until Node modules are preloaded via `await nodeModulesReady`.
+   *
+   * Callers that need a null-safe variant should check `await bot.init()`
+   * has resolved first, or use `getAliasStoreOrNull()`.
    */
   getAliasStore(): AliasStore {
+    if (!this.aliasStore) {
+      throw new Error(
+        "AliasStore not initialized — call `await bot.init()` first. " +
+          "(This happens automatically when using `await bot.start()`.)",
+      );
+    }
+    return this.aliasStore;
+  }
+
+  /** Null-safe variant of {@link getAliasStore} — returns null before init(). */
+  getAliasStoreOrNull(): AliasStore | null {
     return this.aliasStore;
   }
 
   /**
-   * Get the contact store instance.
+   * Get the contact store instance. Throws if called before init() — see
+   * {@link getAliasStore} for details.
    */
   getContactStore(): ContactStore {
+    if (!this.contactStore) {
+      throw new Error(
+        "ContactStore not initialized — call `await bot.init()` first.",
+      );
+    }
+    return this.contactStore;
+  }
+
+  /** Null-safe variant of {@link getContactStore}. */
+  getContactStoreOrNull(): ContactStore | null {
     return this.contactStore;
   }
 
   /**
-   * Get the message history store instance.
+   * Get the message history store instance. Throws if called before init()
+   * — see {@link getAliasStore} for details.
    */
   getHistoryStore(): MessageHistoryStore {
+    if (!this.historyStore) {
+      throw new Error(
+        "MessageHistoryStore not initialized — call `await bot.init()` first.",
+      );
+    }
+    return this.historyStore;
+  }
+
+  /** Null-safe variant of {@link getHistoryStore}. */
+  getHistoryStoreOrNull(): MessageHistoryStore | null {
     return this.historyStore;
   }
 
   /**
-   * Get the group store instance.
+   * Get the group store instance. Throws if called before init() — see
+   * {@link getAliasStore} for details.
    */
   getGroupStore(): GroupStore {
+    if (!this.groupStore) {
+      throw new Error(
+        "GroupStore not initialized — call `await bot.init()` first.",
+      );
+    }
+    return this.groupStore;
+  }
+
+  /** Null-safe variant of {@link getGroupStore}. */
+  getGroupStoreOrNull(): GroupStore | null {
     return this.groupStore;
   }
 
@@ -1361,7 +1489,7 @@ export class YuanbaoBot {
       this.log.info(`recall callback: cmd=${callbackCmd} msgId=${recalledMsgId} seq=${recalledSeq}`);
       // Remove from local history if present
       if (recalledMsgId) {
-        const removed = this.historyStore.removeById(recalledMsgId);
+        const removed = this.historyStore!.removeById(recalledMsgId);
         if (removed) {
           this.log.debug(`removed recalled message ${recalledMsgId} from history`);
         }
@@ -1405,11 +1533,11 @@ export class YuanbaoBot {
       this.log.debug(`self-message detected (fromUserId=${chatMessage.fromUserId}), storing in history but skipping dispatch`);
 
       // Store in history (so /inspect can find bot's own messages)
-      this.historyStore.add(chatMessage);
+      this.historyStore!.add(chatMessage);
 
       // Track group activity for group name resolution
       if (chatMessage.chatType === "group" && chatMessage.groupCode) {
-        this.groupStore.trackActivity(chatMessage.groupCode, chatMessage.groupName);
+        this.groupStore!.trackActivity(chatMessage.groupCode, chatMessage.groupName);
       }
 
       // Skip command dispatch + LLM auto-reply + context injection
@@ -1554,14 +1682,14 @@ export class YuanbaoBot {
     }
 
     // Store in history
-    this.historyStore.add(chatMessage);
+    this.historyStore!.add(chatMessage);
 
     // Track group activity for group name resolution
     // If groupName is missing, try to resolve from group store before tracking
     if (chatMessage.chatType === "group" && chatMessage.groupCode) {
       if (!chatMessage.groupName) {
         // Try group store first (may have been resolved by /groups, /join, etc.)
-        const existing = this.groupStore.get(chatMessage.groupCode);
+        const existing = this.groupStore!.get(chatMessage.groupCode);
         if (existing?.groupName) {
           (chatMessage as { groupName?: string }).groupName = existing.groupName;
         } else if (existing?.name) {
@@ -1572,14 +1700,14 @@ export class YuanbaoBot {
         if (!chatMessage.groupName && !existing?.groupName) {
           this.client?.queryGroupInfo({ group_code: chatMessage.groupCode }).then((rsp) => {
             if (rsp.code === 0 && rsp.group_info?.group_name) {
-              this.groupStore.setGroupName(chatMessage.groupCode!, rsp.group_info.group_name);
-              this.groupStore.trackActivity(chatMessage.groupCode!, rsp.group_info.group_name);
+              this.groupStore!.setGroupName(chatMessage.groupCode!, rsp.group_info.group_name);
+              this.groupStore!.trackActivity(chatMessage.groupCode!, rsp.group_info.group_name);
               this.log.debug(`lazy-resolved group name: ${chatMessage.groupCode} → ${rsp.group_info.group_name}`);
             }
           }).catch(() => { /* ignore — non-critical */ });
         }
       }
-      this.groupStore.trackActivity(chatMessage.groupCode, chatMessage.groupName);
+      this.groupStore!.trackActivity(chatMessage.groupCode, chatMessage.groupName);
     }
 
     // ─── Step 1: Store ALL messages in LLM conversation context ───
@@ -1829,13 +1957,13 @@ export class YuanbaoBot {
    */
   private persistData(): void {
     try {
-      this.aliasStore.save();
+      this.aliasStore!.save();
     } catch { /* ignore */ }
     try {
-      this.contactStore.save();
+      this.contactStore!.save();
     } catch { /* ignore */ }
     try {
-      this.groupStore.save();
+      this.groupStore!.save();
     } catch { /* ignore */ }
   }
 

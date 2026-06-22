@@ -36,7 +36,7 @@ import type { PersistenceAdapter } from "../access/persistence/adapter.js";
 import {
   getDefaultPersistenceAdapter,
   getDefaultPersistenceDir,
-  nodePathJoin,
+  joinPath,
 } from "../access/persistence/adapter.js";
 
 const log = createLog("block");
@@ -74,17 +74,14 @@ export function initBlockStore(config?: {
 
 /**
  * Resolve the persistence path — explicit config wins, else default.
+ *
+ * Under Node, `getDefaultPersistenceDir()` returns `~/.yuanbao-lite` and
+ * `joinPath` uses `node:path.join`. Under browser, `getDefaultPersistenceDir()`
+ * throws — caller must pass `persistencePath` via {@link initBlockStore}.
  */
 function getPath(): string {
   if (blockPersistencePath) return blockPersistencePath;
-  return nodePathJoin
-    ? nodePathJoin(getDefaultPersistenceDir(), "block.json")
-    : (() => {
-        throw new Error(
-          "Block module: no persistencePath configured and no Node default available. " +
-            "Call initBlockStore({ persistencePath, persistenceAdapter }) first.",
-        );
-      })();
+  return joinPath(getDefaultPersistenceDir(), "block.json");
 }
 
 /**

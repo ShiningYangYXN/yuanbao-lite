@@ -48,8 +48,18 @@ export function register(cmdSys: CommandSystem): void {
         sessions.delete(sessionKey);
       }
 
-      // Spawn a persistent shell process
-      const { spawn } = await import("node:child_process");
+      // Spawn a persistent shell process (Node-only — uses node:child_process).
+      // Under browser, the dynamic import resolves to an error which we catch
+      // and surface to the user with a clear message.
+      type SpawnFn = (cmd: string, args: string[], opts: Record<string, unknown>) => unknown;
+      let spawn: SpawnFn;
+      try {
+        const childProcess = await import("node:child_process");
+        spawn = childProcess.spawn as unknown as SpawnFn;
+      } catch (err) {
+        await ctx.reply(`❌ /term 需要 Node.js 运行时（node:child_process 不可用）: ${(err as Error).message}`);
+        return;
+      }
       const shell = spawn("bash", ["--noprofile", "--norc"], {
         cwd: process.env.HOME || process.cwd(),
         env: { ...process.env, PS1: "", PS2: "" },

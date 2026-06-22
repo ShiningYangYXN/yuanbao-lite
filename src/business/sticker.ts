@@ -25,8 +25,8 @@ import type { PersistenceAdapter } from "../access/persistence/adapter.js";
 import {
   getDefaultPersistenceAdapter,
   getDefaultPersistenceDir,
-  indirectRequire,
-  nodePathJoin,
+  getNodeModules,
+  joinPath,
 } from "../access/persistence/adapter.js";
 
 // ─── Types ───
@@ -217,14 +217,9 @@ export function initStickerCacheStore(config?: {
 
 function getCachePath(): string {
   if (stickerCachePersistencePath) return stickerCachePersistencePath;
-  return nodePathJoin
-    ? nodePathJoin(getDefaultPersistenceDir(), "sticker-cache.json")
-    : (() => {
-        throw new Error(
-          "Sticker cache: no persistencePath configured and no Node default available. " +
-            "Call initStickerCacheStore({ persistencePath, persistenceAdapter }) first.",
-        );
-      })();
+  // Under Node, getDefaultPersistenceDir() returns ~/.yuanbao-lite (uses node:os + node:path).
+  // Under browser, it throws — caller must pass persistencePath explicitly.
+  return joinPath(getDefaultPersistenceDir(), "sticker-cache.json");
 }
 
 function getCacheAdapter(): PersistenceAdapter {
@@ -850,18 +845,25 @@ export function searchStickers(query: string, limit = 20): StickerInfo[] {
  * Browser callers should use `registerStickerPack()` directly with sticker
  * sources that are URLs (the bot will fetch + upload via `uploadMediaToCos`).
  *
- * Throws if called in a browser/edge runtime (no `node:fs` available).
+ * Throws synchronously if called in a browser/edge runtime (no `node:fs`
+ * available) OR if called before the Node module preload has completed
+ * (caller should `await nodeModulesReady` from adapter.ts first).
+ *
+ * @param dirPath - Absolute path to the sticker packs root directory.
+ *                  Each subdirectory becomes a sticker pack; each image
+ *                  file in a subdirectory becomes a sticker.
+ * @returns Number of sticker packs loaded.
  */
 export function loadStickerPacksFromDir(dirPath: string): number {
   const log = createLog("sticker");
-  if (!indirectRequire) {
+  const { fs, path } = getNodeModules();
+  if (!fs || !path) {
     throw new Error(
-      "loadStickerPacksFromDir is Node-only — it requires node:fs.readdirSync. " +
+      "loadStickerPacksFromDir is Node-only — it requires node:fs and node:path. " +
+        "If calling at app startup, `await nodeModulesReady` first (from access/persistence/adapter.ts). " +
         "Browser callers should use registerStickerPack() with URL-based sticker sources.",
     );
   }
-  const fs = indirectRequire("node:fs");
-  const path = indirectRequire("node:path");
   let packCount = 0;
 
   if (!fs.existsSync(dirPath)) {
@@ -983,10 +985,11 @@ export async function prepareStickerMsgBody(
     // For GIF/WebP stickers, upload and send as image
     // Check if the source is a readable local file — only under Node
     // (browser stickers should use URL sources, which don't need this check)
+    const nodeFs = getNodeModules().fs;
     const sourceIsLocalFile =
       regSticker.source &&
-      indirectRequire &&
-      indirectRequire("node:fs").existsSync(regSticker.source);
+      nodeFs &&
+      nodeFs.existsSync(regSticker.source);
     if (sourceIsLocalFile && regSticker.source) {
       log.info(`uploading sticker: ${regSticker.name} from ${regSticker.source}`);
       try {

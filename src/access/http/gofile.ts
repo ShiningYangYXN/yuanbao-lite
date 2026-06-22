@@ -9,11 +9,22 @@
  * which may not work reliably in some IM clients.
  */
 
-import { existsSync, statSync } from "node:fs";
-import { readFile } from "node:fs/promises";
-import { basename } from "node:path";
 import { createLog } from "../../logger.js";
 import type { TempFileProvider, TempFileUploadResult } from "./tempfile.js";
+import { getNodeModules } from "../persistence/adapter.js";
+
+// ─── Path helper (browser-safe) ───
+
+/**
+ * Get the basename of a path. Uses `node:path.basename` under Node,
+ * falls back to pure-JS under browser.
+ */
+function basename(filePath: string): string {
+  const path = getNodeModules().path;
+  if (path) return path.basename(filePath);
+  const lastSlash = Math.max(filePath.lastIndexOf("/"), filePath.lastIndexOf("\\"));
+  return filePath.slice(lastSlash + 1);
+}
 
 // ─── Types ───
 
@@ -48,11 +59,20 @@ const MAX_FILE_SIZE_MB = 500; // GoFile free tier limit
 export async function uploadToGoFile(filePath: string): Promise<GoFileUploadResult> {
   const log = createLog("gofile");
 
-  if (!existsSync(filePath)) {
+  // File system access — Node-only. Under browser, callers must provide
+  // file content directly via a different code path.
+  const { fs } = getNodeModules();
+  if (!fs) {
+    throw new Error(
+      "uploadToGoFile requires Node.js runtime (node:fs) to read local files.",
+    );
+  }
+
+  if (!fs.existsSync(filePath)) {
     throw new Error(`File not found: ${filePath}`);
   }
 
-  const fileStat = statSync(filePath);
+  const fileStat = fs.statSync(filePath);
   const fileSizeMB = fileStat.size / (1024 * 1024);
 
   if (fileSizeMB > MAX_FILE_SIZE_MB) {
@@ -63,7 +83,7 @@ export async function uploadToGoFile(filePath: string): Promise<GoFileUploadResu
   log.info(`uploading to GoFile: ${fileName} (${fileSizeMB.toFixed(1)}MB)`);
 
   // Read file content
-  const fileBuffer = await readFile(filePath);
+  const fileBuffer = await fs.promises.readFile(filePath);
 
   // Build multipart form data
   const boundary = `----GoFileBoundary${Date.now()}`;

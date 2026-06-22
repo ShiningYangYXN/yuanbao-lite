@@ -5,6 +5,10 @@
  * Handler logic is copied verbatim from the original registerBuiltinCommands()
  * method, with only `this.X` → `cmdSys.X` substitutions and relative import
  * path fixes.
+ *
+ * Node-only: uses `node:child_process.exec` to run a system command.
+ * Under browser, the dynamic import resolves to an error which we surface
+ * to the user with a clear message.
  */
 
 import type { CommandSystem } from "../../registry.js";
@@ -32,10 +36,21 @@ export function register(cmdSys: CommandSystem): void {
       // ctx.args already has the leading --all/-a stripped by makeContext (when it was first arg)
       // and ctx.showAll is set accordingly. Any --all/-a in later positions is preserved in ctx.args.
       const cmd = ctx.args.join(" ");
-      const { exec } = await import("node:child_process");
+      // Node-only dynamic import — bundlers split this into a separate chunk
+      // that's only loaded under Node. Under browser, the import resolves to
+      // an error which we catch and surface to the user.
+      type ExecFn = (cmd: string, opts: Record<string, unknown>, cb: (err: Error | null, stdout: string, stderr: string) => void) => unknown;
+      let exec: ExecFn | null = null;
+      try {
+        const childProcess = await import("node:child_process");
+        exec = childProcess.exec as unknown as ExecFn;
+      } catch (err) {
+        await ctx.reply(`❌ /shell 需要 Node.js 运行时（node:child_process 不可用）: ${(err as Error).message}`);
+        return;
+      }
       try {
         const result = await new Promise<{ output: string; code: number }>((resolve) => {
-          exec(cmd, { timeout: 30000, maxBuffer: 1024 * 1024 }, (err, stdout, stderr) => {
+          exec!(cmd, { timeout: 30000, maxBuffer: 1024 * 1024 }, (err, stdout, stderr) => {
             const parts: string[] = [];
             if (stdout) parts.push(stdout.trim());
             if (stderr) parts.push(`[stderr] ${stderr.trim()}`);

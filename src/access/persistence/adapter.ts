@@ -13,6 +13,12 @@
  * They would need a separate AsyncPersistenceAdapter variant, which is
  * deferred until a real-world caller requires it.
  *
+ * Node-only modules (node:fs, node:path, node:os) are loaded via ESM
+ * `await import("node:*")` guarded by `typeof process` checks. Bundlers
+ * (Vite/Rollup/esbuild) split these dynamic imports into separate chunks
+ * that are only fetched under Node, so the browser bundle never includes
+ * any node:* code.
+ *
  * @module access/persistence/adapter
  */
 
@@ -74,138 +80,154 @@ export interface PersistenceAdapter {
    * Callers should always check `if (adapter.append)` before calling.
    */
   append?(path: string, data: string): void;
+
+  /**
+   * Optional: remove a path/key. Returns true if the path existed and was
+   * removed, false if it didn't exist.
+   *
+   * Adapters that DON'T implement it (rare) will cause callers to fall
+   * back to a no-op or throw, depending on context.
+   */
+  remove?(path: string): boolean;
+
+  /**
+   * Optional: list all paths/keys under a given prefix (directory).
+   *
+   * For filesystem adapters: `readdirSync(dir, { withFileTypes: true })`.
+   * For localStorage adapters: scan keys with the given prefix.
+   *
+   * Returns an array of entries, each with `name` (the path/key relative
+   * to the prefix) and `isDirectory` (whether the entry is itself a
+   * container for other entries).
+   *
+   * Callers should check `if (adapter.listDir)` before calling.
+   */
+  listDir?(path: string): Array<{ name: string; isDirectory: boolean }>;
 }
 
-// ─── Indirect Node require (browser-safe) ───
+// ─── Node module loader (ESM dynamic import, browser-safe) ───
 
 /**
- * Lazily-resolved indirect `require` — only available under Node. Returns
- * `null` in browser/edge runtimes.
+ * Cached Node module namespaces — populated by `ensureNodeModules()`
+ * on first access under Node. All fields are `null` in browser/edge.
  *
- * Implementation note: in Node ESM, `require` is not defined globally, so
- * we use `createRequire` from `node:module`. We load it via top-level
- * `await import("node:module")` so that:
- *
- *   - Under Node: the dynamic import resolves and `indirectRequire` is set.
- *   - Under browser: the `typeof process` check fails and the import never
- *     happens, so `node:module` is NOT pulled into the browser bundle.
- *   - Bundlers (Vite/Rollup/esbuild): create a separate chunk for
- *     `node:module` that's only loaded when the runtime check passes.
- *
- * Top-level await is supported in ESM (Node 14+, all modern bundlers).
- *
- * Exported so that modules with Node-only functionality (e.g.
- * `loadStickerPacksFromDir` in sticker.ts) can lazily load `node:fs` /
- * `node:path` without adding static imports that would break browser bundles.
+ * We use top-level `await import("node:*")` guarded by a `typeof process`
+ * check. Bundlers (Vite/Rollup/esbuild) recognize this pattern and split
+ * the dynamic imports into separate chunks that are only fetched when
+ * the runtime check passes — so the browser bundle contains zero
+ * `node:*` code.
  */
-export let indirectRequire: NodeRequire | null = null;
+interface NodeModules {
+  fs: typeof import("node:fs") | null;
+  path: typeof import("node:path") | null;
+  os: typeof import("node:os") | null;
+}
 
-if (typeof process !== "undefined" && process.versions?.node) {
+let nodeModules: NodeModules = {
+  fs: null,
+  path: null,
+  os: null,
+};
+
+let nodeModulesLoaded = false;
+
+/**
+ * Lazy-load Node built-in modules via ESM dynamic import.
+ *
+ * Under Node: imports `node:fs`, `node:path`, `node:os` and caches them
+ * in {@link nodeModules}. Returns true.
+ *
+ * Under browser/edge: the `typeof process` guard fails and no import
+ * is attempted. Returns false.
+ *
+ * Idempotent — subsequent calls return the cached result.
+ */
+async function ensureNodeModules(): Promise<boolean> {
+  if (nodeModulesLoaded) {
+    return nodeModules.fs !== null;
+  }
+  nodeModulesLoaded = true;
+  if (typeof process === "undefined" || !process.versions?.node) {
+    return false;
+  }
   try {
-    const { createRequire } = await import("node:module");
-    indirectRequire = createRequire(import.meta.url);
+    // Three parallel dynamic imports — bundlers split each into its own
+    // chunk, fetched only when this code path runs (i.e. under Node).
+    const [fs, path, os] = await Promise.all([
+      import("node:fs"),
+      import("node:path"),
+      import("node:os"),
+    ]);
+    nodeModules = { fs, path, os };
+    return true;
   } catch {
-    // Dynamic import failed at runtime — fall through to null.
-    // Stores that need persistence will throw a clear error when used.
+    // Import failed at runtime — leave nodeModules as {null, null, null}.
+    return false;
   }
 }
 
-/**
- * Node `os.homedir()` — lazily resolved via the same indirect-require
- * pattern. Returns `null` in browser/edge runtimes. Used by modules
- * (block.ts, trust.ts, reminders.ts, etc.) that compute a default
- * persistence path under `~/.yuanbao-lite/`.
- */
-export const nodeHomedir: string | null = (() => {
-  if (!indirectRequire) return null;
-  try {
-    const os = indirectRequire("node:os");
-    return os.homedir();
-  } catch {
-    return null;
-  }
-})();
+// Kick off the lazy load at module init time. Top-level await is supported
+// in ESM (Node 14+, all modern bundlers). The promise is stored so callers
+// that need to be sure the modules are loaded can `await nodeModulesReady`.
+const nodeModulesReady: Promise<boolean> = ensureNodeModules();
 
 /**
- * Node `path.join` — lazily resolved. Returns `null` in browser/edge.
- * Used by modules that compute default persistence paths.
- */
-export const nodePathJoin: ((...paths: string[]) => string) | null = (() => {
-  if (!indirectRequire) return null;
-  try {
-    const path = indirectRequire("node:path");
-    return path.join;
-  } catch {
-    return null;
-  }
-})();
-
-/**
- * Compute the default persistence directory: `~/.yuanbao-lite/` under Node.
+ * Synchronously access the cached Node modules.
  *
- * Throws in browser/edge — callers MUST provide an explicit `persistencePath`
- * (which can be any opaque string the adapter understands, e.g. a
- * localStorage key prefix).
+ * Returns `{fs: null, path: null, os: null}` if:
+ *   - Running in a browser/edge runtime (no Node built-ins available)
+ *   - The dynamic import failed for some reason
+ *
+ * Callers that need to ensure the modules are loaded BEFORE accessing
+ * them should `await nodeModulesReady` first.
  */
-export function getDefaultPersistenceDir(): string {
-  if (!nodeHomedir || !nodePathJoin) {
-    throw new Error(
-      "getDefaultPersistenceDir() requires Node.js runtime. " +
-        "Browser callers must provide an explicit persistencePath.",
-    );
-  }
-  return nodePathJoin(nodeHomedir, ".yuanbao-lite");
+export function getNodeModules(): NodeModules {
+  return nodeModules;
 }
 
 /**
- * Join path segments — uses `node:path.join` under Node, falls back to
- * `/`-separated join in browser/edge (sufficient for opaque adapter keys).
+ * Promise that resolves when the Node module preload is complete.
  *
- * Use this instead of `import { join } from "node:path"` in any module
- * that needs to be browser-compatible.
+ * Under Node: resolves to `true` once `node:fs` / `node:path` / `node:os`
+ * are loaded and cached. Resolves to `false` under browser/edge.
+ *
+ * Stores call `getDefaultPersistenceAdapter()` synchronously, which uses
+ * the cached `nodeModules`. If the constructor runs before this promise
+ * resolves, the NodeFsAdapter construction will throw — the user can
+ * retry, or pass an explicit adapter.
  */
-export function joinPath(...parts: string[]): string {
-  if (nodePathJoin) return nodePathJoin(...parts);
-  // Browser fallback: simple /-join. Trims trailing/leading slashes on
-  // adjacent parts to avoid double-slashes. Empty parts are skipped.
-  return parts
-    .filter(p => p !== undefined && p !== null && p !== "")
-    .map((p, i) => {
-      let s = String(p);
-      if (i > 0) s = s.replace(/^\/+/, "");
-      if (i < parts.length - 1) s = s.replace(/\/+$/, "");
-      return s;
-    })
-    .join("/");
-}
+export { nodeModulesReady };
 
 // ─── NodeFsAdapter (default for Node) ───
 
 /**
  * Filesystem-backed PersistenceAdapter using `node:fs` and `node:path`.
  *
- * Construction throws if running outside Node — browser callers must
- * explicitly use a browser-compatible adapter instead.
+ * Construction throws if running outside Node or if the Node modules
+ * haven't been loaded yet (caller should `await nodeModulesReady` first
+ * if constructing at app startup before top-level await completes).
  *
- * The `node:fs` and `node:path` modules are loaded via the indirect
- * `require` resolved at module load time (see {@link indirectRequire}),
- * so this class — and any module that imports `adapter.ts` — is
- * browser-safe at the bundler level (no static `node:*` imports).
+ * The `node:fs` and `node:path` modules are loaded via ESM dynamic
+ * import (see {@link ensureNodeModules}), so this class — and any module
+ * that imports `adapter.ts` — is browser-safe at the bundler level
+ * (no static `node:*` imports).
  */
 export class NodeFsAdapter implements PersistenceAdapter {
   private readonly fs: typeof import("node:fs");
   private readonly path: typeof import("node:path");
 
   constructor() {
-    if (!indirectRequire) {
+    const { fs, path } = nodeModules;
+    if (!fs || !path) {
       throw new Error(
-        "NodeFsAdapter requires Node.js runtime. " +
+        "NodeFsAdapter requires Node.js runtime with node:fs and node:path loaded. " +
+          "If constructing at app startup, `await nodeModulesReady` first. " +
           "Browser callers must use a browser-compatible PersistenceAdapter " +
-          "(e.g. BrowserLocalStorageAdapter in Phase 3).",
+          "(e.g. BrowserLocalStorageAdapter).",
       );
     }
-    this.fs = indirectRequire("node:fs");
-    this.path = indirectRequire("node:path");
+    this.fs = fs;
+    this.path = path;
   }
 
   exists(path: string): boolean {
@@ -232,9 +254,24 @@ export class NodeFsAdapter implements PersistenceAdapter {
     this.ensureParentDir(path);
     this.fs.appendFileSync(path, data, "utf-8");
   }
+
+  remove(path: string): boolean {
+    if (!this.fs.existsSync(path)) return false;
+    this.fs.unlinkSync(path);
+    return true;
+  }
+
+  listDir(dirPath: string): Array<{ name: string; isDirectory: boolean }> {
+    if (!this.fs.existsSync(dirPath)) return [];
+    const entries = this.fs.readdirSync(dirPath, { withFileTypes: true });
+    return entries.map(e => ({
+      name: e.name,
+      isDirectory: e.isDirectory(),
+    }));
+  }
 }
 
-// ─── Default adapter resolution ───
+// ─── Default adapter / path resolution ───
 
 let defaultAdapter: PersistenceAdapter | null = null;
 let defaultAdapterInitFailed = false;
@@ -256,8 +293,7 @@ let defaultAdapterInitError: Error | null = null;
 export function getDefaultPersistenceAdapter(): PersistenceAdapter {
   if (defaultAdapter) return defaultAdapter;
   if (defaultAdapterInitFailed) {
-    // Cache the failure so we don't retry the indirect-require path
-    // on every call (which would be wasteful in hot loops).
+    // Cache the failure so we don't retry on every call.
     throw defaultAdapterInitError;
   }
   try {
@@ -285,4 +321,48 @@ export function setDefaultPersistenceAdapter(
   defaultAdapter = adapter;
   defaultAdapterInitFailed = false;
   defaultAdapterInitError = null;
+}
+
+// ─── Path helpers ───
+
+/**
+ * Compute the default persistence directory: `~/.yuanbao-lite/` under Node.
+ *
+ * Throws in browser/edge — callers MUST provide an explicit `persistencePath`
+ * (which can be any opaque string the adapter understands, e.g. a
+ * localStorage key prefix).
+ */
+export function getDefaultPersistenceDir(): string {
+  const { os, path } = nodeModules;
+  if (!os || !path) {
+    throw new Error(
+      "getDefaultPersistenceDir() requires Node.js runtime with node:os and node:path loaded. " +
+        "If calling at app startup, `await nodeModulesReady` first. " +
+        "Browser callers must provide an explicit persistencePath.",
+    );
+  }
+  return path.join(os.homedir(), ".yuanbao-lite");
+}
+
+/**
+ * Join path segments — uses `node:path.join` under Node, falls back to
+ * `/`-separated join in browser/edge (sufficient for opaque adapter keys).
+ *
+ * Use this instead of `import { join } from "node:path"` in any module
+ * that needs to be browser-compatible.
+ */
+export function joinPath(...parts: string[]): string {
+  const { path } = nodeModules;
+  if (path) return path.join(...parts);
+  // Browser fallback: simple /-join. Trims trailing/leading slashes on
+  // adjacent parts to avoid double-slashes. Empty parts are skipped.
+  return parts
+    .filter(p => p !== undefined && p !== null && p !== "")
+    .map((p, i) => {
+      let s = String(p);
+      if (i > 0) s = s.replace(/^\/+/, "");
+      if (i < parts.length - 1) s = s.replace(/\/+$/, "");
+      return s;
+    })
+    .join("/");
 }

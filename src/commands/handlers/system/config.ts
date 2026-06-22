@@ -9,6 +9,11 @@
 
 import type { CommandSystem } from "../../registry.js";
 import type { CommandCategory } from "../../types.js";
+import {
+  getDefaultPersistenceAdapter,
+  getDefaultPersistenceDir,
+  joinPath,
+} from "../../../access/persistence/adapter.js";
 
 export function register(cmdSys: CommandSystem): void {
   // Set up the /config reset confirmation tracking map
@@ -175,10 +180,13 @@ export function register(cmdSys: CommandSystem): void {
           // aliases.json, contacts.json, groups.json, history.jsonl, daemon.pid
           // This is a DESTRUCTIVE operation.
           // CLI source executes immediately; chat source requires 3x confirmation.
-          const fs = await import("node:fs");
-          const path = await import("node:path");
-          const os = await import("node:os");
-          const configDir = path.join(os.homedir(), ".yuanbao-lite");
+          //
+          // Uses the PersistenceAdapter (NodeFsAdapter under Node) so the
+          // command works in any runtime that has a configured adapter.
+          // Browser callers that disable persistence won't have anything to
+          // reset — the command will report 0 files deleted.
+          const adapter = getDefaultPersistenceAdapter();
+          const configDir = getDefaultPersistenceDir();
           const filesToDelete = [
             "config.json",
             "llm-config.json",
@@ -197,11 +205,18 @@ export function register(cmdSys: CommandSystem): void {
             let deleted = 0;
             const errors: string[] = [];
             for (const file of filesToDelete) {
-              const filePath = path.join(configDir, file);
+              const filePath = joinPath(configDir, file);
               try {
-                if (fs.existsSync(filePath)) {
-                  fs.unlinkSync(filePath);
-                  deleted++;
+                if (adapter.remove) {
+                  if (adapter.remove(filePath)) {
+                    deleted++;
+                  }
+                } else {
+                  // Adapter doesn't implement remove() — try exists check
+                  // and report as "skipped (unsupported)".
+                  if (adapter.exists(filePath)) {
+                    errors.push(`${file}: adapter does not support remove()`);
+                  }
                 }
               } catch (err) {
                 errors.push(`${file}: ${(err as Error).message}`);

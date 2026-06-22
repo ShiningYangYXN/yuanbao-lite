@@ -8,11 +8,14 @@
  *
  * Once a daemon is alive, all higher-level helpers (`sendDm`, `sendGroup`,
  * `runCommand`, etc.) just POST to its HTTP routes.
+ *
+ * Node-only: uses `node:child_process.spawn`, `node:url.fileURLToPath`,
+ * and `node:path.dirname`/`join`. These are loaded via ESM dynamic import
+ * guarded by `typeof process` checks, so the module is browser-bundleable
+ * (browsers get a separate chunk that's never fetched).
  */
 
-import { spawn } from "node:child_process";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { getNodeModules } from "../../access/persistence/adapter.js";
 
 export const DEFAULT_DAEMON_PORT = 8992;
 export const DEFAULT_DAEMON_HOST = "127.0.0.1";
@@ -165,9 +168,17 @@ export class DaemonClient {
   }
 
   private async spawnDaemon(port: number): Promise<void> {
+    // Node-only — uses node:child_process.spawn. Under browser, this
+    // throws a clear error (no way to spawn a daemon process).
+    const childProcess = getNodeModules().fs ? await import("node:child_process") : null;
+    if (!childProcess) {
+      throw new DaemonNotRunningError(
+        new Error("spawnDaemon requires Node.js runtime (node:child_process) to start a daemon process"),
+      );
+    }
     const entry = getDaemonEntryPath();
     const args = ["daemon", "start", "--port", String(port)];
-    const child = spawn(process.execPath, [entry, ...args], {
+    const child = childProcess.spawn(process.execPath, [entry, ...args], {
       stdio: "ignore",
       detached: true,
       env: { ...process.env, YB_DAEMON_CHILD: "1" },
@@ -440,9 +451,61 @@ function sleep(ms: number): Promise<void> {
 
 function getDaemonEntryPath(): string {
   // dist/cli/index.js — the daemon entry that boots Daemon
-  const here = dirname(fileURLToPath(import.meta.url));
-  return join(here, "..", "index.js");
+  // Node-only — uses node:url.fileURLToPath and node:path.dirname/join.
+  // Throws under browser (no import.meta.url resolution to a filesystem path).
+  const { path } = getNodeModules();
+  if (!path) {
+    throw new Error(
+      "getDaemonEntryPath requires Node.js runtime (node:url, node:path) to resolve the daemon entry path.",
+    );
+  }
+  // Load node:url dynamically — only needed when this function is called,
+  // which only happens under Node (spawnDaemon is Node-only).
+  // We use a sync require pattern via the cached indirectRequire-equivalent.
+  // Since adapter.ts already loaded node:url? No — adapter.ts loads node:fs,
+  // node:path, node:os but NOT node:url. We need to load it here.
+  // Use top-level await import is not possible inside a function.
+  // Instead, use the url module from the global URL constructor — but
+  // fileURLToPath is Node-specific. We'll use a dynamic import() and
+  // cache the result.
+  if (!cachedUrlModule) {
+    // Synchronous fallback: use import.meta.url directly.
+    // Under Node ESM, import.meta.url is a file:// URL string.
+    // We can convert it to a path with a regex (avoiding node:url dependency).
+    const urlStr = import.meta.url;
+    if (urlStr.startsWith("file://")) {
+      // Convert file:// URL to filesystem path
+      // On Unix: file:///path/to/file -> /path/to/file
+      // On Windows: file:///C:/path -> C:\path (handled by process.platform check)
+      let p = urlStr.slice("file://".length);
+      if (process.platform === "win32" && p.startsWith("/")) {
+        p = p.slice(1).replace(/\//g, "\\");
+      }
+      const here = path.dirname(p);
+      return path.join(here, "..", "index.js");
+    }
+    throw new Error(
+      `getDaemonEntryPath: import.meta.url is not a file:// URL (got: ${urlStr}). Cannot resolve daemon entry path.`,
+    );
+  }
+  const here = path.dirname(cachedUrlModule.fileURLToPath(import.meta.url));
+  return path.join(here, "..", "index.js");
 }
+
+// Cached node:url module — loaded lazily via dynamic import.
+// We don't await it at module load time because getDaemonEntryPath is
+// only called under Node, and the sync fallback above handles the common
+// case (file:// URL) without needing node:url at all.
+let cachedUrlModule: typeof import("node:url") | null = null;
+void (async () => {
+  if (typeof process !== "undefined" && process.versions?.node) {
+    try {
+      cachedUrlModule = await import("node:url");
+    } catch {
+      // Ignore — sync fallback in getDaemonEntryPath will handle it.
+    }
+  }
+})();
 
 // Singleton client (default port)
 let defaultClient: DaemonClient | null = null;

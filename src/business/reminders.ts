@@ -13,7 +13,7 @@ import type { PersistenceAdapter } from "../access/persistence/adapter.js";
 import {
   getDefaultPersistenceAdapter,
   getDefaultPersistenceDir,
-  nodePathJoin,
+  joinPath,
 } from "../access/persistence/adapter.js";
 
 const log = createLog("reminders");
@@ -41,14 +41,7 @@ export function initRemindersStore(config?: {
 
 function getPath(): string {
   if (remindersPersistencePath) return remindersPersistencePath;
-  return nodePathJoin
-    ? nodePathJoin(getDefaultPersistenceDir(), "reminders.json")
-    : (() => {
-        throw new Error(
-          "Reminders module: no persistencePath configured and no Node default available. " +
-            "Call initRemindersStore({ persistencePath, persistenceAdapter }) first.",
-        );
-      })();
+  return joinPath(getDefaultPersistenceDir(), "reminders.json");
 }
 
 function getAdapter(): PersistenceAdapter {

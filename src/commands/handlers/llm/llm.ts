@@ -9,6 +9,11 @@
 
 import type { CommandSystem } from "../../registry.js";
 import type { CommandCategory } from "../../types.js";
+import {
+  getDefaultPersistenceAdapter,
+  getDefaultPersistenceDir,
+  joinPath,
+} from "../../../access/persistence/adapter.js";
 
 export function register(cmdSys: CommandSystem): void {
   cmdSys.register({
@@ -552,10 +557,13 @@ export function register(cmdSys: CommandSystem): void {
           // /llm reset — clear ALL LLM configuration
           // This is a destructive operation. CLI source executes immediately;
           // chat source requires 3x confirmation (same as /daemon restart).
-          const fs = await import("node:fs");
-          const pathMod = await import("node:path");
-          const os = await import("node:os");
-          const llmConfigPath = pathMod.join(os.homedir(), ".yuanbao-lite", "llm-config.json");
+          //
+          // Uses PersistenceAdapter for file deletion — works in any runtime
+          // with a configured adapter. Browser callers with disabled
+          // persistence will see "0 files deleted" but the in-memory config
+          // is still cleared.
+          const adapter = getDefaultPersistenceAdapter();
+          const llmConfigPath = joinPath(getDefaultPersistenceDir(), "llm-config.json");
 
           const doReset = async (): Promise<void> => {
             try {
@@ -567,8 +575,8 @@ export function register(cmdSys: CommandSystem): void {
                 enabled: true,
               });
               // Delete the persisted config file (after updateConfig re-created it)
-              if (fs.existsSync(llmConfigPath)) {
-                fs.unlinkSync(llmConfigPath);
+              if (adapter.remove) {
+                adapter.remove(llmConfigPath);
               }
               await ctx.reply("✅ 已清空所有LLM配置\n发送 /llm config 重新配置供应商\n发送 /daemon restart (3次) 让更改生效");
             } catch (err) {

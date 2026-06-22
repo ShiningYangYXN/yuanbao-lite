@@ -9,6 +9,7 @@
 
 import type { CommandSystem } from "../../registry.js";
 import type { CommandCategory } from "../../types.js";
+import { getNodeModules } from "../../../access/persistence/adapter.js";
 
 export function register(cmdSys: CommandSystem): void {
   cmdSys.register({
@@ -58,23 +59,26 @@ export function register(cmdSys: CommandSystem): void {
           lines.push("  IPv6: (获取失败)");
         }
 
-        // Also check local interfaces
+        // Also check local interfaces (Node-only — uses node:os.networkInterfaces).
+        // Under browser, this section is skipped silently (no local interface info).
         try {
-          const { networkInterfaces } = await import("node:os");
-          const nets = networkInterfaces();
-          const localV4: string[] = [];
-          const localV6: string[] = [];
-          for (const [, addrs] of Object.entries(nets)) {
-            if (!addrs) continue;
-            for (const addr of addrs) {
-              if (addr.family === "IPv4" && !addr.internal) localV4.push(addr.address);
-              else if (addr.family === "IPv6" && !addr.internal) localV6.push(addr.address);
+          const os = getNodeModules().os;
+          if (os) {
+            const nets = os.networkInterfaces();
+            const localV4: string[] = [];
+            const localV6: string[] = [];
+            for (const [, addrs] of Object.entries(nets)) {
+              if (!addrs) continue;
+              for (const addr of addrs) {
+                if (addr.family === "IPv4" && !addr.internal) localV4.push(addr.address);
+                else if (addr.family === "IPv6" && !addr.internal) localV6.push(addr.address);
+              }
             }
-          }
-          if (localV4.length > 0 || localV6.length > 0) {
-            lines.push("", "本地接口:");
-            if (localV4.length > 0) lines.push(`  本地 IPv4: ${localV4.join(", ")}`);
-            if (localV6.length > 0) lines.push(`  本地 IPv6: ${localV6.join(", ")}`);
+            if (localV4.length > 0 || localV6.length > 0) {
+              lines.push("", "本地接口:");
+              if (localV4.length > 0) lines.push(`  本地 IPv4: ${localV4.join(", ")}`);
+              if (localV6.length > 0) lines.push(`  本地 IPv6: ${localV6.join(", ")}`);
+            }
           }
         } catch { /* ignore */ }
 

@@ -10,7 +10,7 @@
 import type { CommandSystem } from "../../registry.js";
 import type { CommandCategory } from "../../types.js";
 import { searchStickers, getStickerPacks, loadStickerPacksFromDir, getBuiltinEmojis } from "../../../business/sticker.js";
-import { resolve } from "node:path";
+import { getNodeModules } from "../../../access/persistence/adapter.js";
 
 export function register(cmdSys: CommandSystem): void {
   cmdSys.register({
@@ -43,8 +43,12 @@ export function register(cmdSys: CommandSystem): void {
               }
             }
           } else if (subCmd === "load" && subArgs[0]) {
+            // `load` is Node-only — loadStickerPacksFromDir uses node:fs.readdirSync.
+            // Under browser, it throws a clear error which we surface to the user.
             try {
-              const count = loadStickerPacksFromDir(resolve(subArgs[0]));
+              const path = getNodeModules().path;
+              const dirArg = path ? path.resolve(subArgs[0]) : subArgs[0];
+              const count = loadStickerPacksFromDir(dirArg);
               await ctx.reply(`✅ 加载了 ${count} 个贴纸包`);
             } catch (err) {
               await ctx.reply(`❌ 加载贴纸包失败: ${(err as Error).message}`);

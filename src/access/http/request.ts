@@ -12,7 +12,7 @@
 
 import { createLog } from "../../logger.js";
 import type { ResolvedYuanbaoAccount } from "../../types.js";
-import { indirectRequire } from "../persistence/adapter.js";
+import { getNodeModules } from "../persistence/adapter.js";
 
 export type SignTokenData = {
   bot_id: string;
@@ -51,16 +51,23 @@ function getPluginVersion(): string {
  *
  * Returns "Browser" when running in a browser/edge runtime, otherwise
  * the Node `os.type()` value (e.g. "Linux", "Darwin", "Windows_NT").
+ *
+ * Uses the cached `nodeModules.os` (loaded via ESM dynamic import in
+ * adapter.ts). If `os` is null (browser runtime or modules not yet
+ * loaded), returns "Browser" or "Unknown" respectively.
  */
 function getOperationSystem(): string {
-  // Browser/edge: no os module available.
-  if (!indirectRequire) {
-    return "Browser";
+  const os = getNodeModules().os;
+  if (!os) {
+    // Either browser/edge (no process.versions.node) or Node modules
+    // haven't been preloaded yet. Distinguish by checking process.
+    if (typeof process === "undefined" || !process.versions?.node) {
+      return "Browser";
+    }
+    return "Unknown";
   }
-  // Node: use the indirect require (resolved via top-level await in
-  // adapter.ts) to load node:os without a static import.
   try {
-    return indirectRequire("node:os").type();
+    return os.type();
   } catch {
     return "Unknown";
   }

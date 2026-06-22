@@ -10,12 +10,31 @@
  * All providers use Node.js native fetch with manually-built multipart form data.
  */
 
-import { existsSync, statSync } from "node:fs";
-import { readFile } from "node:fs/promises";
-import { basename } from "node:path";
-import { randomBytes } from "node:crypto";
 import { createLog } from "../../logger.js";
 import { uploadToGoFile } from "./gofile.js";
+import { getNodeModules } from "../persistence/adapter.js";
+
+// ─── Web Crypto + path helpers (browser-safe) ───
+
+/**
+ * Generate cryptographically random hex of the given byte length.
+ */
+function randomHex(byteLength: number): string {
+  const bytes = new Uint8Array(byteLength);
+  globalThis.crypto.getRandomValues(bytes);
+  return Array.from(bytes, b => b.toString(16).padStart(2, "0")).join("");
+}
+
+/**
+ * Get the basename of a path. Uses `node:path.basename` under Node,
+ * falls back to pure-JS under browser.
+ */
+function basename(filePath: string): string {
+  const path = getNodeModules().path;
+  if (path) return path.basename(filePath);
+  const lastSlash = Math.max(filePath.lastIndexOf("/"), filePath.lastIndexOf("\\"));
+  return filePath.slice(lastSlash + 1);
+}
 
 // ─── Types ───
 
@@ -92,13 +111,22 @@ function buildMultipart(
 
 /**
  * Validate that a file exists and return its stats.
+ *
+ * Node-only — uses `node:fs.existsSync` and `statSync`. Under browser,
+ * throws a clear error (callers should provide file content directly).
  */
 function validateFile(filePath: string): { fileName: string; fileSize: number; fileBuffer: Buffer } {
-  if (!existsSync(filePath)) {
+  const { fs } = getNodeModules();
+  if (!fs) {
+    throw new Error(
+      "validateFile requires Node.js runtime (node:fs) to stat local files.",
+    );
+  }
+  if (!fs.existsSync(filePath)) {
     throw new Error(`File not found: ${filePath}`);
   }
 
-  const fileStat = statSync(filePath);
+  const fileStat = fs.statSync(filePath);
   const fileName = basename(filePath);
 
   return { fileName, fileSize: fileStat.size, fileBuffer: undefined as unknown as Buffer };
@@ -106,9 +134,17 @@ function validateFile(filePath: string): { fileName: string; fileSize: number; f
 
 /**
  * Load file buffer on demand (separated from validateFile to avoid unnecessary reads).
+ *
+ * Node-only — uses `node:fs.promises.readFile`.
  */
 async function loadFile(filePath: string): Promise<Buffer> {
-  return readFile(filePath);
+  const { fs } = getNodeModules();
+  if (!fs) {
+    throw new Error(
+      "loadFile requires Node.js runtime (node:fs) to read local files.",
+    );
+  }
+  return fs.promises.readFile(filePath);
 }
 
 /**
@@ -144,7 +180,7 @@ export async function uploadToTmpfiles(filePath: string): Promise<TempFileUpload
   log.info(`uploading: ${fileName} (${formatSize(fileSize)})`);
 
   const fileBuffer = await loadFile(filePath);
-  const boundary = `----TmpfilesBoundary${randomBytes(8).toString("hex")}`;
+  const boundary = `----TmpfilesBoundary${randomHex(8)}`;
   const formData = buildMultipart(boundary, {}, "file", fileBuffer, fileName);
 
   const resp = await fetch("https://tmpfiles.org/api/v1/upload", {
@@ -216,7 +252,7 @@ export async function uploadToUguu(filePath: string): Promise<TempFileUploadResu
   log.info(`uploading: ${fileName} (${formatSize(fileSize)})`);
 
   const fileBuffer = await loadFile(filePath);
-  const boundary = `----UguuBoundary${randomBytes(8).toString("hex")}`;
+  const boundary = `----UguuBoundary${randomHex(8)}`;
   const formData = buildMultipart(boundary, {}, "files[]", fileBuffer, fileName);
 
   const resp = await fetch("https://uguu.se/upload.php", {
@@ -293,7 +329,7 @@ export async function uploadToLitterbox(
   log.info(`uploading: ${fileName} (${formatSize(fileSize)}), expires in ${expire}`);
 
   const fileBuffer = await loadFile(filePath);
-  const boundary = `----LitterboxBoundary${randomBytes(8).toString("hex")}`;
+  const boundary = `----LitterboxBoundary${randomHex(8)}`;
   const formData = buildMultipart(
     boundary,
     { reqtype: "fileupload", time: expire },
