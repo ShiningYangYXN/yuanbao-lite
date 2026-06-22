@@ -7,4 +7,4 @@
  *   import { BrowserLocalStorageAdapter } from "yuanbao-lite";
  */
 
-export { BrowserLocalStorageAdapter } from "yuanbao-lite";
+export { BrowserLocalStorageAdapter } from "@yuanbao-lite/core";

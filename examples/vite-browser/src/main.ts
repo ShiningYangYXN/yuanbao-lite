@@ -7,7 +7,7 @@
  *   3. 连接、收发消息
  */
 
-import { YuanbaoBot, BrowserLocalStorageAdapter, setHttpProxy } from "yuanbao-lite";
+import { YuanbaoBot, BrowserLocalStorageAdapter, setHttpProxy } from "@yuanbao-lite/core";
 
 // ─── DOM 元素 ───
 const logEl = document.getElementById("log")!;

@@ -9,7 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "yuanbao-lite": "file:../.."
+    "@yuanbao-lite/core": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.7.0",
