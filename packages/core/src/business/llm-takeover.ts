@@ -241,6 +241,32 @@ const DEFAULT_SYSTEM_PROMPT = `你是元宝Lite智能助手，一个友好、专
 注意：贴纸直接发送到当前会话（用户所在的私聊或群聊），无需指定目标。
 如需查看可用贴纸列表，使用 <<command>>/stickers search 关键词<<command>>...
 
+## 引用回复
+
+你可以在回复中嵌入引用标签来快速引用回复某条消息：
+
+  <<quote>>消息ID<<quote>>
+
+消息ID可以是完整ID或尾号（#后面的部分）。如果出现多个 <<quote>> 标签，最后一个生效。
+标签会从回复文本中移除，实际消息作为引用回复发送。
+
+例如：
+  你说得对 <<quote>>a1b2c3d4<<quote>>   — 引用回复消息 #a1b2c3d4
+
+## 消息分块
+
+如果需要将回复拆分为多条消息发送，使用分块标记：
+
+  第一块内容<<break>>第二块内容<<break>>第三块内容
+
+每个 <<break>> 之间的内容会作为独立的消息发送。每个块可以有自己的 <<quote>> 标签
+（块内最后一个 <<quote>> 生效）。
+
+例如：
+  先说结论<<break>>详细解释 <<quote>>a1b2c3d4<<quote>>
+  → 第一条消息："先说结论"（无引用）
+  → 第二条消息："详细解释"（引用回复 #a1b2c3d4）
+
 ## 安全机制
 
 ### 优先级
@@ -1194,6 +1220,80 @@ export class LlmTakeoverEngine {
     return { cleanedText: cleanedText.trim(), results };
   }
 
+  // ─── Quote + Break Trigger Mechanism ───
+
+  /**
+   * Handle <<quote>>msgId<<quote>> and <<break>> tags in LLM output.
+   *
+   * <<quote>> sets the message to quote-reply to. If multiple <<quote>> tags
+   * appear in a chunk, the LAST one wins. The tag is stripped from the text.
+   *
+   * <<break>> splits the reply into multiple messages. Each chunk can have
+   * its own <<quote>> tag (the last one in that chunk wins). Chunks are
+   * sent as separate messages.
+   *
+   * Examples:
+   *   Hello <<quote>>abc123<<quote>>         → send "Hello" quoting msg abc123
+   *   Part 1<<break>>Part 2                   → send "Part 1", then "Part 2"
+   *   A<<quote>>q1<<quote>><<break>>B         → send "A" quoting q1, then "B" (no quote)
+   *   A<<break>>B<<quote>>q2<<quote>>         → send "A" (no quote), then "B" quoting q2
+   *
+   * Returns:
+   *   - chunks: array of { text, quoteMsgId? } to send as separate messages
+   *   - hasBreak: whether any <<break>> tags were found (if false, caller
+   *     can use the single chunk as the whole reply)
+   */
+  private async handleQuoteAndBreakTriggers(
+    text: string,
+  ): Promise<{
+    chunks: Array<{ text: string; quoteMsgId?: string }>;
+    hasBreak: boolean;
+  }> {
+    const quotePattern = /<<quote>>\s*(.+?)\s*<<quote>>/g;
+    const breakPattern = /<<break>>/g;
+
+    // Check if there are any <<break>> tags
+    const breakMatches = [...text.matchAll(breakPattern)];
+    const hasBreak = breakMatches.length > 0;
+
+    if (!hasBreak) {
+      // No <<break>> — extract the last <<quote>> (if any) and return single chunk
+      const quoteMatches = [...text.matchAll(quotePattern)];
+      let cleanedText = text;
+      let lastQuoteId: string | undefined;
+      for (const m of quoteMatches) {
+        cleanedText = cleanedText.replace(m[0], "");
+        lastQuoteId = m[1].trim();
+      }
+      return {
+        chunks: [{ text: cleanedText.trim(), quoteMsgId: lastQuoteId }],
+        hasBreak: false,
+      };
+    }
+
+    // Split by <<break>> into chunks
+    const rawChunks = text.split(breakPattern);
+    const chunks: Array<{ text: string; quoteMsgId?: string }> = [];
+
+    for (const rawChunk of rawChunks) {
+      // In each chunk, find the LAST <<quote>> tag
+      const quoteMatches = [...rawChunk.matchAll(quotePattern)];
+      let cleanedChunk = rawChunk;
+      let lastQuoteId: string | undefined;
+      for (const m of quoteMatches) {
+        cleanedChunk = cleanedChunk.replace(m[0], "");
+        lastQuoteId = m[1].trim();
+      }
+      const trimmed = cleanedChunk.trim();
+      // Only include non-empty chunks (skip trailing <<break>> with no content after)
+      if (trimmed) {
+        chunks.push({ text: trimmed, quoteMsgId: lastQuoteId });
+      }
+    }
+
+    return { chunks, hasBreak: true };
+  }
+
   private async executeIterativeInvoke(
     bot: YuanbaoBot,
     msg: ChatMessage,
@@ -1271,7 +1371,22 @@ export class LlmTakeoverEngine {
             : stickerResult.results.join("\n");
         }
 
-        await this.sendResponse(bot, msg, processedText);
+        // Handle <<quote>> and <<break>> triggers (may split into multiple
+        // messages, each with its own quote-reply target)
+        const { chunks, hasBreak } =
+          await this.handleQuoteAndBreakTriggers(processedText);
+        if (hasBreak) {
+          for (const chunk of chunks) {
+            await this.sendResponseChunk(bot, msg, chunk.text, chunk.quoteMsgId);
+          }
+        } else {
+          await this.sendResponseChunk(
+            bot,
+            msg,
+            chunks[0].text,
+            chunks[0].quoteMsgId,
+          );
+        }
 
         if (!invokeResult?.hasFollowUp) {
           this.log.info(`iterative invoke: done after round ${iteration}`);
@@ -1292,11 +1407,72 @@ export class LlmTakeoverEngine {
     msg: ChatMessage,
     text: string,
   ): Promise<number> {
-    // No chunking — Yuanbao platform removed bot message limits.
-    // Send the full text as a single message.
-    if (msg.chatType === "group" && msg.groupCode)
-      await bot.sendGroupMessage(msg.groupCode, text);
-    else await bot.sendDirectMessage(msg.fromUserId, text);
+    return this.sendResponseChunk(bot, msg, text, undefined);
+  }
+
+  /**
+   * Send a response chunk (possibly with a quote-reply target).
+   * If quoteMsgId is provided, the message is sent as a quote-reply to that
+   * message ID. The quoteMsgId can be a full message ID or a short suffix
+   * (last 8+ chars) — we resolve it via the history store.
+   */
+  private async sendResponseChunk(
+    bot: YuanbaoBot,
+    msg: ChatMessage,
+    text: string,
+    quoteMsgId?: string,
+  ): Promise<number> {
+    if (!text.trim()) return 0;
+
+    // Resolve quoteMsgId (may be a short suffix) to a full message ID
+    let resolvedQuoteId: string | undefined;
+    if (quoteMsgId) {
+      const cleanId = quoteMsgId.replace(/^#/, "").trim();
+      try {
+        const store = bot.getHistoryStore();
+        // Try exact match first
+        const exact = store.getById(cleanId);
+        if (exact?.id) {
+          resolvedQuoteId = exact.id;
+        } else {
+          // Try suffix match
+          const recent = store.getRecent(500);
+          const candidates = recent.filter(
+            (m) => m.id && String(m.id).endsWith(cleanId),
+          );
+          if (candidates.length >= 1) {
+            resolvedQuoteId = candidates[candidates.length - 1].id;
+          }
+        }
+      } catch {
+        // If history store lookup fails, use the raw ID
+        resolvedQuoteId = cleanId;
+      }
+    }
+
+    const isGroup = msg.chatType === "group" && Boolean(msg.groupCode);
+    const to = isGroup ? msg.groupCode! : msg.fromUserId;
+
+    if (resolvedQuoteId) {
+      // Send as quote-reply via sendText
+      try {
+        await bot.sendText({
+          to,
+          text,
+          isGroup,
+          quoteMsgId: resolvedQuoteId,
+          skipInterpolation: true,
+        });
+      } catch {
+        // Fallback to plain send if quote-reply fails
+        if (isGroup) await bot.sendGroupMessage(to, text);
+        else await bot.sendDirectMessage(to, text);
+      }
+    } else {
+      // Plain send (no quote)
+      if (isGroup) await bot.sendGroupMessage(to, text);
+      else await bot.sendDirectMessage(to, text);
+    }
     return 1;
   }
 
@@ -1436,8 +1612,25 @@ export class LlmTakeoverEngine {
           : stickerResult.results.join("\n");
       }
 
-      // Send first round immediately
-      const chunkCount = await this.sendResponse(bot, msg, processedText);
+      // Handle <<quote>> and <<break>> triggers (may split into multiple
+      // messages, each with its own quote-reply target)
+      const { chunks, hasBreak } =
+        await this.handleQuoteAndBreakTriggers(processedText);
+      let chunkCount: number;
+      if (hasBreak) {
+        chunkCount = 0;
+        for (const chunk of chunks) {
+          await this.sendResponseChunk(bot, msg, chunk.text, chunk.quoteMsgId);
+          chunkCount++;
+        }
+      } else {
+        chunkCount = await this.sendResponseChunk(
+          bot,
+          msg,
+          chunks[0].text,
+          chunks[0].quoteMsgId,
+        );
+      }
 
       // Iterative invoke loop (async, non-blocking)
       if (invokeResult?.hasFollowUp) {

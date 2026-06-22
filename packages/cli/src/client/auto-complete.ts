@@ -2,7 +2,7 @@
  * Context-aware auto-completion for the interactive CLI.
  *
  * Provides completions for:
- * - Top-level commands and aliases
+ * - Top-level commands and aliases (dynamically fetched from daemon registry)
  * - Sub-commands based on the parent command context
  * - File paths (local filesystem)
  * - Contact names and group codes
@@ -25,6 +25,17 @@ export type CompletionContext = {
   aliasStore?: AliasStore;
   contactStore?: ContactStore;
   groupStore?: GroupStore;
+  /**
+   * Commands fetched from the daemon's registry (dynamic).
+   * When present, this REPLACES the hardcoded TOP_LEVEL_COMMANDS list so
+   * that auto-complete always reflects the actually-registered commands.
+   */
+  commands?: Array<{
+    name: string;
+    aliases: string[];
+    description: string;
+    usage?: string;
+  }>;
 };
 
 export type CompletionResult = {
@@ -34,9 +45,13 @@ export type CompletionResult = {
   replaceFrom: string;
 };
 
-// ─── Command definitions ───
+// ─── Static fallback command list ───
+// Used only when ctx.commands is not populated (e.g. daemon not yet connected).
+// Once the daemon is reachable, refreshCompletions() in interactive.ts fetches
+// the real command list and populates ctx.commands — at that point the static
+// list is ignored.
 
-const TOP_LEVEL_COMMANDS = [
+const FALLBACK_TOP_LEVEL_COMMANDS: Array<{ cmd: string; aliases: string[] }> = [
   { cmd: "/help", aliases: ["/h", "/?", "/帮助"] },
   { cmd: "/reply", aliases: ["/引用回复"] },
   { cmd: "/chat", aliases: ["/聊天", "/dm", "/私聊", "/group", "/群发"] },
@@ -44,17 +59,15 @@ const TOP_LEVEL_COMMANDS = [
   { cmd: "/download", aliases: ["/下载"] },
   { cmd: "/img", aliases: ["/图片", "/发送图片"] },
   { cmd: "/file", aliases: ["/文件", "/发送文件"] },
-  { cmd: "/tempfile", aliases: ["/临时文件", "/tmpfile"] },
   { cmd: "/sticker", aliases: ["/贴纸"] },
   { cmd: "/stickers", aliases: ["/贴纸列表", "/stickerlist"] },
   { cmd: "/contacts", aliases: ["/联系人"] },
   { cmd: "/groups", aliases: ["/glist"] },
-  { cmd: "/switch", aliases: ["/切换", "/sw"] },
   { cmd: "/info", aliases: ["/gi", "/groupinfo", "/群信息"] },
   { cmd: "/members", aliases: ["/member", "/成员", "/群成员"] },
   { cmd: "/alias", aliases: ["/别名"] },
   { cmd: "/history", aliases: ["/hist", "/历史"] },
-  { cmd: "/search", aliases: ["/搜索", "/查找", "/hsearch", "/搜索历史", "/histsearch"] },
+  { cmd: "/search", aliases: ["/搜索", "/查找"] },
   { cmd: "/batch", aliases: ["/批量"] },
   { cmd: "/account", aliases: ["/账号", "/acc"] },
   { cmd: "/llm", aliases: ["/ai"] },
@@ -81,6 +94,25 @@ const TOP_LEVEL_COMMANDS = [
   { cmd: "/term", aliases: ["/终端", "/terminal", "/shell-session"] },
   { cmd: "/exit", aliases: ["/quit", "/q"] },
 ];
+
+/**
+ * Build the top-level command list from ctx.commands (dynamic) or fall back
+ * to the static list. Each entry is normalized to { cmd, aliases } where
+ * cmd is the canonical "/name" and aliases are the alias strings (with "/"
+ * prefix). The daemon returns aliases WITHOUT the "/" prefix, so we add it.
+ */
+function getTopLevelCommands(ctx?: CompletionContext): Array<{
+  cmd: string;
+  aliases: string[];
+}> {
+  if (ctx?.commands && ctx.commands.length > 0) {
+    return ctx.commands.map((c) => ({
+      cmd: `/${c.name}`,
+      aliases: (c.aliases ?? []).map((a) => (a.startsWith("/") ? a : `/${a}`)),
+    }));
+  }
+  return FALLBACK_TOP_LEVEL_COMMANDS;
+}
 
 const SUB_COMMANDS: Record<string, string[]> = {
   "/contacts": [
@@ -234,7 +266,7 @@ export function getCompletions(
   // Empty line — suggest all commands
   if (!trimmed) {
     return {
-      completions: TOP_LEVEL_COMMANDS.map((c) => c.cmd),
+      completions: getTopLevelCommands(ctx).map((c) => c.cmd),
       replaceFrom: "",
     };
   }
@@ -250,7 +282,7 @@ export function getCompletions(
 
   // ─── Completing the command itself ───
   if (parts.length === 1 && !trimmed.endsWith(" ")) {
-    return completeCommand(cmd);
+    return completeCommand(cmd, ctx);
   }
 
   // ─── Completing sub-commands or arguments ───
@@ -269,10 +301,10 @@ export function getCompletions(
 
 // ─── Command completion ───
 
-function completeCommand(partial: string): CompletionResult {
+function completeCommand(partial: string, ctx?: CompletionContext): CompletionResult {
   const matches: string[] = [];
 
-  for (const entry of TOP_LEVEL_COMMANDS) {
+  for (const entry of getTopLevelCommands(ctx)) {
     if (entry.cmd.startsWith(partial)) {
       matches.push(entry.cmd);
     }

@@ -471,8 +471,11 @@ export async function runInteractive(): Promise<void> {
       completionCtx.contactStore = makeLiteContactStore(data.contacts) as never;
       completionCtx.groupStore = makeLiteGroupStore(data.groups) as never;
       completionCtx.aliasStore = makeLiteAliasStore(data.aliases) as never;
+      // Populate the dynamic command list so auto-complete reflects the
+      // actually-registered commands instead of the static fallback.
+      completionCtx.commands = data.commands;
     } catch {
-      // ignore
+      // ignore — completions will fall back to static command list
     }
   };
   void refreshCompletions();
@@ -678,40 +681,18 @@ async function processSingleCommand(
   }
 
   if (line === "/chat" || line.startsWith("/chat ")) {
-    const handled = handleChatCommand(line);
-    if (handled) {
-      const parts = line.split(/\s+/);
-      if (parts.length >= 3) {
-        await dispatchCommand(line, client);
+    const parts = line.split(/\s+/);
+    // /chat (no args) → exit session mode
+    if (parts.length === 1) {
+      if (state.chatMode !== "none") {
+        state.chatMode = "none";
+        state.chatTarget = "";
+        printStatus("已退出会话模式");
       }
       return;
     }
-    await dispatchCommand(line, client);
-    return;
-  }
-
-  if (line === "/switch" || line.startsWith("/switch ")) {
-    printStatus(
-      `当前模式: ${state.chatMode} ${state.chatTarget ? `→ ${state.chatTarget}` : ""}`,
-    );
-    await dispatchCommand(line, client);
-    return;
-  }
-
-  await dispatchCommand(line, client);
-}
-
-function handleChatCommand(line: string): boolean {
-  const parts = line.split(/\s+/);
-  if (parts.length === 1) {
-    if (state.chatMode !== "none") {
-      state.chatMode = "none";
-      state.chatTarget = "";
-      printStatus("已退出会话模式");
-    }
-    return true;
-  }
-  if (parts.length === 2) {
+    // /chat <target> [message] → enter session mode for that target,
+    // AND dispatch to daemon if there's a message.
     const target = parts[1];
     if (GROUP_CODE_RE.test(target)) {
       state.chatMode = "group";
@@ -722,9 +703,22 @@ function handleChatCommand(line: string): boolean {
       state.chatTarget = target;
       printStatus(`切换到私聊会话: ${target}`);
     }
-    return true;
+    // If there's a message (3+ parts), dispatch to daemon to actually send.
+    if (parts.length >= 3) {
+      await dispatchCommand(line, client);
+    }
+    return;
   }
-  return false;
+
+  // /switch — show current mode locally (session mode is CLI-only)
+  if (line === "/switch" || line.startsWith("/switch ")) {
+    printStatus(
+      `当前模式: ${state.chatMode} ${state.chatTarget ? `→ ${state.chatTarget}` : ""}`,
+    );
+    return;
+  }
+
+  await dispatchCommand(line, client);
 }
 
 async function sendChatMessage(
