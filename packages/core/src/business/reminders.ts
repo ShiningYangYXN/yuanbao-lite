@@ -110,7 +110,11 @@ function save(): void {
  *   - Combined: "1d2h" (1 day 2 hours), "1h30m" (1 hour 30 minutes)
  * Returns { delayMs, fireAt, error }
  */
-export function parseTimeString(timeStr: string): { delayMs: number; fireAt: number; error?: string } {
+export function parseTimeString(timeStr: string): {
+  delayMs: number;
+  fireAt: number;
+  error?: string;
+} {
   const now = Date.now();
 
   // Try absolute time first: "2026-06-18 14:30" or "14:30"
@@ -127,7 +131,9 @@ export function parseTimeString(timeStr: string): { delayMs: number; fireAt: num
   }
 
   // Full date-time: "2026-06-18 14:30" or "2026-06-18T14:30:00"
-  const dateTime = timeStr.match(/^(\d{4})-(\d{1,2})-(\d{1,2})[T ](\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  const dateTime = timeStr.match(
+    /^(\d{4})-(\d{1,2})-(\d{1,2})[T ](\d{1,2}):(\d{2})(?::(\d{2}))?$/,
+  );
   if (dateTime) {
     const target = new Date(
       parseInt(dateTime[1], 10),
@@ -145,17 +151,31 @@ export function parseTimeString(timeStr: string): { delayMs: number; fireAt: num
 
   // Relative: "30s", "5m", "2h", "1d", "1w", or combined "1d2h", "1h30m"
   const units: Record<string, number> = {
-    s: 1000, sec: 1000, second: 1000,
-    m: 60_000, min: 60_000, minute: 60_000,
-    h: 3_600_000, hr: 3_600_000, hour: 3_600_000,
-    d: 86_400_000, day: 86_400_000,
-    w: 7 * 86_400_000, week: 7 * 86_400_000,
-    mo: 30 * 86_400_000, month: 30 * 86_400_000,
-    y: 365 * 86_400_000, year: 365 * 86_400_000,
+    s: 1000,
+    sec: 1000,
+    second: 1000,
+    m: 60_000,
+    min: 60_000,
+    minute: 60_000,
+    h: 3_600_000,
+    hr: 3_600_000,
+    hour: 3_600_000,
+    d: 86_400_000,
+    day: 86_400_000,
+    w: 7 * 86_400_000,
+    week: 7 * 86_400_000,
+    mo: 30 * 86_400_000,
+    month: 30 * 86_400_000,
+    y: 365 * 86_400_000,
+    year: 365 * 86_400_000,
   };
 
   // Match all number+unit pairs
-  const pairs = [...timeStr.matchAll(/(\d+)\s*(s|sec|second|m|min|minute|h|hr|hour|d|day|w|week|mo|month|y|year)/g)];
+  const pairs = [
+    ...timeStr.matchAll(
+      /(\d+)\s*(s|sec|second|m|min|minute|h|hr|hour|d|day|w|week|mo|month|y|year)/g,
+    ),
+  ];
   if (pairs.length > 0) {
     let totalMs = 0;
     for (const p of pairs) {
@@ -166,7 +186,11 @@ export function parseTimeString(timeStr: string): { delayMs: number; fireAt: num
     return { delayMs: totalMs, fireAt: now + totalMs };
   }
 
-  return { delayMs: 0, fireAt: 0, error: `无法解析时间: ${timeStr}\n支持格式: 30s, 5m, 2h, 1d, 1w, 1mo, 1y, 14:30, 2026-06-18 14:30, 1d2h3m` };
+  return {
+    delayMs: 0,
+    fireAt: 0,
+    error: `无法解析时间: ${timeStr}\n支持格式: 30s, 5m, 2h, 1d, 1w, 1mo, 1y, 14:30, 2026-06-18 14:30, 1d2h3m`,
+  };
 }
 
 /**
@@ -175,15 +199,25 @@ export function parseTimeString(timeStr: string): { delayMs: number; fireAt: num
  * Each field can be: star, number, star/N, N-M, N,M,Z
  * Returns { getNextFire, error }
  */
-export function parseCronExpression(expr: string): { error?: string; getNextFire: (after: number) => number } {
+export function parseCronExpression(expr: string): {
+  error?: string;
+  getNextFire: (after: number) => number;
+} {
   const parts = expr.trim().split(/\s+/);
   if (parts.length !== 5) {
-    return { error: `cron 表达式需要 5 个字段: 分 时 日 月 周\n例如: "30 9 * * 1-5" (工作日9:30)`, getNextFire: () => 0 };
+    return {
+      error: `cron 表达式需要 5 个字段: 分 时 日 月 周\n例如: "30 9 * * 1-5" (工作日9:30)`,
+      getNextFire: () => 0,
+    };
   }
 
   const [minF, hourF, domF, monthF, dowF] = parts;
 
-  function parseField(field: string, min: number, max: number): number[] | null {
+  function parseField(
+    field: string,
+    min: number,
+    max: number,
+  ): number[] | null {
     if (field === "*") {
       const result: number[] = [];
       for (let i = min; i <= max; i++) result.push(i);
@@ -199,7 +233,7 @@ export function parseCronExpression(expr: string): { error?: string; getNextFire
     const result: number[] = [];
     for (const part of field.split(",")) {
       if (part.includes("-")) {
-        const [s, e] = part.split("-").map(n => parseInt(n, 10));
+        const [s, e] = part.split("-").map((n) => parseInt(n, 10));
         if (isNaN(s) || isNaN(e) || s < min || e > max || s > e) return null;
         for (let i = s; i <= e; i++) result.push(i);
       } else {
@@ -249,10 +283,17 @@ export function parseCronExpression(expr: string): { error?: string; getNextFire
 /**
  * Add a reminder job.
  */
-export function addReminder(job: Omit<ReminderJob, "id" | "createdAt" | "active">): string {
+export function addReminder(
+  job: Omit<ReminderJob, "id" | "createdAt" | "active">,
+): string {
   const data = load();
   const id = `job-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
-  const fullJob: ReminderJob = { ...job, id, createdAt: Date.now(), active: true };
+  const fullJob: ReminderJob = {
+    ...job,
+    id,
+    createdAt: Date.now(),
+    active: true,
+  };
   data.jobs.push(fullJob);
   save();
   log.info(`added ${job.type} job ${id} for ${job.userId}`);
@@ -264,13 +305,16 @@ export function addReminder(job: Omit<ReminderJob, "id" | "createdAt" | "active"
  */
 export function removeReminder(id: string): boolean {
   const data = load();
-  const idx = data.jobs.findIndex(j => j.id === id);
+  const idx = data.jobs.findIndex((j) => j.id === id);
   if (idx < 0) return false;
   data.jobs[idx].active = false;
   data.jobs.splice(idx, 1);
   save();
   const timer = activeTimers.get(id);
-  if (timer) { clearTimeout(timer); activeTimers.delete(id); }
+  if (timer) {
+    clearTimeout(timer);
+    activeTimers.delete(id);
+  }
   log.info(`removed job ${id}`);
   return true;
 }
@@ -280,7 +324,7 @@ export function removeReminder(id: string): boolean {
  */
 export function listReminders(userId?: string): ReminderJob[] {
   const data = load();
-  return data.jobs.filter(j => j.active && (!userId || j.userId === userId));
+  return data.jobs.filter((j) => j.active && (!userId || j.userId === userId));
 }
 
 /**
@@ -291,11 +335,13 @@ export function listReminders(userId?: string): ReminderJob[] {
  * before scheduling a new one. This prevents duplicate firings and
  * memory leaks on reconnect.
  */
-export type SendFunction = (targetId: string, message: string, isGroup: boolean) => Promise<void>;
+export type SendFunction = (
+  targetId: string,
+  message: string,
+  isGroup: boolean,
+) => Promise<void>;
 
-export function startAllJobs(
-  sendFn: SendFunction,
-): void {
+export function startAllJobs(sendFn: SendFunction): void {
   const data = load();
   let started = 0;
   for (const job of data.jobs) {
@@ -312,10 +358,7 @@ export function startAllJobs(
   log.info(`started ${started} active jobs`);
 }
 
-function scheduleJob(
-  job: ReminderJob,
-  sendFn: SendFunction,
-): void {
+function scheduleJob(job: ReminderJob, sendFn: SendFunction): void {
   const now = Date.now();
 
   // For cron jobs with a stale fireAt (in the past), recompute the next
@@ -329,7 +372,9 @@ function scheduleJob(
     if (nextFire > 0) {
       job.fireAt = nextFire;
       save();
-      log.info(`job ${job.id} cron fireAt was stale, rescheduled to ${new Date(nextFire).toISOString()}`);
+      log.info(
+        `job ${job.id} cron fireAt was stale, rescheduled to ${new Date(nextFire).toISOString()}`,
+      );
     } else {
       log.warn(`job ${job.id} cron could not compute next fire, deactivating`);
       job.active = false;

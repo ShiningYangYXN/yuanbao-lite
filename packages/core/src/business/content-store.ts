@@ -43,7 +43,11 @@ function generateContentId(): string {
  * Store content and return a contentId reference.
  * If the same content (by source) already exists, reuse its contentId.
  */
-export function storeContent(type: string, content: string, source: string): string {
+export function storeContent(
+  type: string,
+  content: string,
+  source: string,
+): string {
   // Check if content with same source already exists
   for (const [id, entry] of store) {
     if (entry.source === source && entry.type === type) {
@@ -52,7 +56,9 @@ export function storeContent(type: string, content: string, source: string): str
   }
   // LRU eviction: remove oldest if at capacity
   if (store.size >= MAX_ENTRIES) {
-    const oldest = [...store.entries()].sort((a, b) => a[1].storedAt - b[1].storedAt)[0];
+    const oldest = [...store.entries()].sort(
+      (a, b) => a[1].storedAt - b[1].storedAt,
+    )[0];
     if (oldest) {
       store.delete(oldest[0]);
       log.debug(`evicted old content ${oldest[0]} (LRU)`);
@@ -66,7 +72,9 @@ export function storeContent(type: string, content: string, source: string): str
     source,
     storedAt: Date.now(),
   });
-  log.debug(`stored content ${contentId} (type=${type}, ${content.length} chars)`);
+  log.debug(
+    `stored content ${contentId} (type=${type}, ${content.length} chars)`,
+  );
   return contentId;
 }
 

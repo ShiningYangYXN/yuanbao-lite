@@ -89,7 +89,9 @@ export type HistoryStoreConfig = {
 
 export class MessageHistoryStore {
   private messages: ChatMessage[] = [];
-  private config: Required<Pick<HistoryStoreConfig, "maxMessages" | "autoPersist">> & {
+  private config: Required<
+    Pick<HistoryStoreConfig, "maxMessages" | "autoPersist">
+  > & {
     persistencePath?: string;
     autoLoad: boolean;
     persistenceAdapter?: PersistenceAdapter;
@@ -122,7 +124,9 @@ export class MessageHistoryStore {
    */
   private getAdapter(): PersistenceAdapter {
     if (!this.config.persistencePath) {
-      throw new Error("MessageHistoryStore: persistencePath is required to use persistence");
+      throw new Error(
+        "MessageHistoryStore: persistencePath is required to use persistence",
+      );
     }
     if (this.config.persistenceAdapter) {
       return this.config.persistenceAdapter;
@@ -199,7 +203,7 @@ export class MessageHistoryStore {
    * Get a specific message by ID.
    */
   getById(id: string): ChatMessage | undefined {
-    return this.messages.find(m => m.id === id);
+    return this.messages.find((m) => m.id === id);
   }
 
   /**
@@ -207,7 +211,7 @@ export class MessageHistoryStore {
    * Returns true if a message was removed, false if not found.
    */
   removeById(id: string): boolean {
-    const idx = this.messages.findIndex(m => m.id === id);
+    const idx = this.messages.findIndex((m) => m.id === id);
     if (idx < 0) return false;
     this.messages.splice(idx, 1);
     this.save();
@@ -240,11 +244,18 @@ export class MessageHistoryStore {
    *
    * Searches in message text and optionally in sender nickname.
    */
-  searchByKeyword(keyword: string, options?: { searchNickname?: boolean; limit?: number }): ChatMessage[] {
+  searchByKeyword(
+    keyword: string,
+    options?: { searchNickname?: boolean; limit?: number },
+  ): ChatMessage[] {
     const lower = keyword.toLowerCase();
-    const results = this.messages.filter(msg => {
+    const results = this.messages.filter((msg) => {
       if (msg.text.toLowerCase().includes(lower)) return true;
-      if (options?.searchNickname && msg.fromNickname?.toLowerCase().includes(lower)) return true;
+      if (
+        options?.searchNickname &&
+        msg.fromNickname?.toLowerCase().includes(lower)
+      )
+        return true;
       return false;
     });
     return options?.limit ? results.slice(-options.limit) : results;
@@ -256,7 +267,7 @@ export class MessageHistoryStore {
   searchByRegex(pattern: string, flags = "i", limit = 200): ChatMessage[] {
     try {
       const regex = new RegExp(pattern, flags);
-      return this.messages.filter(m => regex.test(m.text)).slice(-limit);
+      return this.messages.filter((m) => regex.test(m.text)).slice(-limit);
     } catch {
       this.log.warn(`invalid regex pattern: ${pattern}`);
       return [];
@@ -315,9 +326,12 @@ export class MessageHistoryStore {
 
     try {
       const adapter = this.getAdapter();
-      const lines = this.messages.map(m => JSON.stringify(m)).join("\n") + "\n";
+      const lines =
+        this.messages.map((m) => JSON.stringify(m)).join("\n") + "\n";
       adapter.write(this.config.persistencePath, lines);
-      this.log.info(`history saved: ${this.messages.length} messages to ${this.config.persistencePath}`);
+      this.log.info(
+        `history saved: ${this.messages.length} messages to ${this.config.persistencePath}`,
+      );
       return true;
     } catch (err) {
       this.log.error(`failed to save history: ${(err as Error).message}`);
@@ -362,7 +376,9 @@ export class MessageHistoryStore {
     try {
       const adapter = this.getAdapter();
       if (!adapter.exists(this.config.persistencePath)) {
-        this.log.info("persistence file not found, starting with empty history");
+        this.log.info(
+          "persistence file not found, starting with empty history",
+        );
         return true;
       }
 
@@ -385,7 +401,9 @@ export class MessageHistoryStore {
       const toKeep = loaded.slice(-this.config.maxMessages);
       this.messages = toKeep;
 
-      this.log.info(`history loaded: ${toKeep.length} messages from ${this.config.persistencePath}`);
+      this.log.info(
+        `history loaded: ${toKeep.length} messages from ${this.config.persistencePath}`,
+      );
       return true;
     } catch (err) {
       this.log.error(`failed to load history: ${(err as Error).message}`);
@@ -407,30 +425,34 @@ export class MessageHistoryStore {
     let result = this.messages;
 
     if (filter.fromUserId) {
-      result = result.filter(m => m.fromUserId === filter.fromUserId);
+      result = result.filter((m) => m.fromUserId === filter.fromUserId);
     }
 
     if (filter.groupCode) {
-      result = result.filter(m => m.groupCode === filter.groupCode);
+      result = result.filter((m) => m.groupCode === filter.groupCode);
     }
 
     if (filter.chatType) {
-      result = result.filter(m => m.chatType === filter.chatType);
+      result = result.filter((m) => m.chatType === filter.chatType);
     }
 
     if (filter.since !== undefined) {
-      result = result.filter(m => m.timestamp >= filter.since!);
+      result = result.filter((m) => m.timestamp >= filter.since!);
     }
 
     if (filter.until !== undefined) {
-      result = result.filter(m => m.timestamp <= filter.until!);
+      result = result.filter((m) => m.timestamp <= filter.until!);
     }
 
     if (filter.keyword) {
       const lower = filter.keyword.toLowerCase();
-      result = result.filter(m => {
+      result = result.filter((m) => {
         if (m.text.toLowerCase().includes(lower)) return true;
-        if (filter.searchNickname && m.fromNickname?.toLowerCase().includes(lower)) return true;
+        if (
+          filter.searchNickname &&
+          m.fromNickname?.toLowerCase().includes(lower)
+        )
+          return true;
         return false;
       });
     }
@@ -438,7 +460,7 @@ export class MessageHistoryStore {
     if (filter.regex) {
       try {
         const regex = new RegExp(filter.regex, "i");
-        result = result.filter(m => regex.test(m.text));
+        result = result.filter((m) => regex.test(m.text));
       } catch {
         // Invalid regex — skip regex filter
       }
@@ -461,7 +483,9 @@ let globalHistoryStore: MessageHistoryStore | null = null;
 /**
  * Get or create the global message history store.
  */
-export function getGlobalHistoryStore(config?: HistoryStoreConfig): MessageHistoryStore {
+export function getGlobalHistoryStore(
+  config?: HistoryStoreConfig,
+): MessageHistoryStore {
   if (!globalHistoryStore) {
     globalHistoryStore = new MessageHistoryStore(config);
   }
@@ -497,7 +521,10 @@ export type HistoryFormatOptions = {
  *   [14:25:01] 📨 王五                    │ [图片]
  *   [14:25:30] 📨 王五                    │ [文件: report.pdf (2.3MB)]
  */
-export function formatHistoryMessage(msg: ChatMessage, options?: HistoryFormatOptions): string {
+export function formatHistoryMessage(
+  msg: ChatMessage,
+  options?: HistoryFormatOptions,
+): string {
   const maxWidth = options?.maxWidth ?? 80;
   const colorize = options?.colorize ?? true;
   const showGroupName = options?.showGroupName ?? true;
@@ -518,7 +545,10 @@ export function formatHistoryMessage(msg: ChatMessage, options?: HistoryFormatOp
   // Sender name with ID for reply usage
   const senderName = msg.fromNickname || msg.fromUserId;
   const senderDisplay = `${senderName}(${msg.fromUserId})`;
-  const senderPadded = senderDisplay.length > 28 ? senderDisplay.substring(0, 26) + ".." : senderDisplay.padEnd(28);
+  const senderPadded =
+    senderDisplay.length > 28
+      ? senderDisplay.substring(0, 26) + ".."
+      : senderDisplay.padEnd(28);
 
   // Group name prefix when applicable
   let groupPrefix = "";
@@ -531,7 +561,8 @@ export function formatHistoryMessage(msg: ChatMessage, options?: HistoryFormatOp
 
   // Truncate long messages with ellipsis
   const maxTextLen = maxWidth - 12 - 2 - 28 - 3 - groupPrefix.length - 10; // [time] icon sender │ #id text
-  const truncatedText = text.length > maxTextLen ? text.substring(0, maxTextLen - 1) + "…" : text;
+  const truncatedText =
+    text.length > maxTextLen ? text.substring(0, maxTextLen - 1) + "…" : text;
 
   const line = `[${time}] ${icon} ${groupPrefix}${senderPadded} │ #${shortId} ${truncatedText}`;
 
@@ -539,7 +570,9 @@ export function formatHistoryMessage(msg: ChatMessage, options?: HistoryFormatOp
 
   // Apply colors
   const timeColored = `\x1b[2m[${time}]\x1b[0m`;
-  const iconColored = isOutgoing ? `\x1b[36m${icon}\x1b[0m` : `\x1b[32m${icon}\x1b[0m`;
+  const iconColored = isOutgoing
+    ? `\x1b[36m${icon}\x1b[0m`
+    : `\x1b[32m${icon}\x1b[0m`;
   const senderColored = `\x1b[1m${senderPadded}\x1b[0m`;
   const groupColored = groupPrefix ? `\x1b[33m${groupPrefix}\x1b[0m` : "";
   const idColored = `\x1b[90m#${shortId}\x1b[0m`;
@@ -564,7 +597,9 @@ function formatMessageContent(msg: ChatMessage): string {
           if (elem.msg_content.file_name) {
             const size = elem.msg_content.file_size;
             const sizeStr = size ? formatFileSize(size) : "";
-            parts.push(`[文件: ${elem.msg_content.file_name}${sizeStr ? ` (${sizeStr})` : ""}]`);
+            parts.push(
+              `[文件: ${elem.msg_content.file_name}${sizeStr ? ` (${sizeStr})` : ""}]`,
+            );
           } else {
             parts.push("[文件]");
           }
@@ -574,7 +609,10 @@ function formatMessageContent(msg: ChatMessage): string {
           break;
         case "TIMCustomElem":
           // Sticker
-          if (elem.msg_content.desc?.includes("贴纸") || elem.msg_content.data?.includes("sticker")) {
+          if (
+            elem.msg_content.desc?.includes("贴纸") ||
+            elem.msg_content.data?.includes("sticker")
+          ) {
             parts.push("[贴纸]");
           } else {
             parts.push("[自定义消息]");
@@ -606,7 +644,9 @@ function formatMessageContent(msg: ChatMessage): string {
   // Fallback to text
   let text = msg.text || "(空消息)";
   if (msg.mentions && msg.mentions.length > 0) {
-    const mentionTags = msg.mentions.map(m => `[@${m.displayName}]`).join(" ");
+    const mentionTags = msg.mentions
+      .map((m) => `[@${m.displayName}]`)
+      .join(" ");
     text += ` ${mentionTags}`;
   }
   return text;
@@ -636,7 +676,10 @@ function formatFileSize(bytes: number): string {
  *   [formatted messages]
  *   ── 共 20 条 ───────────────────────────────
  */
-export function formatHistoryList(messages: ChatMessage[], options?: HistoryFormatOptions & { title?: string }): string {
+export function formatHistoryList(
+  messages: ChatMessage[],
+  options?: HistoryFormatOptions & { title?: string },
+): string {
   if (messages.length === 0) {
     return "暂无历史消息";
   }
@@ -645,14 +688,18 @@ export function formatHistoryList(messages: ChatMessage[], options?: HistoryForm
   const headerWidth = Math.max(title.length + 8, 40);
 
   const lines: string[] = [];
-  lines.push(`── ${title} ${"─".repeat(Math.max(0, headerWidth - title.length - 5))}`);
+  lines.push(
+    `── ${title} ${"─".repeat(Math.max(0, headerWidth - title.length - 5))}`,
+  );
 
   for (const msg of messages) {
     lines.push(formatHistoryMessage(msg, options));
   }
 
   const footer = `共 ${messages.length} 条`;
-  lines.push(`── ${footer} ${"─".repeat(Math.max(0, headerWidth - footer.length - 5))}`);
+  lines.push(
+    `── ${footer} ${"─".repeat(Math.max(0, headerWidth - footer.length - 5))}`,
+  );
 
   return lines.join("\n");
 }

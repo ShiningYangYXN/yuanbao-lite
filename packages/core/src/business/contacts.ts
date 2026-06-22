@@ -55,8 +55,8 @@ export type ContactStoreConfig = {
 // ─── ContactStore ───
 
 export class ContactStore {
-  private contacts = new Map<string, ContactEntry>();   // name -> entry (case-insensitive key)
-  private idIndex = new Map<string, ContactEntry>();     // id -> entry
+  private contacts = new Map<string, ContactEntry>(); // name -> entry (case-insensitive key)
+  private idIndex = new Map<string, ContactEntry>(); // id -> entry
   private config: ContactStoreConfig;
   private log: ModuleLog;
   private persistenceAdapter: PersistenceAdapter | null = null;
@@ -86,7 +86,9 @@ export class ContactStore {
    */
   private getAdapter(): PersistenceAdapter {
     if (!this.config.persistencePath) {
-      throw new Error("ContactStore: persistencePath is required to use persistence");
+      throw new Error(
+        "ContactStore: persistencePath is required to use persistence",
+      );
     }
     if (this.config.persistenceAdapter) {
       return this.config.persistenceAdapter;
@@ -185,14 +187,17 @@ export class ContactStore {
    * Get a contact entry by name or ID.
    */
   get(nameOrId: string): ContactEntry | undefined {
-    return this.contacts.get(nameOrId.toLowerCase()) ?? this.idIndex.get(nameOrId);
+    return (
+      this.contacts.get(nameOrId.toLowerCase()) ?? this.idIndex.get(nameOrId)
+    );
   }
 
   /**
    * Rename a contact.
    */
   rename(nameOrId: string, newName: string): boolean {
-    const entry = this.contacts.get(nameOrId.toLowerCase()) ?? this.idIndex.get(nameOrId);
+    const entry =
+      this.contacts.get(nameOrId.toLowerCase()) ?? this.idIndex.get(nameOrId);
     if (!entry) return false;
 
     // Remove old name key
@@ -209,7 +214,8 @@ export class ContactStore {
    * Set or update the tag for a contact.
    */
   setTag(nameOrId: string, tag: string): boolean {
-    const entry = this.contacts.get(nameOrId.toLowerCase()) ?? this.idIndex.get(nameOrId);
+    const entry =
+      this.contacts.get(nameOrId.toLowerCase()) ?? this.idIndex.get(nameOrId);
     if (!entry) return false;
     entry.tag = tag.trim() || undefined;
     this.maybeAutoSave();
@@ -220,7 +226,8 @@ export class ContactStore {
    * Set or update notes for a contact.
    */
   setNotes(nameOrId: string, notes: string): boolean {
-    const entry = this.contacts.get(nameOrId.toLowerCase()) ?? this.idIndex.get(nameOrId);
+    const entry =
+      this.contacts.get(nameOrId.toLowerCase()) ?? this.idIndex.get(nameOrId);
     if (!entry) return false;
     entry.notes = notes.trim() || undefined;
     this.maybeAutoSave();
@@ -231,7 +238,8 @@ export class ContactStore {
    * Toggle favorite status for a contact.
    */
   toggleFavorite(nameOrId: string): boolean {
-    const entry = this.contacts.get(nameOrId.toLowerCase()) ?? this.idIndex.get(nameOrId);
+    const entry =
+      this.contacts.get(nameOrId.toLowerCase()) ?? this.idIndex.get(nameOrId);
     if (!entry) return false;
     entry.favorite = !entry.favorite;
     this.maybeAutoSave();
@@ -242,7 +250,8 @@ export class ContactStore {
    * Update lastUsedAt timestamp for a contact.
    */
   touch(nameOrId: string): void {
-    const entry = this.contacts.get(nameOrId.toLowerCase()) ?? this.idIndex.get(nameOrId);
+    const entry =
+      this.contacts.get(nameOrId.toLowerCase()) ?? this.idIndex.get(nameOrId);
     if (entry) {
       entry.lastUsedAt = Date.now();
       this.maybeAutoSave();
@@ -278,9 +287,13 @@ export class ContactStore {
 
     switch (sortBy) {
       case "name":
-        return entries.sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
+        return entries.sort((a, b) =>
+          a.name.toLowerCase().localeCompare(b.name.toLowerCase()),
+        );
       case "lastUsed":
-        return entries.sort((a, b) => (b.lastUsedAt || 0) - (a.lastUsedAt || 0));
+        return entries.sort(
+          (a, b) => (b.lastUsedAt || 0) - (a.lastUsedAt || 0),
+        );
       case "created":
         return entries.sort((a, b) => b.createdAt - a.createdAt);
     }
@@ -291,14 +304,16 @@ export class ContactStore {
    */
   getByTag(tag: string): ContactEntry[] {
     const t = tag.toLowerCase();
-    return [...this.contacts.values()].filter(e => e.tag?.toLowerCase() === t);
+    return [...this.contacts.values()].filter(
+      (e) => e.tag?.toLowerCase() === t,
+    );
   }
 
   /**
    * Get favorite contacts.
    */
   getFavorites(): ContactEntry[] {
-    return [...this.contacts.values()].filter(e => e.favorite);
+    return [...this.contacts.values()].filter((e) => e.favorite);
   }
 
   /**
@@ -323,7 +338,9 @@ export class ContactStore {
       const adapter = this.getAdapter();
       const data = [...this.contacts.values()];
       adapter.write(this.config.persistencePath, JSON.stringify(data, null, 2));
-      this.log.info(`contacts saved to ${this.config.persistencePath} (${data.length} entries)`);
+      this.log.info(
+        `contacts saved to ${this.config.persistencePath} (${data.length} entries)`,
+      );
       return true;
     } catch (err) {
       this.log.error(`failed to save contacts: ${(err as Error).message}`);
@@ -345,7 +362,9 @@ export class ContactStore {
     try {
       const adapter = this.getAdapter();
       if (!adapter.exists(this.config.persistencePath)) {
-        this.log.info("persistence file not found, starting with empty contacts");
+        this.log.info(
+          "persistence file not found, starting with empty contacts",
+        );
         return true;
       }
 
@@ -358,7 +377,9 @@ export class ContactStore {
         this.idIndex.set(entry.id, entry);
       }
 
-      this.log.info(`contacts loaded from ${this.config.persistencePath} (${data.length} entries)`);
+      this.log.info(
+        `contacts loaded from ${this.config.persistencePath} (${data.length} entries)`,
+      );
       return true;
     } catch (err) {
       this.log.error(`failed to load contacts: ${(err as Error).message}`);
@@ -389,7 +410,9 @@ let globalContactStore: ContactStore | null = null;
 /**
  * Get or create the global contact store.
  */
-export function getGlobalContactStore(config?: ContactStoreConfig): ContactStore {
+export function getGlobalContactStore(
+  config?: ContactStoreConfig,
+): ContactStore {
   if (!globalContactStore) {
     globalContactStore = new ContactStore(config);
   }

@@ -98,16 +98,16 @@ message ConnBody {
 
 ### 消息类型
 
-| 类型 | 名称 | 方向 | 说明 |
-|------|------|------|------|
-| 1 | `auth_bind` | → | 认证绑定 |
-| 2 | `auth_bind_rsp` | ← | 认证响应 |
-| 3 | `ping` | → | 心跳 |
-| 4 | `pong` | ← | 心跳响应 |
-| 5 | `dispatch` | ← | 服务器推送 |
-| 6 | `push_ack` | → | 推送确认 |
-| 7 | `biz_request` | → | 业务请求 |
-| 8 | `biz_response` | ← | 业务响应 |
+| 类型 | 名称            | 方向 | 说明       |
+| ---- | --------------- | ---- | ---------- |
+| 1    | `auth_bind`     | →    | 认证绑定   |
+| 2    | `auth_bind_rsp` | ←    | 认证响应   |
+| 3    | `ping`          | →    | 心跳       |
+| 4    | `pong`          | ←    | 心跳响应   |
+| 5    | `dispatch`      | ←    | 服务器推送 |
+| 6    | `push_ack`      | →    | 推送确认   |
+| 7    | `biz_request`   | →    | 业务请求   |
+| 8    | `biz_response`  | ←    | 业务响应   |
 
 ## 业务消息
 
@@ -162,15 +162,15 @@ message InboundMessage {
 
 ## 消息体元素类型
 
-| msg_type | 说明 | msg_content 示例 |
-|----------|------|------------------|
-| `TIMTextElem` | 纯文本 | `{ text: "你好" }` |
-| `TIMCustomElem` | 自定义元素（@提及） | `{ data: "base64编码的JSON" }` |
-| `TIMImageElem` | 图片 | `{ image_info_array: [{ url, width, height }] }` |
-| `TIMFileElem` | 文件 | `{ url, file_size, file_name }` |
-| `TIMFaceElem` | 表情/贴纸 | `{ index: 0, data: "JSON(sticker_id)" }` |
-| `TIMVideoFileElem` | 视频 | `{ video_url, video_size, ... }` |
-| `TIMSoundElem` | 语音 | `{ url, size, duration }` |
+| msg_type           | 说明                | msg_content 示例                                 |
+| ------------------ | ------------------- | ------------------------------------------------ |
+| `TIMTextElem`      | 纯文本              | `{ text: "你好" }`                               |
+| `TIMCustomElem`    | 自定义元素（@提及） | `{ data: "base64编码的JSON" }`                   |
+| `TIMImageElem`     | 图片                | `{ image_info_array: [{ url, width, height }] }` |
+| `TIMFileElem`      | 文件                | `{ url, file_size, file_name }`                  |
+| `TIMFaceElem`      | 表情/贴纸           | `{ index: 0, data: "JSON(sticker_id)" }`         |
+| `TIMVideoFileElem` | 视频                | `{ video_url, video_size, ... }`                 |
+| `TIMSoundElem`     | 语音                | `{ url, size, duration }`                        |
 
 ## @提及协议
 
@@ -207,6 +207,7 @@ const ConnMsg = root.lookupType("ConnMsg");
 ```
 
 **优势**：
+
 - 无需 `.proto` 文件运行时解析
 - 浏览器兼容（`protobufjs` 有浏览器 bundle）
 - Tree-shaking 友好
@@ -242,12 +243,12 @@ COS 上传协议要求文件 MD5 作为 `uuid`（去重标识）。Web Crypto AP
 
 ## 错误码
 
-| code | 含义 | 处理 |
-|------|------|------|
-| 0 | 成功 | — |
+| code  | 含义         | 处理              |
+| ----- | ------------ | ----------------- |
+| 0     | 成功         | —                 |
 | 10099 | 签名临时失败 | 重试（最多 3 次） |
-| 401 | 认证失败 | 刷新 sign-token |
-| 429 | 限流 | 等待后重试 |
+| 401   | 认证失败     | 刷新 sign-token   |
+| 429   | 限流         | 等待后重试        |
 
 ## 心跳机制
 
@@ -263,12 +264,12 @@ COS 上传协议要求文件 MD5 作为 `uuid`（去重标识）。Web Crypto AP
 
 ## 相关源码
 
-| 文件 | 说明 |
-|------|------|
-| `src/access/ws/client.ts` | WebSocket 客户端 |
-| `src/access/ws/conn-codec.ts` | ConnMsg 编解码 |
-| `src/access/ws/biz-codec.ts` | 业务消息编解码 |
-| `src/access/ws/proto/*.proto` | Protobuf 定义 |
-| `src/access/ws/proto/*.json` | 预编译的 JSON 描述符 |
-| `src/access/http/request.ts` | Sign-token + HTTP 工具 |
-| `src/access/http/media.ts` | 媒体上传/下载 |
+| 文件                          | 说明                   |
+| ----------------------------- | ---------------------- |
+| `src/access/ws/client.ts`     | WebSocket 客户端       |
+| `src/access/ws/conn-codec.ts` | ConnMsg 编解码         |
+| `src/access/ws/biz-codec.ts`  | 业务消息编解码         |
+| `src/access/ws/proto/*.proto` | Protobuf 定义          |
+| `src/access/ws/proto/*.json`  | 预编译的 JSON 描述符   |
+| `src/access/http/request.ts`  | Sign-token + HTTP 工具 |
+| `src/access/http/media.ts`    | 媒体上传/下载          |

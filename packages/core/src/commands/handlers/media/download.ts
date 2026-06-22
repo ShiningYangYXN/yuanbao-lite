@@ -20,7 +20,9 @@ export function register(cmdSys: CommandSystem): void {
     elevated: true,
     handler: async (ctx) => {
       if (ctx.args.length === 0) {
-        await ctx.reply("用法: /download <URL> [文件名] [--to <保存路径>]\n默认保存到 ~/downloads");
+        await ctx.reply(
+          "用法: /download <URL> [文件名] [--to <保存路径>]\n默认保存到 ~/downloads",
+        );
         return;
       }
       const url = ctx.args[0];
@@ -37,7 +39,9 @@ export function register(cmdSys: CommandSystem): void {
       }
       try {
         const result = await ctx.bot.downloadMedia(url, saveDir, fileName);
-        await ctx.reply(`✅ 下载完成: ${result.filePath} (${result.fileSize} bytes)`);
+        await ctx.reply(
+          `✅ 下载完成: ${result.filePath} (${result.fileSize} bytes)`,
+        );
       } catch (err) {
         await ctx.reply(`❌ 下载失败: ${(err as Error).message}`);
       }

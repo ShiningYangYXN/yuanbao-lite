@@ -61,7 +61,7 @@ YB_CREDS="appKey:appSecret" npm run test:e2e
 
 每个公开 API 必须有 JSDoc 注释：
 
-```typescript
+````typescript
 /**
  * 发送文本消息。
  *
@@ -81,7 +81,7 @@ YB_CREDS="appKey:appSecret" npm run test:e2e
 async sendText(params: SendTextMessageParams): Promise<void> {
   // ...
 }
-```
+````
 
 ## 浏览器兼容性要求
 
@@ -137,6 +137,7 @@ if (!fs) {
 ```
 
 **type**：
+
 - `feat` — 新功能
 - `fix` — Bug 修复
 - `refactor` — 重构（无功能变化）
@@ -145,6 +146,7 @@ if (!fs) {
 - `chore` — 构建/工具
 
 **示例**：
+
 ```
 feat: v11.7.0 — Phase 4 js-md5 replacement + core/CLI split + docs
 
@@ -159,6 +161,7 @@ Committer: Z.ai Agent <agent@z.ai>
 ### 版本号策略
 
 遵循 SemVer：
+
 - **主版本号**（12.0.0）：不兼容的 API 变更（不轻易递增）
 - **次版本号**（11.7.0）：新增功能（向下兼容）
 - **修订号**（11.6.1）：Bug 修复（向下兼容）
@@ -166,6 +169,7 @@ Committer: Z.ai Agent <agent@z.ai>
 ### 提交者信息
 
 所有提交使用：
+
 ```
 Author: Z.ai Agent <agent@z.ai>
 ```
@@ -192,7 +196,7 @@ export function register(cmdSys: CommandSystem): void {
     description: "做某件事",
     usage: "/mycommand <参数>",
     category: "utility" as CommandCategory,
-    elevated: false,  // 是否需要 elevated 权限
+    elevated: false, // 是否需要 elevated 权限
     handler: async (ctx) => {
       const arg = ctx.args[0];
       if (!arg) {
@@ -241,7 +245,11 @@ npx yb-cli rc /mycommand test
 import { createLog } from "../logger.js";
 import type { ModuleLog } from "../logger.js";
 import type { PersistenceAdapter } from "../access/persistence/adapter.js";
-import { getDefaultPersistenceAdapter, getDefaultPersistenceDir, joinPath } from "../access/persistence/adapter.js";
+import {
+  getDefaultPersistenceAdapter,
+  getDefaultPersistenceDir,
+  joinPath,
+} from "../access/persistence/adapter.js";
 
 export type MyEntry = {
   id: string;
@@ -354,7 +362,7 @@ npm publish
 ### 文档规范
 
 - 使用 Markdown
-- 代码块标注语言（```typescript、```bash）
+- 代码块标注语言（`typescript、`bash）
 - 表格对齐
 - 链接使用相对路径
 

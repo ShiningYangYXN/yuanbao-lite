@@ -27,7 +27,9 @@ export function register(cmdSys: CommandSystem): void {
       const filePath = ctx.args[0];
       try {
         const result = await ctx.bot.uploadMedia(filePath);
-        await ctx.reply(`✅ 上传成功: uuid=${result.uuid}, url=${result.url || "(pending)"}`);
+        await ctx.reply(
+          `✅ 上传成功: uuid=${result.uuid}, url=${result.url || "(pending)"}`,
+        );
       } catch (err) {
         await ctx.reply(`❌ 上传失败: ${(err as Error).message}`);
       }

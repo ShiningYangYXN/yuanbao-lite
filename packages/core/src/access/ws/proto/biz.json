@@ -523,9 +523,7 @@
                     "SyncInformationReq": {
                       "oneofs": {
                         "data": {
-                          "oneof": [
-                            "commandData"
-                          ]
+                          "oneof": ["commandData"]
                         }
                       },
                       "fields": {

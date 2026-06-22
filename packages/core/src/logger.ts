@@ -36,7 +36,11 @@ function shouldLog(level: LogLevel): boolean {
   return LOG_LEVEL_ORDER[level] >= LOG_LEVEL_ORDER[minLevel];
 }
 
-function formatMessage(module: string, msg: string, data?: Record<string, unknown>): string {
+function formatMessage(
+  module: string,
+  msg: string,
+  data?: Record<string, unknown>,
+): string {
   const prefix = module ? `${logPrefix}[${module}]` : logPrefix;
   if (data === undefined) {
     return `${prefix} ${msg}`;
@@ -48,9 +52,18 @@ function formatMessage(module: string, msg: string, data?: Record<string, unknow
 
 const OMIT_KEYS = new Set(["msg_body"]);
 const SENSITIVE_KEYS = new Set([
-  "token", "signature", "app_key", "appkey", "appsecret",
-  "app_secret", "secret", "password", "x-token", "user_input",
-  "cloud_custom_data", "model_output",
+  "token",
+  "signature",
+  "app_key",
+  "appkey",
+  "appsecret",
+  "app_secret",
+  "secret",
+  "password",
+  "x-token",
+  "user_input",
+  "cloud_custom_data",
+  "model_output",
 ]);
 
 function maskValue(value: string): string {
@@ -62,7 +75,7 @@ function maskValue(value: string): string {
 
 function sanitizeObj(obj: Record<string, unknown>): Record<string, unknown> {
   if (Array.isArray(obj)) {
-    return obj.map(item =>
+    return obj.map((item) =>
       typeof item === "object" && item !== null ? sanitizeObj(item) : item,
     ) as unknown as Record<string, unknown>;
   }
@@ -101,7 +114,9 @@ export function sanitize(value: unknown): string {
   if (typeof value === "object") {
     return JSON.stringify(sanitizeObj(value as Record<string, unknown>));
   }
-  return typeof value === "symbol" ? value.toString() : String(value as string | number | boolean | bigint);
+  return typeof value === "symbol"
+    ? value.toString()
+    : String(value as string | number | boolean | bigint);
 }
 
 // ─── Module-scoped logger factory ───
@@ -113,19 +128,28 @@ export interface ModuleLog {
   debug(msg: string, data?: Record<string, unknown>): void;
 }
 
-export function createLog(module: string, sink?: Partial<PluginLogger>): ModuleLog {
+export function createLog(
+  module: string,
+  sink?: Partial<PluginLogger>,
+): ModuleLog {
   const target: PluginLogger = {
     info: sink?.info ?? ((msg: string) => console.log(msg)),
     warn: sink?.warn ?? ((msg: string) => console.warn(msg)),
     error: sink?.error ?? ((msg: string) => console.error(msg)),
-    debug: sink?.debug ?? ((msg: string) => shouldLog("debug") && console.debug(msg)),
+    debug:
+      sink?.debug ??
+      ((msg: string) => shouldLog("debug") && console.debug(msg)),
   };
 
   return {
-    info: (msg, data) => shouldLog("info") && target.info(formatMessage(module, msg, data)),
-    warn: (msg, data) => shouldLog("warn") && target.warn(formatMessage(module, msg, data)),
-    error: (msg, data) => shouldLog("error") && target.error(formatMessage(module, msg, data)),
-    debug: (msg, data) => shouldLog("debug") && target.debug(formatMessage(module, msg, data)),
+    info: (msg, data) =>
+      shouldLog("info") && target.info(formatMessage(module, msg, data)),
+    warn: (msg, data) =>
+      shouldLog("warn") && target.warn(formatMessage(module, msg, data)),
+    error: (msg, data) =>
+      shouldLog("error") && target.error(formatMessage(module, msg, data)),
+    debug: (msg, data) =>
+      shouldLog("debug") && target.debug(formatMessage(module, msg, data)),
   };
 }
 

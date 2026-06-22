@@ -20,8 +20,7 @@ import type {
   CommandDefinition,
   CommandResult,
   CommandSystemConfig,
-}
-  from "./types.js";
+} from "./types.js";
 
 // Command handlers (split into src/commands/handlers/<category>/<command>.ts)
 import { registerAll } from "./handlers/index.js";
@@ -46,7 +45,10 @@ export class CommandSystem {
   /** Timer for auto-expiring unsafe mode */
   private _unsafeTimer: ReturnType<typeof setTimeout> | null = null;
   /** Per-command authorization with expiry: command name → { expiresAt (Infinity=forever), timer } */
-  private _allowedCommands = new Map<string, { expiresAt: number; timer: ReturnType<typeof setTimeout> | null }>();
+  private _allowedCommands = new Map<
+    string,
+    { expiresAt: number; timer: ReturnType<typeof setTimeout> | null }
+  >();
   /**
    * Optional ANSI table formatter — registered by the CLI package via
    * {@link setTableFormatter}. When set and the output mode is "ansi",
@@ -55,18 +57,30 @@ export class CommandSystem {
    * This indirection avoids a hard dependency from core → CLI; the CLI
    * registers its formatter at startup.
    */
-  private _tableFormatter: ((headers: string[], rows: string[][]) => string) | null = null;
+  private _tableFormatter:
+    | ((headers: string[], rows: string[][]) => string)
+    | null = null;
 
   /**
    * Register an ANSI table formatter (used in "ansi" output mode).
    * The CLI package calls this at startup to inject its cli-table3-based
    * formatter. Without this, "ansi" mode falls back to markdown tables.
    */
-  setTableFormatter(fn: ((headers: string[], rows: string[][]) => string) | null): void {
+  setTableFormatter(
+    fn: ((headers: string[], rows: string[][]) => string) | null,
+  ): void {
     this._tableFormatter = fn;
   }
   /** Commands that cannot be authorized via /unsafe allow — public so handlers can check. */
-  static UNAUTHORIZABLE_COMMANDS = new Set(["unsafe", "trust", "block", "config", "init", "daemon", "shell"]);
+  static UNAUTHORIZABLE_COMMANDS = new Set([
+    "unsafe",
+    "trust",
+    "block",
+    "config",
+    "init",
+    "daemon",
+    "shell",
+  ]);
 
   constructor(config?: CommandSystemConfig) {
     this.config = {
@@ -99,7 +113,9 @@ export class CommandSystem {
         this.log.info("unsafe mode expired, elevated restrictions restored");
       }, durationMs);
     }
-    this.log.info(`unsafe mode enabled${durationMs != Infinity ? ` for ${durationMs}ms` : " (forever)"}`);
+    this.log.info(
+      `unsafe mode enabled${durationMs != Infinity ? ` for ${durationMs}ms` : " (forever)"}`,
+    );
   }
 
   /**
@@ -134,7 +150,10 @@ export class CommandSystem {
    * Non-elevated commands are auto-skipped (no need to authorize).
    * @param durationMs - How long the authorization lasts (default: 5 minutes, 0 = forever)
    */
-  allowCommand(cmdName: string, durationMs = 5 * 60 * 1000): { ok: boolean; reason?: string } {
+  allowCommand(
+    cmdName: string,
+    durationMs = 5 * 60 * 1000,
+  ): { ok: boolean; reason?: string } {
     const normalized = cmdName.toLowerCase().replace(/^\//, "");
     if (CommandSystem.UNAUTHORIZABLE_COMMANDS.has(normalized)) {
       return { ok: false, reason: `命令 /${normalized} 不支持被授权` };
@@ -144,7 +163,10 @@ export class CommandSystem {
       return { ok: false, reason: `未知命令: /${normalized}` };
     }
     if (!def.elevated) {
-      return { ok: false, reason: `命令 /${normalized} 不是受限命令，无需授权` };
+      return {
+        ok: false,
+        reason: `命令 /${normalized} 不是受限命令，无需授权`,
+      };
     }
     // Clear existing timer if re-authorizing
     const existing = this._allowedCommands.get(normalized);
@@ -159,7 +181,9 @@ export class CommandSystem {
       }, durationMs);
     }
     this._allowedCommands.set(normalized, { expiresAt, timer });
-    this.log.info(`command /${normalized} authorized${durationMs > 0 ? ` for ${durationMs}ms` : " (forever)"}`);
+    this.log.info(
+      `command /${normalized} authorized${durationMs > 0 ? ` for ${durationMs}ms` : " (forever)"}`,
+    );
     return { ok: true };
   }
 
@@ -175,7 +199,10 @@ export class CommandSystem {
       return { ok: false, reason: `未知命令: /${normalized}` };
     }
     if (!def.elevated) {
-      return { ok: false, reason: `命令 /${normalized} 不是受限命令，无法取消授权` };
+      return {
+        ok: false,
+        reason: `命令 /${normalized} 不是受限命令，无法取消授权`,
+      };
     }
     const entry = this._allowedCommands.get(normalized);
     if (!entry) {
@@ -190,11 +217,19 @@ export class CommandSystem {
   /**
    * Get all currently authorized commands with their expiry info.
    */
-  getAllowedCommands(): Array<{ name: string; expiresAt: number; forever: boolean }> {
+  getAllowedCommands(): Array<{
+    name: string;
+    expiresAt: number;
+    forever: boolean;
+  }> {
     const now = Date.now();
     return Array.from(this._allowedCommands.entries())
       .filter(([_, v]) => v.expiresAt === 0 || v.expiresAt > now)
-      .map(([name, v]) => ({ name, expiresAt: v.expiresAt, forever: v.expiresAt === 0 }));
+      .map(([name, v]) => ({
+        name,
+        expiresAt: v.expiresAt,
+        forever: v.expiresAt === 0,
+      }));
   }
 
   /**
@@ -233,7 +268,9 @@ export class CommandSystem {
       }
     }
 
-    this.log.info(`registered command: ${name}${def.aliases?.length ? ` (aliases: ${def.aliases.join(", ")})` : ""}`);
+    this.log.info(
+      `registered command: ${name}${def.aliases?.length ? ` (aliases: ${def.aliases.join(", ")})` : ""}`,
+    );
   }
 
   /**
@@ -267,7 +304,7 @@ export class CommandSystem {
    * Get all visible commands (excludes hidden commands).
    */
   getVisibleCommands(): CommandDefinition[] {
-    return this.getAll().filter(c => !c.hidden);
+    return this.getAll().filter((c) => !c.hidden);
   }
 
   /**
@@ -275,7 +312,10 @@ export class CommandSystem {
    */
   get(name: string): CommandDefinition | undefined {
     const normalName = this.normalizeName(name);
-    return this.commands.get(normalName) ?? this.commands.get(this.aliasMap.get(normalName) ?? "");
+    return (
+      this.commands.get(normalName) ??
+      this.commands.get(this.aliasMap.get(normalName) ?? "")
+    );
   }
 
   /**
@@ -310,7 +350,11 @@ export class CommandSystem {
    *   When provided, ctx.reply() and ctx.replyDirect() will call this instead
    *   of sending IM messages.
    */
-  async dispatch(bot: YuanbaoBot, message: ChatMessage, onReply?: (text: string) => Promise<void>): Promise<CommandResult> {
+  async dispatch(
+    bot: YuanbaoBot,
+    message: ChatMessage,
+    onReply?: (text: string) => Promise<void>,
+  ): Promise<CommandResult> {
     return this.dispatchWithSource(bot, message, onReply, "chat");
   }
 
@@ -345,7 +389,12 @@ export class CommandSystem {
     // DM (chatType=direct) is unaffected — no @mention needed in private chat.
     // CLI source bypasses this — CLI users are already authenticated and
     // shouldn't need to @mention the bot to dispatch commands.
-    if (message.chatType === "group" && this.config.requireMentionInGroup && !message.isMentioned && source !== "cli") {
+    if (
+      message.chatType === "group" &&
+      this.config.requireMentionInGroup &&
+      !message.isMentioned &&
+      source !== "cli"
+    ) {
       return { handled: false };
     }
 
@@ -359,12 +408,21 @@ export class CommandSystem {
 
     // Look up command
     const normalName = this.normalizeName(commandName);
-    const def = this.commands.get(normalName) ?? this.commands.get(this.aliasMap.get(normalName) ?? "");
+    const def =
+      this.commands.get(normalName) ??
+      this.commands.get(this.aliasMap.get(normalName) ?? "");
 
     if (!def) {
       // Unknown command — send a hint to the user
       this.log.debug(`unknown command: ${commandName}`);
-      const ctx = this.makeContext(bot, message, commandName, args, onReply, source);
+      const ctx = this.makeContext(
+        bot,
+        message,
+        commandName,
+        args,
+        onReply,
+        source,
+      );
       await ctx.reply(`❓ 未知命令: /${commandName}\n输入 /help 查看可用命令`);
       return { handled: true };
     }
@@ -383,17 +441,40 @@ export class CommandSystem {
     const MANAGEMENT_COMMANDS = new Set(["block", "trust", "unsafe"]);
     if (source !== "cli" && !MANAGEMENT_COMMANDS.has(commandName)) {
       try {
-        const { isBlockedFromCommand, isBlockedFrom } = await import("../business/block.js");
+        const { isBlockedFromCommand, isBlockedFrom } =
+          await import("../business/block.js");
         // Check if the user is blocked from this specific command, OR from
         // all commands, OR from everything ("all" scope).
-        if (isBlockedFromCommand(message.fromUserId, commandName) || isBlockedFrom(message.fromUserId, "all")) {
-          const ctx = this.makeContext(bot, message, commandName, args, onReply, source);
-          await ctx.reply(`🚫 你被封禁，无法使用 /${commandName}。如有疑问请联系主人。`);
+        if (
+          isBlockedFromCommand(message.fromUserId, commandName) ||
+          isBlockedFrom(message.fromUserId, "all")
+        ) {
+          const ctx = this.makeContext(
+            bot,
+            message,
+            commandName,
+            args,
+            onReply,
+            source,
+          );
+          await ctx.reply(
+            `🚫 你被封禁，无法使用 /${commandName}。如有疑问请联系主人。`,
+          );
           return { handled: true };
         }
         // Also check wildcard "*" blocks (apply to all users)
-        if (isBlockedFromCommand("*", commandName) || isBlockedFrom("*", "all")) {
-          const ctx = this.makeContext(bot, message, commandName, args, onReply, source);
+        if (
+          isBlockedFromCommand("*", commandName) ||
+          isBlockedFrom("*", "all")
+        ) {
+          const ctx = this.makeContext(
+            bot,
+            message,
+            commandName,
+            args,
+            onReply,
+            source,
+          );
           await ctx.reply(`🚫 此命令已被全局封禁，无法使用。`);
           return { handled: true };
         }
@@ -417,11 +498,20 @@ export class CommandSystem {
       // For all other commands, check if any arg is --help/-h/-?
       // (these are stripped from args by makeContext if they match --all/-a pattern,
       // so we check the raw args here)
-      helpRequested = args.some(a => a === "--help" || a === "-h" || a === "-?");
+      helpRequested = args.some(
+        (a) => a === "--help" || a === "-h" || a === "-?",
+      );
     }
 
     if (helpRequested) {
-      const ctx = this.makeContext(bot, message, commandName, [], onReply, source);
+      const ctx = this.makeContext(
+        bot,
+        message,
+        commandName,
+        [],
+        onReply,
+        source,
+      );
       const lines = [
         `📖 命令: ${this.config.prefix}${def.name}`,
         `描述: ${def.description}`,
@@ -441,7 +531,13 @@ export class CommandSystem {
     // Check elevated command restriction (bypassed when unsafe mode is active, CLI source,
     // the specific command is authorized via /unsafe allow, OR the user has a
     // per-user command grant from /trust grant)
-    if (def.elevated && message.chatType === "group" && !this._unsafeMode && source !== "cli" && !this.isCommandAllowed(commandName)) {
+    if (
+      def.elevated &&
+      message.chatType === "group" &&
+      !this._unsafeMode &&
+      source !== "cli" &&
+      !this.isCommandAllowed(commandName)
+    ) {
       // Check if the user has a per-user command grant (from /trust grant)
       let hasUserGrant = false;
       try {
@@ -462,12 +558,26 @@ export class CommandSystem {
           // trust module optional
         }
         if (isTrustedUser) {
-          await this.makeContext(bot, message, commandName, args, onReply, source).reply(
+          await this.makeContext(
+            bot,
+            message,
+            commandName,
+            args,
+            onReply,
+            source,
+          ).reply(
             `⚠️ 此命令仅限私聊使用。\n受信用户可：\n  /unsafe on [分钟] — 开启全局危险模式（默认5分钟）\n  /unsafe on forever — 永久开启\n  /unsafe allow ${commandName} [分钟|forever] — 全局授权此命令（默认5分钟）\n  /trust grant <你的ID> ${commandName} [分钟|forever] — 仅授权给你（需主人执行）\n命令名可加/也可不加，支持别名\n查看状态: /unsafe status`,
           );
         } else {
           // Auto-include the user's own ID so they can forward it to the master
-          await this.makeContext(bot, message, commandName, args, onReply, source).reply(
+          await this.makeContext(
+            bot,
+            message,
+            commandName,
+            args,
+            onReply,
+            source,
+          ).reply(
             `⚠️ 此命令仅限私聊使用。\n你的用户ID: ${message.fromUserId}\n如需在群聊中执行：\n  1. 联系主人发送: /trust add ${message.fromUserId}\n  2. 加入信任列表后，发送: /unsafe allow ${commandName}\n  或: /unsafe on 开启全局危险模式\n  或请主人执行: /trust grant ${message.fromUserId} ${commandName}\n命令名可加/也可不加，支持别名`,
           );
         }
@@ -477,9 +587,14 @@ export class CommandSystem {
 
     // Check connected requirement (bypassed for CLI source — CLI may run config commands before bot connects)
     if (def.requireConnected && !bot.getState().connected && source !== "cli") {
-      await this.makeContext(bot, message, commandName, args, onReply, source).reply(
-        "⚠️ 机器人尚未连接，请稍后再试",
-      );
+      await this.makeContext(
+        bot,
+        message,
+        commandName,
+        args,
+        onReply,
+        source,
+      ).reply("⚠️ 机器人尚未连接，请稍后再试");
       return { handled: true };
     }
 
@@ -494,10 +609,19 @@ export class CommandSystem {
     // This keeps /echo, /mention, /atall etc. args untouched.
 
     // Build context and execute
-    const ctx = this.makeContext(bot, message, commandName, args, onReply, source);
+    const ctx = this.makeContext(
+      bot,
+      message,
+      commandName,
+      args,
+      onReply,
+      source,
+    );
 
     try {
-      this.log.info(`executing command: ${commandName} (args: ${args.join(" ")})`);
+      this.log.info(
+        `executing command: ${commandName} (args: ${args.join(" ")})`,
+      );
       await def.handler(ctx);
       return { handled: true };
     } catch (err) {
@@ -548,15 +672,23 @@ export class CommandSystem {
     const nick = trimmed.slice(1); // strip leading @
     if (nick && message.mentions) {
       // Try exact displayName match
-      const mention = message.mentions.find(m => m.displayName === nick || m.userId === nick);
+      const mention = message.mentions.find(
+        (m) => m.displayName === nick || m.userId === nick,
+      );
       if (mention) {
-        this.log.debug(`resolved @${nick} → ${mention.userId} (from message.mentions)`);
+        this.log.debug(
+          `resolved @${nick} → ${mention.userId} (from message.mentions)`,
+        );
         return mention.userId;
       }
       // Try case-insensitive match
-      const mentionCI = message.mentions.find(m => m.displayName.toLowerCase() === nick.toLowerCase());
+      const mentionCI = message.mentions.find(
+        (m) => m.displayName.toLowerCase() === nick.toLowerCase(),
+      );
       if (mentionCI) {
-        this.log.debug(`resolved @${nick} → ${mentionCI.userId} (case-insensitive from message.mentions)`);
+        this.log.debug(
+          `resolved @${nick} → ${mentionCI.userId} (case-insensitive from message.mentions)`,
+        );
         return mentionCI.userId;
       }
     }
@@ -573,9 +705,13 @@ export class CommandSystem {
       try {
         const resp = await bot.getGroupMemberList(message.groupCode);
         const members = resp?.member_list ?? [];
-        const member = members.find(m => m.nick_name === nick || m.user_id === nick);
+        const member = members.find(
+          (m) => m.nick_name === nick || m.user_id === nick,
+        );
         if (member) {
-          this.log.debug(`resolved @${nick} → ${member.user_id} (from group members)`);
+          this.log.debug(
+            `resolved @${nick} → ${member.user_id} (from group members)`,
+          );
           return member.user_id;
         }
       } catch {
@@ -594,7 +730,9 @@ export class CommandSystem {
    *
    * Returns null if the text does not start with the command prefix.
    */
-  private parseCommand(text: string): { commandName: string; args: string[] } | null {
+  private parseCommand(
+    text: string,
+  ): { commandName: string; args: string[] } | null {
     const trimmed = text.trim();
     if (!trimmed.startsWith(this.config.prefix)) {
       return null;
@@ -684,7 +822,8 @@ export class CommandSystem {
         const raw = input.slice(i + 1, end);
         // Convert single-quoted to JSON-parseable double-quoted string
         // Escape any existing double quotes and backslashes
-        const jsonStr = '"' + raw.replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '"';
+        const jsonStr =
+          '"' + raw.replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '"';
         try {
           current += JSON.parse(jsonStr) as string;
         } catch {
@@ -695,7 +834,7 @@ export class CommandSystem {
       }
 
       // Backslash escape outside quotes — use JS native parsing
-      if (ch === '\\' && i + 1 < input.length) {
+      if (ch === "\\" && i + 1 < input.length) {
         // Build a minimal quoted string and let JSON.parse handle the escape
         const escaped = input.slice(i, i + 2);
         try {
@@ -733,81 +872,107 @@ export class CommandSystem {
     const isGroup = message.chatType === "group";
     const groupCode = message.groupCode;
 
-    const reply = onReply ?? (async (text: string) => {
-      if (isGroup && groupCode) {
-        await bot.sendGroupMessage(groupCode, text);
-      } else {
-        await bot.sendDirectMessage(message.fromUserId, text);
-      }
-      // Inject the bot's reply into LLM context as an ASSISTANT message.
-      // This is CRITICAL: we can't rely on the IM platform's CallbackAfterSendMsg
-      // callback to capture the bot's output (some platforms don't send it, or
-      // it arrives asynchronously). By injecting here, we guarantee the LLM
-      // sees its own replies in the conversation history.
-      // The conversation key matches what feedLlmContext uses:
-      //   group → group:<groupCode>, DM → dm:<fromUserId>
-      const engine = bot.getLlmEngine();
-      if (engine) {
-        const convKey = isGroup && groupCode
-          ? `group:${groupCode}`
-          : `dm:${message.fromUserId}`;
-        try {
-          const { formatChatMessageForContext } = await import("../business/llm-takeover.js");
-          // Build a synthetic ChatMessage for the bot's reply
-          const botMsg: ChatMessage = {
-            id: `bot-reply-${Date.now()}`,
-            fromUserId: bot.getAccount().botId || "bot",
-            fromNickname: "bot",
-            chatType: message.chatType,
-            ...(isGroup && groupCode ? { groupCode, groupName: message.groupName } : {}),
-            text,
-            timestamp: Date.now(),
-          };
-          const formatted = formatChatMessageForContext(botMsg);
-          engine.getConversationManager().addAssistantMessage(convKey, formatted);
-        } catch {
-          // context injection failure is non-critical
+    const reply =
+      onReply ??
+      (async (text: string) => {
+        if (isGroup && groupCode) {
+          await bot.sendGroupMessage(groupCode, text);
+        } else {
+          await bot.sendDirectMessage(message.fromUserId, text);
         }
-      }
-    });
+        // Inject the bot's reply into LLM context as an ASSISTANT message.
+        // This is CRITICAL: we can't rely on the IM platform's CallbackAfterSendMsg
+        // callback to capture the bot's output (some platforms don't send it, or
+        // it arrives asynchronously). By injecting here, we guarantee the LLM
+        // sees its own replies in the conversation history.
+        // The conversation key matches what feedLlmContext uses:
+        //   group → group:<groupCode>, DM → dm:<fromUserId>
+        const engine = bot.getLlmEngine();
+        if (engine) {
+          const convKey =
+            isGroup && groupCode
+              ? `group:${groupCode}`
+              : `dm:${message.fromUserId}`;
+          try {
+            const { formatChatMessageForContext } =
+              await import("../business/llm-takeover.js");
+            // Build a synthetic ChatMessage for the bot's reply
+            const botMsg: ChatMessage = {
+              id: `bot-reply-${Date.now()}`,
+              fromUserId: bot.getAccount().botId || "bot",
+              fromNickname: "bot",
+              chatType: message.chatType,
+              ...(isGroup && groupCode
+                ? { groupCode, groupName: message.groupName }
+                : {}),
+              text,
+              timestamp: Date.now(),
+            };
+            const formatted = formatChatMessageForContext(botMsg);
+            engine
+              .getConversationManager()
+              .addAssistantMessage(convKey, formatted);
+          } catch {
+            // context injection failure is non-critical
+          }
+        }
+      });
 
     // replyDoc: send documentation/help text without interpolation.
     // This prevents ${...} in help text (e.g. batch template variables like
     // ${i}, ${n}) from being parsed by interpolate(). Also escapes @mention
     // syntax so literal @[nick](id) examples aren't parsed as real mentions.
-    const replyDoc = onReply ?? (async (text: string) => {
-      const { escapeMentionSyntax } = await import("../business/mention.js");
-      const escaped = escapeMentionSyntax(text);
-      // Use sendText with skipInterpolation to preserve ${...} literals
-      if (isGroup && groupCode) {
-        await bot.sendText({ to: groupCode, text: escaped, isGroup: true, skipInterpolation: true });
-      } else {
-        await bot.sendText({ to: message.fromUserId, text: escaped, isGroup: false, skipInterpolation: true });
-      }
-      // Inject into LLM context (same as reply, but with escaped text)
-      const engine = bot.getLlmEngine();
-      if (engine) {
-        const convKey = isGroup && groupCode
-          ? `group:${groupCode}`
-          : `dm:${message.fromUserId}`;
-        try {
-          const { formatChatMessageForContext } = await import("../business/llm-takeover.js");
-          const botMsg: ChatMessage = {
-            id: `bot-reply-${Date.now()}`,
-            fromUserId: bot.getAccount().botId || "bot",
-            fromNickname: "bot",
-            chatType: message.chatType,
-            ...(isGroup && groupCode ? { groupCode, groupName: message.groupName } : {}),
+    const replyDoc =
+      onReply ??
+      (async (text: string) => {
+        const { escapeMentionSyntax } = await import("../business/mention.js");
+        const escaped = escapeMentionSyntax(text);
+        // Use sendText with skipInterpolation to preserve ${...} literals
+        if (isGroup && groupCode) {
+          await bot.sendText({
+            to: groupCode,
             text: escaped,
-            timestamp: Date.now(),
-          };
-          const formatted = formatChatMessageForContext(botMsg);
-          engine.getConversationManager().addAssistantMessage(convKey, formatted);
-        } catch {
-          // context injection failure is non-critical
+            isGroup: true,
+            skipInterpolation: true,
+          });
+        } else {
+          await bot.sendText({
+            to: message.fromUserId,
+            text: escaped,
+            isGroup: false,
+            skipInterpolation: true,
+          });
         }
-      }
-    });
+        // Inject into LLM context (same as reply, but with escaped text)
+        const engine = bot.getLlmEngine();
+        if (engine) {
+          const convKey =
+            isGroup && groupCode
+              ? `group:${groupCode}`
+              : `dm:${message.fromUserId}`;
+          try {
+            const { formatChatMessageForContext } =
+              await import("../business/llm-takeover.js");
+            const botMsg: ChatMessage = {
+              id: `bot-reply-${Date.now()}`,
+              fromUserId: bot.getAccount().botId || "bot",
+              fromNickname: "bot",
+              chatType: message.chatType,
+              ...(isGroup && groupCode
+                ? { groupCode, groupName: message.groupName }
+                : {}),
+              text: escaped,
+              timestamp: Date.now(),
+            };
+            const formatted = formatChatMessageForContext(botMsg);
+            engine
+              .getConversationManager()
+              .addAssistantMessage(convKey, formatted);
+          } catch {
+            // context injection failure is non-critical
+          }
+        }
+      });
 
     const replyRaw = async (msgBody: YuanbaoMsgBodyElement[]) => {
       if (isGroup && groupCode) {
@@ -825,9 +990,11 @@ export class CommandSystem {
       }
     };
 
-    const replyDirect = onReply ?? (async (text: string) => {
-      await bot.sendDirectMessage(message.fromUserId, text);
-    });
+    const replyDirect =
+      onReply ??
+      (async (text: string) => {
+        await bot.sendDirectMessage(message.fromUserId, text);
+      });
 
     // Detect and strip --all/-a, --table/-t, --plain, --ansi flags
     // --table: force Markdown table (chat mode)
@@ -856,14 +1023,25 @@ export class CommandSystem {
       else if (forceAnsi) outputMode = "ansi";
       else outputMode = source === "cli" ? "ansi" : "table";
       useTable = outputMode !== "plain";
-      filteredArgs = args.filter(a => a !== "--all" && a !== "-a" && a !== "--table" && a !== "-t" && a !== "--plain" && a !== "--ansi");
+      filteredArgs = args.filter(
+        (a) =>
+          a !== "--all" &&
+          a !== "-a" &&
+          a !== "--table" &&
+          a !== "-t" &&
+          a !== "--plain" &&
+          a !== "--ansi",
+      );
     }
 
     // formatTable: async table formatter.
     // - "table" mode: Markdown table (markdown-table, already imported)
     // - "ansi" mode: Colored CLI table (registered via setTableFormatter)
     // - "plain" mode: not called (handler checks useTable first)
-    const formatTable = async (headers: string[], rows: string[][]): Promise<string> => {
+    const formatTable = async (
+      headers: string[],
+      rows: string[][],
+    ): Promise<string> => {
       if (outputMode === "ansi" && this._tableFormatter) {
         try {
           return this._tableFormatter(headers, rows);
@@ -884,7 +1062,9 @@ export class CommandSystem {
 
     // resolveTarget: resolve a target arg to { targetId, isGroup }.
     // Order: alias → 9-digit group code → user ID (DM)
-    const resolveTarget = async (arg: string): Promise<{ targetId: string; isGroup: boolean }> => {
+    const resolveTarget = async (
+      arg: string,
+    ): Promise<{ targetId: string; isGroup: boolean }> => {
       const aliasStore = bot.getAliasStore();
       // 1. Try alias resolution
       const resolved = aliasStore.resolve(arg);
@@ -939,5 +1119,4 @@ export class CommandSystem {
     // To add a new command, create a new file and add it to handlers/index.ts.
     registerAll(this);
   }
-
 }

@@ -23,13 +23,19 @@ export function register(cmdSys: CommandSystem): void {
         const now = new Date();
         const formatter = new Intl.DateTimeFormat("zh-CN", {
           timeZone: tz,
-          year: "numeric", month: "2-digit", day: "2-digit",
-          hour: "2-digit", minute: "2-digit", second: "2-digit",
+          year: "numeric",
+          month: "2-digit",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
           hour12: false,
         });
         await ctx.reply(`🕐 ${tz}:\n${formatter.format(now)}`);
       } catch {
-        await ctx.reply(`❌ 无效时区: ${tz}\n示例: Asia/Shanghai, Asia/Tokyo, America/New_York, Europe/London`);
+        await ctx.reply(
+          `❌ 无效时区: ${tz}\n示例: Asia/Shanghai, Asia/Tokyo, America/New_York, Europe/London`,
+        );
       }
     },
   });

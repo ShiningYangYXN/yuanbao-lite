@@ -45,9 +45,14 @@ async function main(): Promise<void> {
   if (args[0] === "daemon" && (args[1] === "start" || args[1] === "run")) {
     const portMatch = args.findIndex((a) => a === "--port" || a === "-p");
     const port =
-      portMatch >= 0 && args[portMatch + 1] ? parseInt(args[portMatch + 1], 10) : DEFAULT_DAEMON_PORT;
+      portMatch >= 0 && args[portMatch + 1]
+        ? parseInt(args[portMatch + 1], 10)
+        : DEFAULT_DAEMON_PORT;
     const hostMatch = args.findIndex((a) => a === "--host");
-    const host = hostMatch >= 0 && args[hostMatch + 1] ? args[hostMatch + 1] : DEFAULT_DAEMON_HOST;
+    const host =
+      hostMatch >= 0 && args[hostMatch + 1]
+        ? args[hostMatch + 1]
+        : DEFAULT_DAEMON_HOST;
 
     console.log(chalk.dim(`\n🦾 Yuanbao Lite Daemon v${getVersion()}`));
     await runDaemon({ port, host });
@@ -103,7 +108,9 @@ async function main(): Promise<void> {
     console.log(`  端口:    ${info.port}`);
     console.log(`  地址:    ${info.host}`);
     console.log(`  运行:    ${info.uptime}s`);
-    console.log(`  Bot:     ${info.bot?.connected ? chalk.green("✓ 已连接") : chalk.red("✗ 未连接")}`);
+    console.log(
+      `  Bot:     ${info.bot?.connected ? chalk.green("✓ 已连接") : chalk.red("✗ 未连接")}`,
+    );
     if (info.bot?.botId) console.log(`  Bot ID:  ${info.bot.botId}`);
     console.log();
     process.exit(0);
@@ -133,7 +140,13 @@ async function main(): Promise<void> {
     args[0] !== "interactive" &&
     args[0] !== "repl" &&
     args[0] !== "config" &&
-    !(args[0] === "daemon" && (args[1] === "start" || args[1] === "stop" || args[1] === "restart" || args[1] === "status"))
+    !(
+      args[0] === "daemon" &&
+      (args[1] === "start" ||
+        args[1] === "stop" ||
+        args[1] === "restart" ||
+        args[1] === "status")
+    )
   ) {
     await registerDynamicCommands(program);
   }

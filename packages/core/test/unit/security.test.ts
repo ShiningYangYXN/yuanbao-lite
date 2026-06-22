@@ -44,8 +44,14 @@ import { MemoryAdapter } from "../../src/access/persistence/adapter.js";
 describe("Trust system", () => {
   beforeEach(() => {
     const adapter = new MemoryAdapter();
-    initTrustStore({ persistencePath: "trust.json", persistenceAdapter: adapter });
-    initBlockStore({ persistencePath: "block.json", persistenceAdapter: adapter });
+    initTrustStore({
+      persistencePath: "trust.json",
+      persistenceAdapter: adapter,
+    });
+    initBlockStore({
+      persistencePath: "block.json",
+      persistenceAdapter: adapter,
+    });
     setMasterUserId("", undefined); // reset
   });
 
@@ -105,8 +111,14 @@ describe("Trust system", () => {
 describe("Block system", () => {
   beforeEach(() => {
     const adapter = new MemoryAdapter();
-    initTrustStore({ persistencePath: "trust.json", persistenceAdapter: adapter });
-    initBlockStore({ persistencePath: "block.json", persistenceAdapter: adapter });
+    initTrustStore({
+      persistencePath: "trust.json",
+      persistenceAdapter: adapter,
+    });
+    initBlockStore({
+      persistencePath: "block.json",
+      persistenceAdapter: adapter,
+    });
     setMasterUserId("", undefined);
   });
 
@@ -184,8 +196,14 @@ describe("Block system", () => {
 describe("Single-command grants", () => {
   beforeEach(() => {
     const adapter = new MemoryAdapter();
-    initTrustStore({ persistencePath: "trust.json", persistenceAdapter: adapter });
-    initBlockStore({ persistencePath: "block.json", persistenceAdapter: adapter });
+    initTrustStore({
+      persistencePath: "trust.json",
+      persistenceAdapter: adapter,
+    });
+    initBlockStore({
+      persistencePath: "block.json",
+      persistenceAdapter: adapter,
+    });
     setMasterUserId("", undefined);
   });
 
@@ -196,7 +214,7 @@ describe("Single-command grants", () => {
   it("grantCommand + listCommandGrants", async () => {
     await grantCommand("user123", "shell", 60 * 60 * 1000); // 60 minutes in ms
     const grants = listCommandGrants("user123");
-    assert.ok(grants.some(g => g.command === "shell"));
+    assert.ok(grants.some((g) => g.command === "shell"));
   });
 
   it("revokeCommand", async () => {
@@ -204,6 +222,6 @@ describe("Single-command grants", () => {
     const result = revokeCommand("user123", "shell");
     assert.equal(result.ok, true);
     const grants = listCommandGrants("user123");
-    assert.ok(!grants.some(g => g.command === "shell"));
+    assert.ok(!grants.some((g) => g.command === "shell"));
   });
 });

@@ -72,7 +72,10 @@ describeOrSkip("End-to-end smoke test", { timeout: 60000 }, () => {
     const startPromise = bot.start();
     // Wait for ready event
     await new Promise<void>((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error("ready timeout")), 30000);
+      const timeout = setTimeout(
+        () => reject(new Error("ready timeout")),
+        30000,
+      );
       bot.on("ready", () => {
         clearTimeout(timeout);
         resolve();
@@ -99,7 +102,10 @@ describeOrSkip("End-to-end smoke test", { timeout: 60000 }, () => {
       console.log("  (skipped — no ownerId yet)");
       return;
     }
-    await bot.sendDirectMessage(selfId, `🧪 E2E test @ ${new Date().toISOString()}`);
+    await bot.sendDirectMessage(
+      selfId,
+      `🧪 E2E test @ ${new Date().toISOString()}`,
+    );
   });
 
   it("dispatches /echo command", async () => {

@@ -31,7 +31,9 @@ export function register(cmdSys: CommandSystem): void {
           const [, , id, alias, ...nickParts] = ctx.args;
           const nickname = nickParts.join(" ") || undefined;
           store.add(id, alias, nickname);
-          await ctx.reply(`✅ 别名已添加: ${alias} -> ${id}${nickname ? ` (昵称: ${nickname})` : ""}`);
+          await ctx.reply(
+            `✅ 别名已添加: ${alias} -> ${id}${nickname ? ` (昵称: ${nickname})` : ""}`,
+          );
           break;
         }
         case "remove":
@@ -42,7 +44,9 @@ export function register(cmdSys: CommandSystem): void {
             return;
           }
           const removed = store.remove(ctx.args[1]);
-          await ctx.reply(removed ? `✅ 别名已删除` : `未找到别名: ${ctx.args[1]}`);
+          await ctx.reply(
+            removed ? `✅ 别名已删除` : `未找到别名: ${ctx.args[1]}`,
+          );
           break;
         }
         case "list":
@@ -53,10 +57,15 @@ export function register(cmdSys: CommandSystem): void {
             return;
           }
           if (ctx.useTable) {
-            const rows = all.map(e => [e.alias, e.id, e.nickname || ""]);
-            await ctx.reply(`📋 别名列表 (${all.length} 个):\n${await ctx.formatTable(["别名", "ID", "昵称"], rows)}`);
+            const rows = all.map((e) => [e.alias, e.id, e.nickname || ""]);
+            await ctx.reply(
+              `📋 别名列表 (${all.length} 个):\n${await ctx.formatTable(["别名", "ID", "昵称"], rows)}`,
+            );
           } else {
-            const lines = all.map(e => `  ${e.alias} -> ${e.id}${e.nickname ? ` (${e.nickname})` : ""}`);
+            const lines = all.map(
+              (e) =>
+                `  ${e.alias} -> ${e.id}${e.nickname ? ` (${e.nickname})` : ""}`,
+            );
             await ctx.reply(`📋 别名列表:\n${lines.join("\n")}`);
           }
           break;
@@ -78,11 +87,15 @@ export function register(cmdSys: CommandSystem): void {
           }
           const resolved = store.resolve(ctx.args[1]);
           const nick = store.getNickname(ctx.args[1]);
-          await ctx.reply(`解析结果: ${resolved}${nick ? ` (昵称: ${nick})` : ""}`);
+          await ctx.reply(
+            `解析结果: ${resolved}${nick ? ` (昵称: ${nick})` : ""}`,
+          );
           break;
         }
         default:
-          await ctx.reply("用法: /alias <add|remove|list|save|load|resolve> [参数]");
+          await ctx.reply(
+            "用法: /alias <add|remove|list|save|load|resolve> [参数]",
+          );
       }
     },
   });

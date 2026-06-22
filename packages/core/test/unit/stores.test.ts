@@ -242,7 +242,12 @@ describe("GroupStore", () => {
 describe("MessageHistoryStore", () => {
   let store: MessageHistoryStore;
 
-  function makeMsg(id: string, text: string, fromUserId = "u1", timestamp = Date.now()): ChatMessage {
+  function makeMsg(
+    id: string,
+    text: string,
+    fromUserId = "u1",
+    timestamp = Date.now(),
+  ): ChatMessage {
     return {
       text,
       fromUserId,

@@ -12,23 +12,23 @@ new YuanbaoBot(config: YuanbaoBotConfig)
 
 **YuanbaoBotConfig**（继承 `YuanbaoAccountConfig`）：
 
-| 字段 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| `appKey` | `string` | — | **必填**。腾讯元宝 AppKey |
-| `appSecret` | `string` | — | **必填**。腾讯元宝 AppSecret |
-| `token` | `string` | — | 预签名 token（替代 appKey+appSecret） |
-| `apiDomain` | `string` | `bot.yuanbao.tencent.com` | API 域名 |
-| `wsUrl` | `string` | `wss://bot-wss.yuanbao.tencent.com/wss/connection` | WebSocket 网关 |
-| `logLevel` | `"debug"\|"info"\|"warn"\|"error"` | `"info"` | 日志级别 |
-| `logger` | `PluginLogger` | — | 自定义日志器 |
-| `maxReconnectAttempts` | `number` | `100` | 最大重连次数 |
-| `commands` | `CommandSystemConfig \| false` | — | 命令系统配置，`false` 禁用 |
-| `customCommands` | `CommandDefinition[]` | — | 自定义命令 |
-| `llmConfig` | `LlmTakeoverConfig` | — | LLM 引擎配置 |
-| `llmAutoReply` | `boolean` | `true` | 非 / 消息是否触发 LLM 自动回复 |
-| `persistence` | `{adapter?, dir?} \| null` | — | 持久化配置，`null` 禁用 |
-| `historyLimit` | `number` | `100` | 内存中保留的历史消息数 |
-| `mediaMaxMb` | `number` | `20` | 媒体上传大小限制（MB） |
+| 字段                   | 类型                               | 默认值                                             | 说明                                  |
+| ---------------------- | ---------------------------------- | -------------------------------------------------- | ------------------------------------- |
+| `appKey`               | `string`                           | —                                                  | **必填**。腾讯元宝 AppKey             |
+| `appSecret`            | `string`                           | —                                                  | **必填**。腾讯元宝 AppSecret          |
+| `token`                | `string`                           | —                                                  | 预签名 token（替代 appKey+appSecret） |
+| `apiDomain`            | `string`                           | `bot.yuanbao.tencent.com`                          | API 域名                              |
+| `wsUrl`                | `string`                           | `wss://bot-wss.yuanbao.tencent.com/wss/connection` | WebSocket 网关                        |
+| `logLevel`             | `"debug"\|"info"\|"warn"\|"error"` | `"info"`                                           | 日志级别                              |
+| `logger`               | `PluginLogger`                     | —                                                  | 自定义日志器                          |
+| `maxReconnectAttempts` | `number`                           | `100`                                              | 最大重连次数                          |
+| `commands`             | `CommandSystemConfig \| false`     | —                                                  | 命令系统配置，`false` 禁用            |
+| `customCommands`       | `CommandDefinition[]`              | —                                                  | 自定义命令                            |
+| `llmConfig`            | `LlmTakeoverConfig`                | —                                                  | LLM 引擎配置                          |
+| `llmAutoReply`         | `boolean`                          | `true`                                             | 非 / 消息是否触发 LLM 自动回复        |
+| `persistence`          | `{adapter?, dir?} \| null`         | —                                                  | 持久化配置，`null` 禁用               |
+| `historyLimit`         | `number`                           | `100`                                              | 内存中保留的历史消息数                |
+| `mediaMaxMb`           | `number`                           | `20`                                               | 媒体上传大小限制（MB）                |
 
 **persistence 配置详解**：
 
@@ -41,10 +41,11 @@ new YuanbaoBot({ appKey, appSecret, persistence: null });
 
 // 3. 自定义适配器（浏览器）
 new YuanbaoBot({
-  appKey, appSecret,
+  appKey,
+  appSecret,
   persistence: {
-    dir: "my-app/yuanbao",      // localStorage key 前缀
-    adapter: myBrowserAdapter,   // 实现 PersistenceAdapter 接口
+    dir: "my-app/yuanbao", // localStorage key 前缀
+    adapter: myBrowserAdapter, // 实现 PersistenceAdapter 接口
   },
 });
 ```
@@ -53,17 +54,17 @@ new YuanbaoBot({
 
 通过 `bot.on(event, handler)` 订阅。
 
-| 事件 | 载荷 | 触发时机 |
-|------|------|----------|
-| `"message"` | `ChatMessage` | 收到任何消息（DM 或群聊） |
-| `"directMessage"` | `ChatMessage` | 收到私聊消息 |
-| `"groupMessage"` | `ChatMessage` | 收到群聊消息 |
-| `"ready"` | `{ connectId: string }` | WebSocket 连接 + 认证成功 |
-| `"stateChange"` | `BotState` | 连接状态变化 |
-| `"error"` | `Error` | 发生错误 |
-| `"close"` | `void` | 连接关闭 |
-| `"kickout"` | `{ status, reason }` | 被服务器踢下线 |
-| `"outboundMessage"` | `{ text, to, isGroup }` | Bot 发送了消息 |
+| 事件                | 载荷                    | 触发时机                  |
+| ------------------- | ----------------------- | ------------------------- |
+| `"message"`         | `ChatMessage`           | 收到任何消息（DM 或群聊） |
+| `"directMessage"`   | `ChatMessage`           | 收到私聊消息              |
+| `"groupMessage"`    | `ChatMessage`           | 收到群聊消息              |
+| `"ready"`           | `{ connectId: string }` | WebSocket 连接 + 认证成功 |
+| `"stateChange"`     | `BotState`              | 连接状态变化              |
+| `"error"`           | `Error`                 | 发生错误                  |
+| `"close"`           | `void`                  | 连接关闭                  |
+| `"kickout"`         | `{ status, reason }`    | 被服务器踢下线            |
+| `"outboundMessage"` | `{ text, to, isGroup }` | Bot 发送了消息            |
 
 **ChatMessage 结构**：
 
@@ -91,6 +92,7 @@ interface ChatMessage {
 初始化重型子系统（持久化 store + 命令系统）。幂等。
 
 **何时需要显式调用**：
+
 - 使用默认 Node 持久化时，store 构造是异步的
 - `start()` 内部会自动调用 `init()`
 - 如需在 `start()` 前访问 store（如 `getAliasStore()`），需先 `await bot.init()`
@@ -127,10 +129,10 @@ bot.stop();
 
 ```typescript
 await bot.sendText({
-  to: "user123",           // userId 或 groupCode
+  to: "user123", // userId 或 groupCode
   text: "你好 @{小明}(user123)!",
   isGroup: false,
-  quoteMsgId: "msg_abc",   // 可选：引用消息
+  quoteMsgId: "msg_abc", // 可选：引用消息
   contextMsg: chatMessage, // 可选：插值上下文
 });
 ```
@@ -184,14 +186,14 @@ for (const m of members.member_list) {
 
 所有 store getter 在 `init()` 完成前调用会抛错。使用 `getXxxStoreOrNull()` 获取 null-safe 变体。
 
-| 方法 | 返回类型 | 说明 |
-|------|----------|------|
-| `getAliasStore()` | `AliasStore` | 别名存储 |
-| `getContactStore()` | `ContactStore` | 联系人存储 |
-| `getGroupStore()` | `GroupStore` | 群组存储 |
-| `getHistoryStore()` | `MessageHistoryStore` | 消息历史存储 |
-| `getLlmEngine()` | `LlmTakeoverEngine \| null` | LLM 引擎 |
-| `getCommandSystem()` | `CommandSystem \| null` | 命令系统（`commands: false` 时为 null） |
+| 方法                 | 返回类型                    | 说明                                    |
+| -------------------- | --------------------------- | --------------------------------------- |
+| `getAliasStore()`    | `AliasStore`                | 别名存储                                |
+| `getContactStore()`  | `ContactStore`              | 联系人存储                              |
+| `getGroupStore()`    | `GroupStore`                | 群组存储                                |
+| `getHistoryStore()`  | `MessageHistoryStore`       | 消息历史存储                            |
+| `getLlmEngine()`     | `LlmTakeoverEngine \| null` | LLM 引擎                                |
+| `getCommandSystem()` | `CommandSystem \| null`     | 命令系统（`commands: false` 时为 null） |
 
 ### 命令系统方法
 
@@ -256,18 +258,30 @@ import type {
   SendTextMessageParams,
   MentionInfo,
   // Store 类型
-  AliasStore, AliasEntry,
-  ContactStore, ContactEntry,
-  GroupStore, GroupEntry,
-  MessageHistoryStore, HistoryFilter, HistoryPage,
+  AliasStore,
+  AliasEntry,
+  ContactStore,
+  ContactEntry,
+  GroupStore,
+  GroupEntry,
+  MessageHistoryStore,
+  HistoryFilter,
+  HistoryPage,
   // LLM 类型
-  LlmTakeoverEngine, LlmTakeoverConfig, ProviderConfig, ApiFormat,
+  LlmTakeoverEngine,
+  LlmTakeoverConfig,
+  ProviderConfig,
+  ApiFormat,
   // 命令类型
-  CommandSystem, CommandDefinition, CommandContext, CommandResult,
+  CommandSystem,
+  CommandDefinition,
+  CommandContext,
+  CommandResult,
   // 持久化类型
   PersistenceAdapter,
   // 工具
-  SearchEngine, MultiAccountManager,
+  SearchEngine,
+  MultiAccountManager,
 } from "yuanbao-lite";
 ```
 

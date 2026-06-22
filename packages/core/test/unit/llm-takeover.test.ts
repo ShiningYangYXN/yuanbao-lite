@@ -197,7 +197,8 @@ describe("markdownToImText", () => {
 
 describe("formatChatMessageForContext", () => {
   it("formats DM message", async () => {
-    const { formatChatMessageForContext } = await import("../../src/business/llm-takeover.js");
+    const { formatChatMessageForContext } =
+      await import("../../src/business/llm-takeover.js");
     const msg: ChatMessage = {
       text: "hello",
       fromUserId: "u123",
@@ -215,7 +216,8 @@ describe("formatChatMessageForContext", () => {
   });
 
   it("formats group message", async () => {
-    const { formatChatMessageForContext } = await import("../../src/business/llm-takeover.js");
+    const { formatChatMessageForContext } =
+      await import("../../src/business/llm-takeover.js");
     const msg: ChatMessage = {
       text: "hi everyone",
       fromUserId: "u123",
@@ -233,7 +235,8 @@ describe("formatChatMessageForContext", () => {
   });
 
   it("includes quote suffix when present", async () => {
-    const { formatChatMessageForContext } = await import("../../src/business/llm-takeover.js");
+    const { formatChatMessageForContext } =
+      await import("../../src/business/llm-takeover.js");
     const msg: ChatMessage = {
       text: "reply",
       fromUserId: "u1",

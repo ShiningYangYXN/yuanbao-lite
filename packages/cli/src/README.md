@@ -15,11 +15,11 @@ daemon 持有 YuanbaoBot 单例，避免每次命令都重连 WebSocket。
 
 ## 三种模式
 
-| 模式 | 命令 | 说明 |
-|------|------|------|
-| 交互式 REPL | `yb-cli` 或 `yb-cli interactive` | Clack 驱动，daemon 后台 |
-| 非交互式 | `yb-cli send dm <userId> <msg>` | 单次 HTTP 调用 daemon |
-| daemon 管理 | `yb-cli daemon start \| stop \| status` | 直接控制后台进程 |
+| 模式        | 命令                                    | 说明                    |
+| ----------- | --------------------------------------- | ----------------------- |
+| 交互式 REPL | `yb-cli` 或 `yb-cli interactive`        | Clack 驱动，daemon 后台 |
+| 非交互式    | `yb-cli send dm <userId> <msg>`         | 单次 HTTP 调用 daemon   |
+| daemon 管理 | `yb-cli daemon start \| stop \| status` | 直接控制后台进程        |
 
 ## 用法
 
@@ -116,16 +116,16 @@ src/cli/
 
 ## 复用的现成库
 
-| 库 | 用途 |
-|----|------|
-| `@clack/prompts` | 交互式输入/菜单/确认 |
-| `commander` | 子命令解析 |
-| `chalk` | 颜色 |
-| `string-width` | CJK 感知的列对齐 |
-| `table` | 表格渲染（使用 `"void"` 边框 = 无边框） |
-| `node:http` | daemon HTTP 服务器 |
-| `node:child_process` | daemon 子进程 spawn |
-| `node:fetch` | HTTP 客户端 |
+| 库                   | 用途                                    |
+| -------------------- | --------------------------------------- |
+| `@clack/prompts`     | 交互式输入/菜单/确认                    |
+| `commander`          | 子命令解析                              |
+| `chalk`              | 颜色                                    |
+| `string-width`       | CJK 感知的列对齐                        |
+| `table`              | 表格渲染（使用 `"void"` 边框 = 无边框） |
+| `node:http`          | daemon HTTP 服务器                      |
+| `node:child_process` | daemon 子进程 spawn                     |
+| `node:fetch`         | HTTP 客户端                             |
 
 ## 主入口
 

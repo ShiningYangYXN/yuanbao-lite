@@ -48,19 +48,34 @@ export function register(cmdSys: CommandSystem): void {
 
       // Push onto /switch stack (blocking context switch, same as /switch group)
       const cs = cmdSys as unknown as {
-        _switchSessions?: Map<string, Array<{ chatType: "group" | "direct"; target: string; label: string; groupName?: string; lastActivity: number }>>;
+        _switchSessions?: Map<
+          string,
+          Array<{
+            chatType: "group" | "direct";
+            target: string;
+            label: string;
+            groupName?: string;
+            lastActivity: number;
+          }>
+        >;
       };
       if (!cs._switchSessions) cs._switchSessions = new Map();
       const sessionKey = sessionKeyFromMessage(ctx.message);
       const stack = cs._switchSessions.get(sessionKey) ?? [];
-      stack.push({ chatType: "group", target: groupCode, label, groupName, lastActivity: Date.now() });
+      stack.push({
+        chatType: "group",
+        target: groupCode,
+        label,
+        groupName,
+        lastActivity: Date.now(),
+      });
       cs._switchSessions.set(sessionKey, stack);
 
       await ctx.reply(
         `✅ 已加入 ${label}\n` +
-        `层级: ${stack.length}\n` +
-        `后续消息将在该群上下文中处理\n` +
-        `退出: /switch exit`,
+          `层级: ${stack.length}\n` +
+          `后续消息将在该群上下文中处理\n` +
+          `退出: /switch exit`,
       );
     },
   });

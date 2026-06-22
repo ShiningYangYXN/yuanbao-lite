@@ -114,7 +114,7 @@ const DANGEROUS_PATTERNS = [
  * Check if an expression contains dangerous patterns.
  */
 function isDangerousExpression(expr: string): boolean {
-  return DANGEROUS_PATTERNS.some(p => p.test(expr));
+  return DANGEROUS_PATTERNS.some((p) => p.test(expr));
 }
 
 // ─── Main interpolation function ───
@@ -337,7 +337,10 @@ export function buildMessageContext(
  * Convenience function to extract all relevant context fields
  * from a received message for use in interpolation.
  */
-export function chatContextFromMessage(msg: import("../types.js").ChatMessage, botId?: string): ChatContext {
+export function chatContextFromMessage(
+  msg: import("../types.js").ChatMessage,
+  botId?: string,
+): ChatContext {
   return {
     senderId: msg.fromUserId,
     senderName: msg.fromNickname,
@@ -346,8 +349,8 @@ export function chatContextFromMessage(msg: import("../types.js").ChatMessage, b
     chatType: msg.chatType,
     botId,
     isMentioned: msg.isMentioned,
-    mentionIds: msg.mentions?.map(m => m.userId),
-    mentionNames: msg.mentions?.map(m => m.displayName),
+    mentionIds: msg.mentions?.map((m) => m.userId),
+    mentionNames: msg.mentions?.map((m) => m.displayName),
     originalText: msg.text,
     originalMsgId: msg.id,
     replyToId: msg.quoteMsgId,

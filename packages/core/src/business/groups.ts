@@ -63,7 +63,7 @@ export type GroupStoreConfig = {
 // ─── GroupStore ───
 
 export class GroupStore {
-  private groups = new Map<string, GroupEntry>();   // groupCode -> entry
+  private groups = new Map<string, GroupEntry>(); // groupCode -> entry
   private config: GroupStoreConfig;
   private log: ModuleLog;
   private persistenceAdapter: PersistenceAdapter | null = null;
@@ -93,7 +93,9 @@ export class GroupStore {
    */
   private getAdapter(): PersistenceAdapter {
     if (!this.config.persistencePath) {
-      throw new Error("GroupStore: persistencePath is required to use persistence");
+      throw new Error(
+        "GroupStore: persistencePath is required to use persistence",
+      );
     }
     if (this.config.persistenceAdapter) {
       return this.config.persistenceAdapter;
@@ -111,7 +113,12 @@ export class GroupStore {
    *
    * If a group with the same groupCode already exists, it will be updated.
    */
-  add(groupCode: string, name?: string, tag?: string, notes?: string): GroupEntry {
+  add(
+    groupCode: string,
+    name?: string,
+    tag?: string,
+    notes?: string,
+  ): GroupEntry {
     const existing = this.groups.get(groupCode);
     if (existing) {
       // Update existing entry
@@ -134,7 +141,9 @@ export class GroupStore {
 
     this.groups.set(groupCode, entry);
 
-    this.log.info(`group added: ${groupCode}${name ? ` -> ${name}` : ""}${tag ? ` [${tag}]` : ""}`);
+    this.log.info(
+      `group added: ${groupCode}${name ? ` -> ${name}` : ""}${tag ? ` [${tag}]` : ""}`,
+    );
     this.maybeAutoSave();
 
     return entry;
@@ -307,14 +316,24 @@ export class GroupStore {
   /**
    * Get all groups, optionally sorted.
    */
-  getAll(sortBy: "name" | "lastActive" | "created" | "code" = "lastActive"): GroupEntry[] {
+  getAll(
+    sortBy: "name" | "lastActive" | "created" | "code" = "lastActive",
+  ): GroupEntry[] {
     const entries = [...this.groups.values()];
 
     switch (sortBy) {
       case "name":
-        return entries.sort((a, b) => (a.name || a.groupName || a.groupCode).toLowerCase().localeCompare((b.name || b.groupName || b.groupCode).toLowerCase()));
+        return entries.sort((a, b) =>
+          (a.name || a.groupName || a.groupCode)
+            .toLowerCase()
+            .localeCompare(
+              (b.name || b.groupName || b.groupCode).toLowerCase(),
+            ),
+        );
       case "lastActive":
-        return entries.sort((a, b) => (b.lastActiveAt || 0) - (a.lastActiveAt || 0));
+        return entries.sort(
+          (a, b) => (b.lastActiveAt || 0) - (a.lastActiveAt || 0),
+        );
       case "created":
         return entries.sort((a, b) => b.createdAt - a.createdAt);
       case "code":
@@ -327,14 +346,14 @@ export class GroupStore {
    */
   getByTag(tag: string): GroupEntry[] {
     const t = tag.toLowerCase();
-    return [...this.groups.values()].filter(e => e.tag?.toLowerCase() === t);
+    return [...this.groups.values()].filter((e) => e.tag?.toLowerCase() === t);
   }
 
   /**
    * Get favorite/bookmarked groups.
    */
   getFavorites(): GroupEntry[] {
-    return [...this.groups.values()].filter(e => e.favorite);
+    return [...this.groups.values()].filter((e) => e.favorite);
   }
 
   /**
@@ -359,7 +378,9 @@ export class GroupStore {
       const adapter = this.getAdapter();
       const data = [...this.groups.values()];
       adapter.write(this.config.persistencePath, JSON.stringify(data, null, 2));
-      this.log.info(`groups saved to ${this.config.persistencePath} (${data.length} entries)`);
+      this.log.info(
+        `groups saved to ${this.config.persistencePath} (${data.length} entries)`,
+      );
       return true;
     } catch (err) {
       this.log.error(`failed to save groups: ${(err as Error).message}`);
@@ -393,7 +414,9 @@ export class GroupStore {
         this.groups.set(entry.groupCode, entry);
       }
 
-      this.log.info(`groups loaded from ${this.config.persistencePath} (${data.length} entries)`);
+      this.log.info(
+        `groups loaded from ${this.config.persistencePath} (${data.length} entries)`,
+      );
       return true;
     } catch (err) {
       this.log.error(`failed to load groups: ${(err as Error).message}`);

@@ -23,7 +23,17 @@ import {
   encodeQueryBotInfoReq,
   decodeQueryBotInfoRsp,
 } from "./biz-codec.js";
-import { decodeConnMsg, decodePB, buildAuthBindMsg, buildPingMsg, buildPushAck, buildBusinessConnMsg, PB_MSG_TYPES, CMD_TYPE, CMD } from "./conn-codec.js";
+import {
+  decodeConnMsg,
+  decodePB,
+  buildAuthBindMsg,
+  buildPingMsg,
+  buildPushAck,
+  buildBusinessConnMsg,
+  PB_MSG_TYPES,
+  CMD_TYPE,
+  CMD,
+} from "./conn-codec.js";
 import type { PBConnMsg } from "./conn-codec.js";
 import type {
   WsClientCallbacks,
@@ -95,7 +105,9 @@ type AnyWebSocket = {
   readyState: number;
   onopen: ((this: AnyWebSocket) => void) | null;
   onmessage: ((this: AnyWebSocket, event: { data: unknown }) => void) | null;
-  onclose: ((this: AnyWebSocket, event: { code: number; reason: string }) => void) | null;
+  onclose:
+    | ((this: AnyWebSocket, event: { code: number; reason: string }) => void)
+    | null;
   onerror: ((this: AnyWebSocket, event: unknown) => void) | null;
   send(data: string | ArrayBuffer | Uint8Array): void;
   close(code?: number, reason?: string): void;
@@ -150,7 +162,7 @@ function randomUUID(): string {
     const bytes = cryptoObj.getRandomValues(new Uint8Array(16));
     bytes[6] = (bytes[6] & 0x0f) | 0x40; // version 4
     bytes[8] = (bytes[8] & 0x3f) | 0x80; // variant 1
-    const hex = Array.from(bytes, b => b.toString(16).padStart(2, "0"));
+    const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, "0"));
     return `${hex.slice(0, 4).join("")}-${hex.slice(4, 6).join("")}-${hex.slice(6, 8).join("")}-${hex.slice(8, 10).join("")}-${hex.slice(10, 16).join("")}`;
   }
   throw new Error(
@@ -186,7 +198,8 @@ export class YuanbaoWsClient {
     this.connectionConfig = params.connection;
     this.clientConfig = {
       maxReconnectAttempts: params.config?.maxReconnectAttempts ?? 100,
-      reconnectDelays: params.config?.reconnectDelays ?? DEFAULT_RECONNECT_DELAYS,
+      reconnectDelays:
+        params.config?.reconnectDelays ?? DEFAULT_RECONNECT_DELAYS,
     };
     this.callbacks = params.callbacks ?? {};
     this.log = createLog("ws-client", params.log);
@@ -245,7 +258,9 @@ export class YuanbaoWsClient {
 
   // ─── Business API ───
 
-  async sendC2CMessage(data: WsSendC2CMessageData): Promise<WsSendMessageResponse> {
+  async sendC2CMessage(
+    data: WsSendC2CMessageData,
+  ): Promise<WsSendMessageResponse> {
     const bizData = encodeSendC2CMessageReq(data);
     if (!bizData) throw new Error("Failed to encode C2C message request");
     return this.sendBusinessRequest<WsSendMessageResponse>(
@@ -255,7 +270,9 @@ export class YuanbaoWsClient {
     );
   }
 
-  async sendGroupMessage(data: WsSendGroupMessageData): Promise<WsSendMessageResponse> {
+  async sendGroupMessage(
+    data: WsSendGroupMessageData,
+  ): Promise<WsSendMessageResponse> {
     const bizData = encodeSendGroupMessageReq(data);
     if (!bizData) throw new Error("Failed to encode group message request");
     return this.sendBusinessRequest<WsSendMessageResponse>(
@@ -265,7 +282,9 @@ export class YuanbaoWsClient {
     );
   }
 
-  async sendPrivateHeartbeat(data: WsSendPrivateHeartbeatData): Promise<WsHeartbeatResponse> {
+  async sendPrivateHeartbeat(
+    data: WsSendPrivateHeartbeatData,
+  ): Promise<WsHeartbeatResponse> {
     const bizData = encodeSendPrivateHeartbeatReq(data);
     if (!bizData) throw new Error("Failed to encode private heartbeat request");
     return this.sendBusinessRequest<WsHeartbeatResponse>(
@@ -275,7 +294,9 @@ export class YuanbaoWsClient {
     );
   }
 
-  async sendGroupHeartbeat(data: WsSendGroupHeartbeatData): Promise<WsHeartbeatResponse> {
+  async sendGroupHeartbeat(
+    data: WsSendGroupHeartbeatData,
+  ): Promise<WsHeartbeatResponse> {
     const bizData = encodeSendGroupHeartbeatReq(data);
     if (!bizData) throw new Error("Failed to encode group heartbeat request");
     return this.sendBusinessRequest<WsHeartbeatResponse>(
@@ -285,7 +306,9 @@ export class YuanbaoWsClient {
     );
   }
 
-  async queryGroupInfo(data: WsQueryGroupInfoData): Promise<WsQueryGroupInfoResponse> {
+  async queryGroupInfo(
+    data: WsQueryGroupInfoData,
+  ): Promise<WsQueryGroupInfoResponse> {
     const bizData = encodeQueryGroupInfoReq(data);
     if (!bizData) throw new Error("Failed to encode query group info request");
     return this.sendBusinessRequest<WsQueryGroupInfoResponse>(
@@ -295,9 +318,12 @@ export class YuanbaoWsClient {
     );
   }
 
-  async getGroupMemberList(data: WsGetGroupMemberListData): Promise<WsGetGroupMemberListResponse> {
+  async getGroupMemberList(
+    data: WsGetGroupMemberListData,
+  ): Promise<WsGetGroupMemberListResponse> {
     const bizData = encodeGetGroupMemberListReq(data);
-    if (!bizData) throw new Error("Failed to encode get group member list request");
+    if (!bizData)
+      throw new Error("Failed to encode get group member list request");
     return this.sendBusinessRequest<WsGetGroupMemberListResponse>(
       BIZ_CMD.GetGroupMemberList,
       bizData,
@@ -305,7 +331,9 @@ export class YuanbaoWsClient {
     );
   }
 
-  async syncInformation(data: WsSyncInformationData): Promise<WsSyncInformationResponse> {
+  async syncInformation(
+    data: WsSyncInformationData,
+  ): Promise<WsSyncInformationResponse> {
     const bizData = encodeSyncInformationReq(data);
     if (!bizData) throw new Error("Failed to encode sync information request");
     return this.sendBusinessRequest<WsSyncInformationResponse>(
@@ -369,7 +397,11 @@ export class YuanbaoWsClient {
       // Node Buffer (from the `ws` package) — wrap as Uint8Array view.
       // `Buffer` is undefined in browser; the `typeof Buffer !== "undefined"`
       // guard prevents a ReferenceError under browser.
-      rawData = new Uint8Array(event.data.buffer, event.data.byteOffset, event.data.byteLength);
+      rawData = new Uint8Array(
+        event.data.buffer,
+        event.data.byteOffset,
+        event.data.byteLength,
+      );
     } else if (typeof event.data === "string") {
       // Text frame — unusual but handle gracefully
       this.log.debug("received text frame (unexpected), ignoring");
@@ -388,7 +420,9 @@ export class YuanbaoWsClient {
     }
 
     const { head, data } = connMsg;
-    this.log.debug(`received: cmd=${head.cmd}, cmdType=${head.cmdType}, seqNo=${head.seqNo}`);
+    this.log.debug(
+      `received: cmd=${head.cmd}, cmdType=${head.cmdType}, seqNo=${head.seqNo}`,
+    );
 
     switch (head.cmdType) {
       case CMD_TYPE.Response:
@@ -425,25 +459,33 @@ export class YuanbaoWsClient {
       this.pendingRequests.delete(head.msgId);
       pending.resolve(data);
     } else {
-      this.log.debug(`response for unknown msgId=${head.msgId}, cmd=${head.cmd}`);
+      this.log.debug(
+        `response for unknown msgId=${head.msgId}, cmd=${head.cmd}`,
+      );
     }
   }
 
-  private handleAuthBindResponse(head: PBConnMsg["head"], data: Uint8Array): void {
+  private handleAuthBindResponse(
+    head: PBConnMsg["head"],
+    data: Uint8Array,
+  ): void {
     if (head.status !== undefined && head.status !== 0) {
       this.log.error(`auth-bind failed: status=${head.status}`);
       // Notify callback for auth retry
       if (this.callbacks.onAuthFailed) {
-        this.callbacks.onAuthFailed(head.status ?? -1).then((newAuth) => {
-          if (newAuth) {
-            this.connectionConfig.auth = newAuth;
-            this.handleOpen(); // Retry auth
-          } else {
+        this.callbacks
+          .onAuthFailed(head.status ?? -1)
+          .then((newAuth) => {
+            if (newAuth) {
+              this.connectionConfig.auth = newAuth;
+              this.handleOpen(); // Retry auth
+            } else {
+              this.scheduleReconnect();
+            }
+          })
+          .catch(() => {
             this.scheduleReconnect();
-          }
-        }).catch(() => {
-          this.scheduleReconnect();
-        });
+          });
       } else {
         this.scheduleReconnect();
       }
@@ -486,7 +528,9 @@ export class YuanbaoWsClient {
         otherDeviceName?: string;
       } | null;
 
-      this.log.warn(`kickout: status=${kickData?.status}, reason=${kickData?.reason}`);
+      this.log.warn(
+        `kickout: status=${kickData?.status}, reason=${kickData?.reason}`,
+      );
       this.callbacks.onKickout?.({
         status: kickData?.status ?? 0,
         reason: kickData?.reason ?? "",
@@ -537,7 +581,8 @@ export class YuanbaoWsClient {
   }
 
   private handleClose(code: number, reason: string | Buffer): void {
-    const reasonStr = typeof reason === "string" ? reason : reason.toString("utf-8");
+    const reasonStr =
+      typeof reason === "string" ? reason : reason.toString("utf-8");
     this.log.info(`WebSocket closed: code=${code}, reason=${reasonStr}`);
     this.callbacks.onClose?.(code, reasonStr);
     this.cleanupConnection();
@@ -558,7 +603,9 @@ export class YuanbaoWsClient {
   ): Promise<T> {
     return new Promise((resolve, reject) => {
       if (this.state !== "connected") {
-        reject(new Error(`Cannot send ${cmd}: not connected (state=${this.state})`));
+        reject(
+          new Error(`Cannot send ${cmd}: not connected (state=${this.state})`),
+        );
         return;
       }
 
@@ -631,18 +678,25 @@ export class YuanbaoWsClient {
     this.cleanupConnection();
 
     if (this.reconnectAttempts >= this.clientConfig.maxReconnectAttempts) {
-      this.log.error(`max reconnect attempts (${this.clientConfig.maxReconnectAttempts}) reached`);
+      this.log.error(
+        `max reconnect attempts (${this.clientConfig.maxReconnectAttempts}) reached`,
+      );
       this.setState("disconnected");
       return;
     }
 
     this.setState("reconnecting");
 
-    const delayIdx = Math.min(this.reconnectAttempts, this.clientConfig.reconnectDelays.length - 1);
+    const delayIdx = Math.min(
+      this.reconnectAttempts,
+      this.clientConfig.reconnectDelays.length - 1,
+    );
     const delay = this.clientConfig.reconnectDelays[delayIdx];
     this.reconnectAttempts++;
 
-    this.log.info(`reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${this.clientConfig.maxReconnectAttempts})`);
+    this.log.info(
+      `reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${this.clientConfig.maxReconnectAttempts})`,
+    );
 
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;

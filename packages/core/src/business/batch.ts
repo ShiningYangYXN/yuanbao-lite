@@ -21,7 +21,10 @@
 import { createLog } from "../logger.js";
 import type { ModuleLog } from "../logger.js";
 import type { YuanbaoBot } from "../index.js";
-import { interpolate as sharedInterpolate, buildBatchContext as sharedBuildBatchContext } from "./interpolate.js";
+import {
+  interpolate as sharedInterpolate,
+  buildBatchContext as sharedBuildBatchContext,
+} from "./interpolate.js";
 
 // Re-export for external consumers
 export { sharedInterpolate as interpolateTemplate };
@@ -300,7 +303,11 @@ const activeBatches = new Map<string, BatchRunner>();
  * The caller is responsible for calling runner.run() and
  * handling completion/cleanup (typically via cleanupBatch()).
  */
-export function startBatch(id: string, bot: YuanbaoBot, config: BatchConfig): BatchRunner {
+export function startBatch(
+  id: string,
+  bot: YuanbaoBot,
+  config: BatchConfig,
+): BatchRunner {
   // Cancel existing batch with same ID
   const existing = activeBatches.get(id);
   if (existing) {

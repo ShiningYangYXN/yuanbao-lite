@@ -98,23 +98,26 @@ Tencent WSS ──→ ws/client.ts ──→ conn-codec.ts (解码 ConnMsg)
 **目的**：抽象文件 I/O，让所有 store（alias、contacts、groups、history、trust、block、reminders、llm-config、sticker-cache）可在任意运行时工作。
 
 **接口**：
+
 ```typescript
 interface PersistenceAdapter {
   exists(path: string): boolean;
   read(path: string): string;
   write(path: string, data: string): void;
   ensureParentDir(path: string): void;
-  append?(path: string, data: string): void;     // 可选
-  remove?(path: string): boolean;                 // 可选
-  listDir?(path: string): Array<{name, isDirectory}>;  // 可选
+  append?(path: string, data: string): void; // 可选
+  remove?(path: string): boolean; // 可选
+  listDir?(path: string): Array<{ name; isDirectory }>; // 可选
 }
 ```
 
 **实现**：
+
 - `NodeFsAdapter`（默认，Node 环境）—— 使用 `node:fs`
 - 浏览器适配器（用户自定义）—— 基于 `localStorage` 或 `IndexedDB`
 
 **Node 模块加载机制**：
+
 ```typescript
 // adapter.ts 顶层
 let nodeModules = { fs: null, path: null, os: null };
@@ -135,11 +138,13 @@ if (typeof process !== "undefined" && process.versions?.node) {
 **位置**：`src/commands/registry.ts` + `src/commands/handlers/`
 
 **特点**：
+
 - 53 个内置命令，一命令一文件，按分类组织
 - 命令系统本身是浏览器安全的（所有 Node-only 操作通过动态 `import()` + try/catch）
 - 通过 `await bot.init()` 懒加载，避免增加初始 bundle 体积
 
 **Node-only 命令的处理方式**：
+
 - `/shell`、`/term`：`await import("node:child_process")`，浏览器调用返回明确错误
 - `/tempfile`：`getNodeModules().fs`，浏览器不可用
 - `/myip`：`getNodeModules().os`，浏览器跳过本地接口检测
@@ -151,6 +156,7 @@ if (typeof process !== "undefined" && process.versions?.node) {
 **依赖**：Vercel AI SDK（`ai` + `@ai-sdk/*`）
 
 **特性**：
+
 - 5 种 API 格式：OpenAI、Anthropic、Google Gemini、AWS Bedrock、Azure OpenAI
 - 密钥池 + 供应商池 + 自动切换
 - 迭代调用（invoke 模式）
@@ -162,6 +168,7 @@ if (typeof process !== "undefined" && process.versions?.node) {
 **位置**：`src/access/ws/client.ts`
 
 **同构策略**：
+
 ```typescript
 if (typeof globalThis.WebSocket !== "undefined") {
   // Node 21+ 或浏览器 —— 使用原生 WebSocket
@@ -178,6 +185,7 @@ if (typeof globalThis.WebSocket !== "undefined") {
 **位置**：`src/access/http/request.ts`
 
 **加密实现**：
+
 - HMAC-SHA256（sign-token 签名）：`crypto.subtle.importKey` + `sign`（Web Crypto API）
 - HMAC-SHA1（COS 上传签名）：同上
 - 随机数：`crypto.getRandomValues`
@@ -188,15 +196,16 @@ if (typeof globalThis.WebSocket !== "undefined") {
 ```json
 {
   "exports": {
-    ".":           "./dist/index.js",          // 核心库
-    "./commands":  "./dist/commands-entry.js", // CommandSystem 运行时类
-    "./cli":       "./dist/cli/index.js",      // CLI 入口（仅 Node）
+    ".": "./dist/index.js", // 核心库
+    "./commands": "./dist/commands-entry.js", // CommandSystem 运行时类
+    "./cli": "./dist/cli/index.js", // CLI 入口（仅 Node）
     "./package.json": "./package.json"
   }
 }
 ```
 
 **使用方式**：
+
 ```typescript
 // 核心库（Node + 浏览器）
 import { YuanbaoBot } from "yuanbao-lite";
@@ -212,27 +221,27 @@ import { CommandSystem } from "yuanbao-lite/commands";
 
 ### 核心库依赖（yuanbao-lite）
 
-| 依赖 | 用途 | 浏览器可用 |
-|------|------|-----------|
-| `ai` + `@ai-sdk/*` | LLM 引擎 | ✅（Bedrock 除外） |
-| `protobufjs` | WebSocket 消息编解码 | ✅ |
-| `marked` | Markdown → 纯文本转换 | ✅ |
-| `js-md5` | 文件上传 MD5 哈希（COS 协议） | ✅ |
-| `chalk` | 命令帮助文本着色 | ✅ |
-| `string-width` | 表格对齐宽度计算 | ✅ |
-| `markdown-table` | Markdown 表格生成 | ✅ |
-| `linkedom` + `defuddle` | /visit 命令网页清洗 | ✅ |
-| `ws` | Node 18-20 WebSocket 回退 | N/A（Node 21+ 不需要） |
+| 依赖                    | 用途                          | 浏览器可用             |
+| ----------------------- | ----------------------------- | ---------------------- |
+| `ai` + `@ai-sdk/*`      | LLM 引擎                      | ✅（Bedrock 除外）     |
+| `protobufjs`            | WebSocket 消息编解码          | ✅                     |
+| `marked`                | Markdown → 纯文本转换         | ✅                     |
+| `js-md5`                | 文件上传 MD5 哈希（COS 协议） | ✅                     |
+| `chalk`                 | 命令帮助文本着色              | ✅                     |
+| `string-width`          | 表格对齐宽度计算              | ✅                     |
+| `markdown-table`        | Markdown 表格生成             | ✅                     |
+| `linkedom` + `defuddle` | /visit 命令网页清洗           | ✅                     |
+| `ws`                    | Node 18-20 WebSocket 回退     | N/A（Node 21+ 不需要） |
 
 ### CLI 专属依赖（仅 `yuanbao-lite/cli` 使用）
 
-| 依赖 | 用途 |
-|------|------|
-| `commander` | CLI 参数解析 |
-| `@clack/prompts` | 交互式向导 |
-| `cli-table3` | 终端表格渲染 |
+| 依赖              | 用途               |
+| ----------------- | ------------------ |
+| `commander`       | CLI 参数解析       |
+| `@clack/prompts`  | 交互式向导         |
+| `cli-table3`      | 终端表格渲染       |
 | `marked-terminal` | 终端 Markdown 渲染 |
-| `table` | 终端表格（备用） |
+| `table`           | 终端表格（备用）   |
 
 ## 性能特征
 

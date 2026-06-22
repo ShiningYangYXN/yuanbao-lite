@@ -35,12 +35,18 @@ export function register(cmdSys: CommandSystem): void {
       } else if (subArg === "group" && ctx.args[1]) {
         targetKey = `group:${ctx.args[1]}`;
       } else {
-        await ctx.reply("用法: /new [dm <用户ID> | group <群号>]\n无参数=清空当前会话上下文");
+        await ctx.reply(
+          "用法: /new [dm <用户ID> | group <群号>]\n无参数=清空当前会话上下文",
+        );
         return;
       }
-      const sizeBefore = engine.getConversationManager().getHistory(targetKey).length;
+      const sizeBefore = engine
+        .getConversationManager()
+        .getHistory(targetKey).length;
       engine.getConversationManager().clearHistory(targetKey);
-      await ctx.reply(`✅ 已清空会话上下文 (${targetKey})\n清除了 ${sizeBefore} 条历史消息`);
+      await ctx.reply(
+        `✅ 已清空会话上下文 (${targetKey})\n清除了 ${sizeBefore} 条历史消息`,
+      );
     },
   });
 }

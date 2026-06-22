@@ -81,7 +81,9 @@ export type CommandContext = {
    * This is for commands that take a target (group or user) as first arg:
    *   /mention <target> <msg>, /dm <target> <msg>, /group <target> <msg>, etc.
    */
-  resolveTarget: (arg: string) => Promise<{ targetId: string; isGroup: boolean }>;
+  resolveTarget: (
+    arg: string,
+  ) => Promise<{ targetId: string; isGroup: boolean }>;
 };
 
 // ─── Command Definition ───

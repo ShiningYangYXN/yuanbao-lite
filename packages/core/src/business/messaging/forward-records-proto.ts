@@ -83,12 +83,16 @@ let forwardMsgDataType: protobuf.Type | undefined;
 
 function getForwardMsgDataType(): protobuf.Type {
   if (!forwardMsgDataType) {
-    forwardMsgDataType = protobuf.Root.fromJSON(FORWARD_PROTO_DESCRIPTOR).lookupType("ForwardMsgData");
+    forwardMsgDataType = protobuf.Root.fromJSON(
+      FORWARD_PROTO_DESCRIPTOR,
+    ).lookupType("ForwardMsgData");
   }
   return forwardMsgDataType;
 }
 
-export function decodeForwardMsgDataBase64(value: string): ForwardMsgData | undefined {
+export function decodeForwardMsgDataBase64(
+  value: string,
+): ForwardMsgData | undefined {
   try {
     const bytes = Buffer.from(value, "base64");
     if (bytes.length === 0) {
@@ -103,7 +107,9 @@ export function decodeForwardMsgDataBase64(value: string): ForwardMsgData | unde
       arrays: true,
       objects: true,
     });
-    return object && typeof object === "object" ? (object as ForwardMsgData) : undefined;
+    return object && typeof object === "object"
+      ? (object as ForwardMsgData)
+      : undefined;
   } catch {
     return undefined;
   }

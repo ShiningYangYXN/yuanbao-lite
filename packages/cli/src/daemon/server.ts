@@ -19,7 +19,12 @@
  * the WebSocket on every invocation.
  */
 
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import {
+  createServer,
+  type IncomingMessage,
+  type Server,
+  type ServerResponse,
+} from "node:http";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
@@ -84,7 +89,11 @@ export class Daemon {
     const profile = store.getActiveProfile();
     // Daemon should be quiet by default — bot connection chatter is noisy.
     // Users can override via `yb-cli config set logLevel debug`.
-    const logLevel = (profile.logLevel ?? "warn") as "debug" | "info" | "warn" | "error";
+    const logLevel = (profile.logLevel ?? "warn") as
+      | "debug"
+      | "info"
+      | "warn"
+      | "error";
     setLogLevel(logLevel);
 
     if (!store.hasCredentials()) {
@@ -104,14 +113,25 @@ export class Daemon {
     this.bot = new YuanbaoBot(botConfig);
 
     // Forward incoming messages to all SSE subscribers
-    this.bot.on("directMessage", (msg: ChatMessage) => this.broadcastSse("directMessage", msg));
-    this.bot.on("groupMessage", (msg: ChatMessage) => this.broadcastSse("groupMessage", msg));
-    this.bot.on("stateChange", (state: BotState) => this.broadcastSse("stateChange", state));
+    this.bot.on("directMessage", (msg: ChatMessage) =>
+      this.broadcastSse("directMessage", msg),
+    );
+    this.bot.on("groupMessage", (msg: ChatMessage) =>
+      this.broadcastSse("groupMessage", msg),
+    );
+    this.bot.on("stateChange", (state: BotState) =>
+      this.broadcastSse("stateChange", state),
+    );
     // Forward outbound messages (bot's own replies) for CLI echo
-    this.bot.on("outboundMessage", (data: { text: string; to: string; isGroup: boolean }) => {
-      this.broadcastSse("outboundMessage", data);
-      log.info(`[出站] → ${data.isGroup ? `群${data.to}` : `私聊`}: ${data.text.substring(0, 100)}`);
-    });
+    this.bot.on(
+      "outboundMessage",
+      (data: { text: string; to: string; isGroup: boolean }) => {
+        this.broadcastSse("outboundMessage", data);
+        log.info(
+          `[出站] → ${data.isGroup ? `群${data.to}` : `私聊`}: ${data.text.substring(0, 100)}`,
+        );
+      },
+    );
 
     // 3. Connect bot (fire-and-forget; HTTP server starts regardless so the
     //    client can poll /health for connection progress)
@@ -181,7 +201,11 @@ export class Daemon {
 
     const shells: Record<string, string> = {
       // trust.json: empty trust list, no master yet
-      "trust.json": JSON.stringify({ version: 1, masterUserId: null, entries: [] }, null, 2),
+      "trust.json": JSON.stringify(
+        { version: 1, masterUserId: null, entries: [] },
+        null,
+        2,
+      ),
       // block.json: empty block list
       "block.json": JSON.stringify({ version: 1, entries: [] }, null, 2),
       // aliases.json: empty alias store
@@ -215,32 +239,38 @@ export class Daemon {
       try {
         // Empty shell with default config — the LLM engine will populate
         // it on first updateConfig() call
-        const defaultLlmConfig = JSON.stringify({
-          enabled: true,
-          model: "",
-          temperature: 0.7,
-          maxTokens: 2048,
-          maxHistoryTurns: 20,
-          enableInGroup: true,
-          enableInDirect: true,
-          requireMentionInGroup: true,
-          cooldownMs: 0,
-          mergeWindowMs: 0,
-          responsePrefix: "",
-          markdownRawMode: true,
-          maxIterate: 50,
-          provider: "",
-          customProviders: {},
-          autoRotateKeys: true,
-          autoSwitchProvider: true,
-          keyCooldownMs: 300000,
-          maxFailuresBeforeSwitch: 3,
-          userSystemPrompt: "",
-        }, null, 2);
+        const defaultLlmConfig = JSON.stringify(
+          {
+            enabled: true,
+            model: "",
+            temperature: 0.7,
+            maxTokens: 2048,
+            maxHistoryTurns: 20,
+            enableInGroup: true,
+            enableInDirect: true,
+            requireMentionInGroup: true,
+            cooldownMs: 0,
+            mergeWindowMs: 0,
+            responsePrefix: "",
+            markdownRawMode: true,
+            maxIterate: 50,
+            provider: "",
+            customProviders: {},
+            autoRotateKeys: true,
+            autoSwitchProvider: true,
+            keyCooldownMs: 300000,
+            maxFailuresBeforeSwitch: 3,
+            userSystemPrompt: "",
+          },
+          null,
+          2,
+        );
         writeFileSync(llmConfigPath, defaultLlmConfig, "utf-8");
         log.info("created empty shell: llm-config.json");
       } catch (err) {
-        log.error(`failed to create llm-config.json: ${(err as Error).message}`);
+        log.error(
+          `failed to create llm-config.json: ${(err as Error).message}`,
+        );
       }
     }
   }
@@ -259,7 +289,10 @@ export class Daemon {
     });
   }
 
-  private async handleHttpRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  private async handleHttpRequest(
+    req: IncomingMessage,
+    res: ServerResponse,
+  ): Promise<void> {
     const url = new URL(req.url ?? "/", "http://localhost");
     const path = url.pathname;
     const method = (req.method ?? "GET").toUpperCase();
@@ -303,7 +336,9 @@ export class Daemon {
     } catch (err) {
       const errMsg = (err as Error).message;
       const errStack = (err as Error).stack ?? "";
-      log.error(`handleRoute FAILED: ${method} ${path} → ${errMsg}\n${errStack}`);
+      log.error(
+        `handleRoute FAILED: ${method} ${path} → ${errMsg}\n${errStack}`,
+      );
       result = { status: 500, body: { ok: false, error: errMsg } };
     }
     this.sendJson(res, result.status, result.body);
@@ -315,7 +350,9 @@ export class Daemon {
       "Cache-Control": "no-cache",
       Connection: "keep-alive",
     });
-    res.write(`event: ready\ndata: ${JSON.stringify({ pid: process.pid, ts: Date.now() })}\n\n`);
+    res.write(
+      `event: ready\ndata: ${JSON.stringify({ pid: process.pid, ts: Date.now() })}\n\n`,
+    );
 
     this.sseClients.add(res);
     const keepalive = setInterval(() => {
@@ -344,7 +381,9 @@ export class Daemon {
     }
   }
 
-  private async readJsonBody(req: IncomingMessage): Promise<Record<string, unknown>> {
+  private async readJsonBody(
+    req: IncomingMessage,
+  ): Promise<Record<string, unknown>> {
     const chunks: Buffer[] = [];
     for await (const c of req) {
       chunks.push(c as Buffer);

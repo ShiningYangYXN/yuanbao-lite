@@ -21,12 +21,17 @@ export function register(cmdSys: CommandSystem): void {
   });
 }
 
-export async function sendScopedAtAll(ctx: import("../../types.js").CommandContext, scope: "humans" | "bots" | "lobsters"): Promise<void> {
+export async function sendScopedAtAll(
+  ctx: import("../../types.js").CommandContext,
+  scope: "humans" | "bots" | "lobsters",
+): Promise<void> {
   let groupCode: string;
   let message: string;
 
   if (ctx.args.length < 1) {
-    await ctx.reply(`用法: /at${scope} <群号> <消息>\n或: /at${scope} <消息>  (当前群聊中)`);
+    await ctx.reply(
+      `用法: /at${scope} <群号> <消息>\n或: /at${scope} <消息>  (当前群聊中)`,
+    );
     return;
   }
 
@@ -57,9 +62,12 @@ export async function sendScopedAtAll(ctx: import("../../types.js").CommandConte
     return;
   }
 
-  const scopeSyntax = scope === "humans" ? "@[所有人类](humans)"
-    : scope === "bots" ? "@[所有BOT](bots)"
-      : "@[所有龙虾](lobsters)";
+  const scopeSyntax =
+    scope === "humans"
+      ? "@[所有人类](humans)"
+      : scope === "bots"
+        ? "@[所有BOT](bots)"
+        : "@[所有龙虾](lobsters)";
   const fullMessage = `${scopeSyntax} ${message}`;
 
   try {
@@ -73,21 +81,30 @@ export async function sendScopedAtAll(ctx: import("../../types.js").CommandConte
     try {
       const resp = await ctx.bot.getGroupMemberList(groupCode);
       const members = resp?.member_list ?? [];
-      matchCount = members.filter(m => {
+      matchCount = members.filter((m) => {
         const uid = String(m.user_id ?? "");
         const ut = m.user_type;
-        const isBot = ut !== undefined ? (ut === 2 || ut === 3) : uid.startsWith("bot_");
+        const isBot =
+          ut !== undefined ? ut === 2 || ut === 3 : uid.startsWith("bot_");
         const isLobster = ut !== undefined ? ut === 3 : uid.startsWith("bot_");
         if (scope === "humans") return !isBot;
         if (scope === "bots") return isBot;
         if (scope === "lobsters") return isLobster;
         return true;
       }).length;
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
 
-    const scopeLabel = scope === "humans" ? "人类" : scope === "bots" ? "BOT" : "龙虾";
-    const countHint = matchCount >= 0 ? `（已逐个展开 @${matchCount} 个${scopeLabel}成员）` : "";
-    await ctx.reply(`✅ 已发送 @所有${scopeLabel} 消息到群 ${groupCode}${countHint}`);
+    const scopeLabel =
+      scope === "humans" ? "人类" : scope === "bots" ? "BOT" : "龙虾";
+    const countHint =
+      matchCount >= 0
+        ? `（已逐个展开 @${matchCount} 个${scopeLabel}成员）`
+        : "";
+    await ctx.reply(
+      `✅ 已发送 @所有${scopeLabel} 消息到群 ${groupCode}${countHint}`,
+    );
   } catch (err) {
     await ctx.reply(`❌ 发送失败: ${(err as Error).message}`);
   }

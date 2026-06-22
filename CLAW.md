@@ -104,18 +104,18 @@ daemon 会自动杀菌：新 daemon 启动时自动 SIGTERM 旧 daemon（通过 
 
 所有配置和数据文件位于 `~/.yuanbao-lite/`:
 
-| 文件 | 用途 |
-|------|------|
-| config.json | 主配置 (档案/凭证) |
-| daemon.pid | daemon PID |
-| contacts.json | 联系人 |
-| groups.json | 群组 |
-| aliases.json | 别名 |
-| history.jsonl | 消息历史 |
+| 文件            | 用途                         |
+| --------------- | ---------------------------- |
+| config.json     | 主配置 (档案/凭证)           |
+| daemon.pid      | daemon PID                   |
+| contacts.json   | 联系人                       |
+| groups.json     | 群组                         |
+| aliases.json    | 别名                         |
+| history.jsonl   | 消息历史                     |
 | llm-config.json | LLM 配置 (含密钥池/供应商池) |
-| trust.json | 信任列表 + 单命令授权 |
-| block.json | 封禁列表 |
-| reminders.json | 提醒和定时任务 |
+| trust.json      | 信任列表 + 单命令授权        |
+| block.json      | 封禁列表                     |
+| reminders.json  | 提醒和定时任务               |
 
 daemon 启动时自动检查所有安全模块文件，缺失或损坏时自动创建空壳（trust.json/block.json 等均为有效 JSON 结构，非全空）。
 
@@ -220,13 +220,13 @@ node dist/cli/index.js rc "/llm reset"
 
 所有阻塞式会话统一使用 session-scoped 隔离（同一用户 + 同一会话才捕获），5 分钟无操作自动退出：
 
-| 会话 | 启动 | 退出 |
-|------|------|------|
-| /init 向导 | `/init` | 完成或 `/init cancel` |
-| /llm config 向导 | `/llm config` | 完成或 `/llm config cancel` |
-| /term 终端 | `/term` | `/term exit` 或 `exit` |
-| /switch 上下文 | `/switch group <群号>` | `/switch exit` |
-| /join 群聊 | `/join <群号>` | `/switch exit` |
+| 会话             | 启动                   | 退出                        |
+| ---------------- | ---------------------- | --------------------------- |
+| /init 向导       | `/init`                | 完成或 `/init cancel`       |
+| /llm config 向导 | `/llm config`          | 完成或 `/llm config cancel` |
+| /term 终端       | `/term`                | `/term exit` 或 `exit`      |
+| /switch 上下文   | `/switch group <群号>` | `/switch exit`              |
+| /join 群聊       | `/join <群号>`         | `/switch exit`              |
 
 ## CLI 使用
 

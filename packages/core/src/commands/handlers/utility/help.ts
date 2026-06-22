@@ -40,7 +40,9 @@ export function register(cmdSys: CommandSystem): void {
         if (def.hidden) flags.push("隐藏");
         if (flags.length > 0) kv.push(["标记", flags.join(", ")]);
         if (ctx.useTable) {
-          await ctx.replyDoc(`📖 命令帮助\n${await ctx.formatTable(["属性", "值"], kv)}`);
+          await ctx.replyDoc(
+            `📖 命令帮助\n${await ctx.formatTable(["属性", "值"], kv)}`,
+          );
         } else {
           const lines = ["📖 命令帮助:", ...kv.map(([k, v]) => `  ${k}: ${v}`)];
           await ctx.replyDoc(lines.join("\n"));
@@ -49,7 +51,7 @@ export function register(cmdSys: CommandSystem): void {
       }
 
       // Show all commands
-      const visible = cmdSys.getAll().filter(c => !c.hidden);
+      const visible = cmdSys.getAll().filter((c) => !c.hidden);
       if (visible.length === 0) {
         await ctx.reply("暂无可用命令");
         return;
@@ -67,7 +69,16 @@ export function register(cmdSys: CommandSystem): void {
           llm: "🤖 LLM",
           utility: "🛠️ 工具",
         };
-        const categoryOrder = ["info", "chat", "group", "media", "history", "llm", "system", "utility"];
+        const categoryOrder = [
+          "info",
+          "chat",
+          "group",
+          "media",
+          "history",
+          "llm",
+          "system",
+          "utility",
+        ];
         const categories = new Map<string, typeof visible>();
         for (const cmd of visible) {
           const cat = cmd.category || "utility";
@@ -79,13 +90,15 @@ export function register(cmdSys: CommandSystem): void {
           const cmds = categories.get(cat);
           if (!cmds) continue;
           const label = categoryLabels[cat] || cat;
-          const rows = cmds.map(cmd => [
+          const rows = cmds.map((cmd) => [
             `${cmdSys.config.prefix}${cmd.name}`,
             cmd.aliases?.length ? cmd.aliases.join(", ") : "",
             cmd.description || "",
             cmd.elevated ? "仅私聊" : "",
           ]);
-          sections.push(`\n### ${label}\n${await ctx.formatTable(["命令", "别名", "描述", "标记"], rows)}`);
+          sections.push(
+            `\n### ${label}\n${await ctx.formatTable(["命令", "别名", "描述", "标记"], rows)}`,
+          );
         }
         await ctx.replyDoc(sections.join("\n"));
       } else {

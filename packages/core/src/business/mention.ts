@@ -159,7 +159,10 @@ export async function parseMentions(
     //   @[所有BOT](bots)    @[](bots)       @[所有BOT]()
     //   @[所有龙虾](lobsters) @[](lobsters)  @[所有龙虾]()
     // Also bare: @all (nickname="all", id="")
-    const SCOPE_MAP: Record<string, { scope: "all" | "humans" | "bots" | "lobsters"; nicknames: string[] }> = {
+    const SCOPE_MAP: Record<
+      string,
+      { scope: "all" | "humans" | "bots" | "lobsters"; nicknames: string[] }
+    > = {
       all: { scope: "all", nicknames: ["所有人", "all"] },
       humans: { scope: "humans", nicknames: ["所有人类", "humans"] },
       bots: { scope: "bots", nicknames: ["所有BOT", "所有Bot", "bots"] },
@@ -178,10 +181,14 @@ export async function parseMentions(
     }
 
     if (atAllScope) {
-      const fallbackLabel = atAllScope === "humans" ? "@所有人类"
-        : atAllScope === "bots" ? "@所有BOT"
-        : atAllScope === "lobsters" ? "@所有龙虾"
-        : "@所有人";
+      const fallbackLabel =
+        atAllScope === "humans"
+          ? "@所有人类"
+          : atAllScope === "bots"
+            ? "@所有BOT"
+            : atAllScope === "lobsters"
+              ? "@所有龙虾"
+              : "@所有人";
 
       let replacement = fallbackLabel;
 
@@ -191,21 +198,23 @@ export async function parseMentions(
           atAll = true;
           // Filter by scope + skip self (except @所有人 which includes everyone)
           const isSelf = (uid: string) => selfUserIds?.has(uid) ?? false;
-          const filteredMembers = allMembers.filter(user => {
+          const filteredMembers = allMembers.filter((user) => {
             const uid = String(user.userId ?? "");
             // @所有人 includes ALL members (even self) — "必须包含任何成员"
             // Scoped @all (humans/bots/lobsters) skips self
             if (atAllScope !== "all" && isSelf(uid)) return false;
             const ut = user.userType;
-            const isBot = ut !== undefined ? (ut === 2 || ut === 3) : uid.startsWith("bot_");
-            const isLobster = ut !== undefined ? ut === 3 : uid.startsWith("bot_");
+            const isBot =
+              ut !== undefined ? ut === 2 || ut === 3 : uid.startsWith("bot_");
+            const isLobster =
+              ut !== undefined ? ut === 3 : uid.startsWith("bot_");
             if (atAllScope === "all") return true; // include everyone
             if (atAllScope === "humans") return !isBot;
             if (atAllScope === "bots") return isBot;
             if (atAllScope === "lobsters") return isLobster;
             return true;
           });
-          const displayParts = filteredMembers.map(u => {
+          const displayParts = filteredMembers.map((u) => {
             const mention: MentionInfo = {
               userId: u.userId,
               displayName: u.nickname || u.userId,
@@ -227,7 +236,10 @@ export async function parseMentions(
         atAll = true;
       }
 
-      text = text.slice(0, m.index) + replacement + text.slice(m.index + m.full.length);
+      text =
+        text.slice(0, m.index) +
+        replacement +
+        text.slice(m.index + m.full.length);
       const diff = replacement.length - m.full.length;
       for (let j = 0; j < i; j++) {
         matches[j].index += diff;
@@ -253,7 +265,10 @@ export async function parseMentions(
           mentionedUserIds.push(aliasEntry.id);
         }
         const replacement = `@${aliasEntry.nickname ?? aliasEntry.alias}`;
-        text = text.slice(0, m.index) + replacement + text.slice(m.index + m.full.length);
+        text =
+          text.slice(0, m.index) +
+          replacement +
+          text.slice(m.index + m.full.length);
         const diff = replacement.length - m.full.length;
         for (let j = 0; j < i; j++) {
           matches[j].index += diff;
@@ -286,7 +301,10 @@ export async function parseMentions(
             }
 
             const replacement = displayParts.join(" ");
-            text = text.slice(0, m.index) + replacement + text.slice(m.index + m.full.length);
+            text =
+              text.slice(0, m.index) +
+              replacement +
+              text.slice(m.index + m.full.length);
 
             // Adjust subsequent match indices
             const diff = replacement.length - m.full.length;
@@ -296,7 +314,10 @@ export async function parseMentions(
           } else {
             // No match found — leave as plain text
             const replacement = `@${m.nickname}`;
-            text = text.slice(0, m.index) + replacement + text.slice(m.index + m.full.length);
+            text =
+              text.slice(0, m.index) +
+              replacement +
+              text.slice(m.index + m.full.length);
             const diff = replacement.length - m.full.length;
             for (let j = 0; j < i; j++) {
               matches[j].index += diff;
@@ -305,7 +326,10 @@ export async function parseMentions(
         } catch {
           // Resolver failed — leave as plain text
           const replacement = `@${m.nickname}`;
-          text = text.slice(0, m.index) + replacement + text.slice(m.index + m.full.length);
+          text =
+            text.slice(0, m.index) +
+            replacement +
+            text.slice(m.index + m.full.length);
           const diff = replacement.length - m.full.length;
           for (let j = 0; j < i; j++) {
             matches[j].index += diff;
@@ -314,7 +338,10 @@ export async function parseMentions(
       } else {
         // No resolver — leave as plain text
         const replacement = `@${m.nickname}`;
-        text = text.slice(0, m.index) + replacement + text.slice(m.index + m.full.length);
+        text =
+          text.slice(0, m.index) +
+          replacement +
+          text.slice(m.index + m.full.length);
         const diff = replacement.length - m.full.length;
         for (let j = 0; j < i; j++) {
           matches[j].index += diff;
@@ -328,7 +355,8 @@ export async function parseMentions(
 
     // Resolve alias to actual ID
     const resolvedId = store.resolve(m.id);
-    const aliasNickname = store.getNickname(m.id) ?? store.getNickname(resolvedId);
+    const aliasNickname =
+      store.getNickname(m.id) ?? store.getNickname(resolvedId);
 
     // Determine display name
     let displayName: string;
@@ -381,7 +409,10 @@ export async function parseMentions(
 
     // Replace the mention syntax with "@displayName" in the text
     const replacement = `@${displayName}`;
-    text = text.slice(0, m.index) + replacement + text.slice(m.index + m.full.length);
+    text =
+      text.slice(0, m.index) +
+      replacement +
+      text.slice(m.index + m.full.length);
 
     // Adjust subsequent match indices
     const diff = replacement.length - m.full.length;
@@ -428,8 +459,10 @@ export function escapeMentionSyntax(text: string): string {
  * This is the correct protocol format from the original openclaw-plugin-yuanbao.
  * Each mentioned user gets their own TIMCustomElem element.
  */
-export function buildMentionMsgBodyElements(mentions: MentionInfo[]): YuanbaoMsgBodyElement[] {
-  return mentions.map(m => ({
+export function buildMentionMsgBodyElements(
+  mentions: MentionInfo[],
+): YuanbaoMsgBodyElement[] {
+  return mentions.map((m) => ({
     msg_type: "TIMCustomElem",
     msg_content: {
       data: JSON.stringify({
@@ -462,34 +495,49 @@ export function buildCloudCustomDataWithMentions(
   }
 
   if (mentionInfo.mentionedUserIds.length > 0) {
-    const existingGroupAtInfo = customData.groupAtInfo as Record<string, unknown> | undefined;
+    const existingGroupAtInfo = customData.groupAtInfo as
+      | Record<string, unknown>
+      | undefined;
 
-    const existingUserIds = (existingGroupAtInfo?.groupAtUserIds as string[]) || [];
-    const existingNicknames = (existingGroupAtInfo?.groupAtNicknames as string[]) || [];
+    const existingUserIds =
+      (existingGroupAtInfo?.groupAtUserIds as string[]) || [];
+    const existingNicknames =
+      (existingGroupAtInfo?.groupAtNicknames as string[]) || [];
 
-    const mergedUserIds = [...new Set([...existingUserIds, ...mentionInfo.mentionedUserIds])];
+    const mergedUserIds = [
+      ...new Set([...existingUserIds, ...mentionInfo.mentionedUserIds]),
+    ];
 
     const mergedNicknames: string[] = [];
     for (const uid of mergedUserIds) {
-      const mention = mentionInfo.mentions.find(m => m.userId === uid);
+      const mention = mentionInfo.mentions.find((m) => m.userId === uid);
       if (mention) {
-        mergedNicknames.push(mention.explicitNickname ? mention.displayName : "");
+        mergedNicknames.push(
+          mention.explicitNickname ? mention.displayName : "",
+        );
       } else {
         const existingIdx = existingUserIds.indexOf(uid);
-        mergedNicknames.push(existingIdx >= 0 && existingNicknames[existingIdx] ? existingNicknames[existingIdx] : "");
+        mergedNicknames.push(
+          existingIdx >= 0 && existingNicknames[existingIdx]
+            ? existingNicknames[existingIdx]
+            : "",
+        );
       }
     }
 
     customData.groupAtInfo = {
       groupAtUserIds: mergedUserIds,
-      ...(mergedNicknames.some(n => n) ? { groupAtNicknames: mergedNicknames } : {}),
+      ...(mergedNicknames.some((n) => n)
+        ? { groupAtNicknames: mergedNicknames }
+        : {}),
       // @all flag — when true, the IM protocol notifies ALL group members
       ...(mentionInfo.atAll ? { atAll: true } : {}),
     };
   } else if (mentionInfo.atAll) {
     // @all with no individual mentions — still set the atAll flag
     customData.groupAtInfo = {
-      ...(customData.groupAtInfo as Record<string, unknown> | undefined ?? {}),
+      ...((customData.groupAtInfo as Record<string, unknown> | undefined) ??
+        {}),
       atAll: true,
     };
   }
@@ -524,7 +572,14 @@ export async function buildMentionMsgBody(
   mentions: MentionInfo[];
   atAll: boolean;
 }> {
-  const parsed = await parseMentions(text, aliasStore, nicknameResolver, allMembersResolver, userIdResolver, selfUserIds);
+  const parsed = await parseMentions(
+    text,
+    aliasStore,
+    nicknameResolver,
+    allMembersResolver,
+    userIdResolver,
+    selfUserIds,
+  );
 
   const msgBody: YuanbaoMsgBodyElement[] = [];
 
@@ -543,7 +598,7 @@ export async function buildMentionMsgBody(
     // Split text at @displayName boundaries
     // We use a regex that matches @displayName from the mentions
     const displayNamePattern = parsed.mentions
-      .map(m => `@${m.displayName}`.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+      .map((m) => `@${m.displayName}`.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
       .filter((v, i, a) => a.indexOf(v) === i) // deduplicate
       .join("|");
     const splitRegex = new RegExp(`(${displayNamePattern})`, "g");
@@ -612,7 +667,10 @@ export async function buildMentionMsgBody(
  *
  * This is the equivalent of buildAtUserMsgBodyItem() in the original project.
  */
-export function buildAtUserMsgBodyItem(userId: string, displayName?: string): YuanbaoMsgBodyElement {
+export function buildAtUserMsgBodyItem(
+  userId: string,
+  displayName?: string,
+): YuanbaoMsgBodyElement {
   return {
     msg_type: "TIMCustomElem",
     msg_content: {
@@ -643,7 +701,10 @@ export function extractMentionsFromMsgBody(
       const customContent = JSON.parse(rawData);
       if (customContent?.elem_type === 1002) {
         // Use String() conversion since user_id may be a number from JSON
-        const userId = customContent.user_id != null ? String(customContent.user_id) : undefined;
+        const userId =
+          customContent.user_id != null
+            ? String(customContent.user_id)
+            : undefined;
         const text: string | undefined = customContent.text;
 
         if (userId) {
@@ -691,8 +752,11 @@ export function extractMentionsFromMsgBody(
         if (Array.isArray(userIds)) {
           for (let i = 0; i < userIds.length; i++) {
             const uid = String(userIds[i] || "");
-            const nick = Array.isArray(nicknames) && nicknames[i] ? String(nicknames[i]) : undefined;
-            if (uid && !mentions.some(m => String(m.userId) === uid)) {
+            const nick =
+              Array.isArray(nicknames) && nicknames[i]
+                ? String(nicknames[i])
+                : undefined;
+            if (uid && !mentions.some((m) => String(m.userId) === uid)) {
               mentions.push({
                 userId: uid,
                 displayName: nick || uid,
@@ -709,7 +773,7 @@ export function extractMentionsFromMsgBody(
           for (const info of groupAtInfo) {
             const gai = info as Record<string, unknown>;
             const uid = String(gai.userId || "");
-            if (uid && !mentions.some(m => String(m.userId) === uid)) {
+            if (uid && !mentions.some((m) => String(m.userId) === uid)) {
               mentions.push({
                 userId: uid,
                 displayName: String(gai.nickname || gai.userId || ""),
@@ -729,15 +793,15 @@ export function extractMentionsFromMsgBody(
   // Text-based fallback
   if (msgBody && mentions.length === 0) {
     const text = msgBody
-      .filter(el => el.msg_type === "TIMTextElem" && el.msg_content?.text)
-      .map(el => el.msg_content.text!)
+      .filter((el) => el.msg_type === "TIMTextElem" && el.msg_content?.text)
+      .map((el) => el.msg_content.text!)
       .join("");
 
     const atPattern = /@(\S+)/g;
     let match: RegExpExecArray | null;
     while ((match = atPattern.exec(text)) !== null) {
       const name = match[1];
-      if (!mentions.some(m => m.displayName === name)) {
+      if (!mentions.some((m) => m.displayName === name)) {
         mentions.push({
           userId: "",
           displayName: name,
@@ -761,5 +825,5 @@ export function isUserMentioned(
   cloudCustomData?: string,
 ): boolean {
   const mentions = extractMentionsFromMsgBody(msgBody, cloudCustomData);
-  return mentions.some(m => m.userId === userId);
+  return mentions.some((m) => m.userId === userId);
 }

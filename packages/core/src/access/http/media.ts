@@ -14,7 +14,10 @@
  */
 
 import { createLog } from "../../logger.js";
-import type { ResolvedYuanbaoAccount, YuanbaoMsgBodyElement } from "../../types.js";
+import type {
+  ResolvedYuanbaoAccount,
+  YuanbaoMsgBodyElement,
+} from "../../types.js";
 import { getAuthHeaders, yuanbaoPost, yuanbaoGet } from "./request.js";
 import { getNodeModules } from "../persistence/adapter.js";
 import { md5 as jsMd5 } from "js-md5";
@@ -44,7 +47,10 @@ function bytesToHex(bytes: Uint8Array): string {
  * Uses Web Crypto API (available in Node 18+ and all modern browsers).
  */
 async function sha1Hex(input: string): Promise<string> {
-  const buf = await globalThis.crypto.subtle.digest("SHA-1", encodeUtf8(input) as BufferSource);
+  const buf = await globalThis.crypto.subtle.digest(
+    "SHA-1",
+    encodeUtf8(input) as BufferSource,
+  );
   return bytesToHex(new Uint8Array(buf));
 }
 
@@ -78,7 +84,11 @@ async function hmacSha1Hex(key: string, message: string): Promise<string> {
     false,
     ["sign"],
   );
-  const sig = await globalThis.crypto.subtle.sign("HMAC", cryptoKey, msgBytes as BufferSource);
+  const sig = await globalThis.crypto.subtle.sign(
+    "HMAC",
+    cryptoKey,
+    msgBytes as BufferSource,
+  );
   return bytesToHex(new Uint8Array(sig));
 }
 
@@ -103,7 +113,10 @@ function extname(filename: string): string {
   const path = getNodeModules().path;
   if (path) return path.extname(filename).toLowerCase();
   // Pure-JS fallback: last dot after last slash
-  const lastSlash = Math.max(filename.lastIndexOf("/"), filename.lastIndexOf("\\"));
+  const lastSlash = Math.max(
+    filename.lastIndexOf("/"),
+    filename.lastIndexOf("\\"),
+  );
   const lastDot = filename.lastIndexOf(".");
   if (lastDot <= lastSlash) return "";
   return filename.slice(lastDot).toLowerCase();
@@ -117,7 +130,10 @@ function extname(filename: string): string {
 function basename(filePath: string): string {
   const path = getNodeModules().path;
   if (path) return path.basename(filePath);
-  const lastSlash = Math.max(filePath.lastIndexOf("/"), filePath.lastIndexOf("\\"));
+  const lastSlash = Math.max(
+    filePath.lastIndexOf("/"),
+    filePath.lastIndexOf("\\"),
+  );
   return filePath.slice(lastSlash + 1);
 }
 
@@ -211,9 +227,33 @@ const MAX_FILE_SIZE_MB = 20;
 
 // ─── Media type detection ───
 
-const IMAGE_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".svg"]);
-const VIDEO_EXTENSIONS = new Set([".mp4", ".avi", ".mov", ".mkv", ".wmv", ".flv", ".webm"]);
-const AUDIO_EXTENSIONS = new Set([".mp3", ".wav", ".ogg", ".flac", ".aac", ".m4a", ".wma"]);
+const IMAGE_EXTENSIONS = new Set([
+  ".jpg",
+  ".jpeg",
+  ".png",
+  ".gif",
+  ".bmp",
+  ".webp",
+  ".svg",
+]);
+const VIDEO_EXTENSIONS = new Set([
+  ".mp4",
+  ".avi",
+  ".mov",
+  ".mkv",
+  ".wmv",
+  ".flv",
+  ".webm",
+]);
+const AUDIO_EXTENSIONS = new Set([
+  ".mp3",
+  ".wav",
+  ".ogg",
+  ".flac",
+  ".aac",
+  ".m4a",
+  ".wma",
+]);
 
 function detectMediaType(filePath: string, forceType?: MediaType): MediaType {
   if (forceType) return forceType;
@@ -228,51 +268,97 @@ function detectMediaType(filePath: string, forceType?: MediaType): MediaType {
 function guessMimeType(filename: string): string {
   const ext = extname(filename).toLowerCase();
   const mime: Record<string, string> = {
-    ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
-    ".gif": "image/gif", ".webp": "image/webp", ".bmp": "image/bmp",
-    ".pdf": "application/pdf", ".txt": "text/plain", ".zip": "application/zip",
-    ".mp3": "audio/mpeg", ".mp4": "video/mp4", ".wav": "audio/wav",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+    ".bmp": "image/bmp",
+    ".pdf": "application/pdf",
+    ".txt": "text/plain",
+    ".zip": "application/zip",
+    ".mp3": "audio/mpeg",
+    ".mp4": "video/mp4",
+    ".wav": "audio/wav",
   };
   return mime[ext] ?? "application/octet-stream";
 }
 
 /** Parse image dimensions from Buffer (supports JPEG/PNG/GIF/WebP) */
-function parseImageSize(buf: Buffer): { width: number; height: number } | undefined {
-  return parsePngSize(buf) ?? parseJpegSize(buf) ?? parseGifSize(buf) ?? parseWebpSize(buf);
+function parseImageSize(
+  buf: Buffer,
+): { width: number; height: number } | undefined {
+  return (
+    parsePngSize(buf) ??
+    parseJpegSize(buf) ??
+    parseGifSize(buf) ??
+    parseWebpSize(buf)
+  );
 }
 
-function parsePngSize(buf: Buffer): { width: number; height: number } | undefined {
+function parsePngSize(
+  buf: Buffer,
+): { width: number; height: number } | undefined {
   if (buf.length < 24 || buf[0] !== 0x89 || buf[1] !== 0x50) return undefined;
   return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) };
 }
 
-function parseJpegSize(buf: Buffer): { width: number; height: number } | undefined {
+function parseJpegSize(
+  buf: Buffer,
+): { width: number; height: number } | undefined {
   if (buf.length < 4 || buf[0] !== 0xff || buf[1] !== 0xd8) return undefined;
   let i = 2;
   while (i < buf.length - 9) {
-    if (buf[i] !== 0xff) { i++; continue; }
+    if (buf[i] !== 0xff) {
+      i++;
+      continue;
+    }
     const marker = buf[i + 1];
     if (marker === 0xc0 || marker === 0xc2) {
-      return { height: buf.readUInt16BE(i + 5), width: buf.readUInt16BE(i + 7) };
+      return {
+        height: buf.readUInt16BE(i + 5),
+        width: buf.readUInt16BE(i + 7),
+      };
     }
-    if (i + 3 < buf.length) { i += 2 + buf.readUInt16BE(i + 2); } else { break; }
+    if (i + 3 < buf.length) {
+      i += 2 + buf.readUInt16BE(i + 2);
+    } else {
+      break;
+    }
   }
   return undefined;
 }
 
-function parseGifSize(buf: Buffer): { width: number; height: number } | undefined {
+function parseGifSize(
+  buf: Buffer,
+): { width: number; height: number } | undefined {
   if (buf.length < 10) return undefined;
   const sig = buf.toString("ascii", 0, 6);
   if (sig !== "GIF87a" && sig !== "GIF89a") return undefined;
   return { width: buf.readUInt16LE(6), height: buf.readUInt16LE(8) };
 }
 
-function parseWebpSize(buf: Buffer): { width: number; height: number } | undefined {
+function parseWebpSize(
+  buf: Buffer,
+): { width: number; height: number } | undefined {
   if (buf.length < 16) return undefined;
-  if (buf.toString("ascii", 0, 4) !== "RIFF" || buf.toString("ascii", 8, 12) !== "WEBP") return undefined;
+  if (
+    buf.toString("ascii", 0, 4) !== "RIFF" ||
+    buf.toString("ascii", 8, 12) !== "WEBP"
+  )
+    return undefined;
   const chunk = buf.toString("ascii", 12, 16);
-  if (chunk === "VP8 " && buf.length >= 30 && buf[23] === 0x9d && buf[24] === 0x01 && buf[25] === 0x2a) {
-    return { width: buf.readUInt16LE(26) & 0x3fff, height: buf.readUInt16LE(28) & 0x3fff };
+  if (
+    chunk === "VP8 " &&
+    buf.length >= 30 &&
+    buf[23] === 0x9d &&
+    buf[24] === 0x01 &&
+    buf[25] === 0x2a
+  ) {
+    return {
+      width: buf.readUInt16LE(26) & 0x3fff,
+      height: buf.readUInt16LE(28) & 0x3fff,
+    };
   }
   if (chunk === "VP8L" && buf.length >= 25 && buf[20] === 0x2f) {
     const bits = buf.readUInt32LE(21);
@@ -293,7 +379,9 @@ function isImageFile(filename: string): boolean {
 
 // ─── Extract media info from message body ───
 
-export function extractMediaInfo(msgBody: YuanbaoMsgBodyElement[]): MediaInfo[] {
+export function extractMediaInfo(
+  msgBody: YuanbaoMsgBodyElement[],
+): MediaInfo[] {
   const results: MediaInfo[] = [];
 
   for (const el of msgBody) {
@@ -311,7 +399,9 @@ export function extractMediaInfo(msgBody: YuanbaoMsgBodyElement[]): MediaInfo[] 
         };
 
         if (content.image_info_array && content.image_info_array.length > 0) {
-          const sorted = [...content.image_info_array].sort((a, b) => (b.type ?? 0) - (a.type ?? 0));
+          const sorted = [...content.image_info_array].sort(
+            (a, b) => (b.type ?? 0) - (a.type ?? 0),
+          );
           images.imageUrl = sorted[0].url;
         }
 
@@ -429,11 +519,12 @@ async function apiGetUploadInfo(
   fileName: string,
   fileId: string,
 ): Promise<CosUploadConfig> {
-  const data = await yuanbaoPost<CosUploadConfig>(
-    account,
-    UPLOAD_INFO_PATH,
-    { fileName, fileId, docFrom: "localDoc", docOpenId: "" },
-  );
+  const data = await yuanbaoPost<CosUploadConfig>(account, UPLOAD_INFO_PATH, {
+    fileName,
+    fileId,
+    docFrom: "localDoc",
+    docOpenId: "",
+  });
 
   if (!data.bucketName || !data.location) {
     throw new Error(`genUploadInfo incomplete config: ${JSON.stringify(data)}`);
@@ -457,7 +548,9 @@ export async function apiGetDownloadUrl(
 
   const downloadUrl = data.url ?? data.realUrl;
   if (!downloadUrl) {
-    throw new Error(`resource/v1/download returned no valid URL: ${JSON.stringify(data)}`);
+    throw new Error(
+      `resource/v1/download returned no valid URL: ${JSON.stringify(data)}`,
+    );
   }
 
   return downloadUrl;
@@ -485,7 +578,9 @@ async function uploadBufferToCos(params: {
   const sessionToken = config.encryptToken || config.sessionToken;
 
   if (!secretId || !secretKey) {
-    throw new Error("COS upload: no credentials available (missing secretId/secretKey)");
+    throw new Error(
+      "COS upload: no credentials available (missing secretId/secretKey)",
+    );
   }
 
   // Build COS upload URL — use standard domain (accelerate domain may have DNS issues)
@@ -509,8 +604,8 @@ async function uploadBufferToCos(params: {
   const authorization = `q-sign-algorithm=sha1&q-ak=${secretId}&q-sign-time=${signTime}&q-key-time=${keyTime}&q-header-list=host&q-url-param-list=&q-signature=${signature}`;
 
   const headers: Record<string, string> = {
-    "Authorization": authorization,
-    "Host": host,
+    Authorization: authorization,
+    Host: host,
   };
 
   if (isImageFile(filename)) {
@@ -543,7 +638,9 @@ async function uploadBufferToCos(params: {
     }
 
     const errorBody = await response.text().catch(() => "");
-    throw new Error(`COS PUT failed: HTTP ${response.status} — ${errorBody.substring(0, 200)}`);
+    throw new Error(
+      `COS PUT failed: HTTP ${response.status} — ${errorBody.substring(0, 200)}`,
+    );
   } catch (err) {
     if ((err as Error).message.startsWith("COS PUT failed")) {
       throw err;
@@ -590,19 +687,24 @@ export async function uploadMediaToCos(
   const maxSizeMB = account.mediaMaxMb || MAX_FILE_SIZE_MB;
 
   if (fileSizeMB > maxSizeMB) {
-    throw new Error(`File too large: ${fileSizeMB.toFixed(1)}MB exceeds limit of ${maxSizeMB}MB`);
+    throw new Error(
+      `File too large: ${fileSizeMB.toFixed(1)}MB exceeds limit of ${maxSizeMB}MB`,
+    );
   }
 
   const fileName = basename(filePath);
   const mediaType = detectMediaType(filePath, options?.mediaType);
 
-  log.info(`uploading (COS): ${fileName} (${fileSizeMB.toFixed(1)}MB, type=${mediaType})`);
+  log.info(
+    `uploading (COS): ${fileName} (${fileSizeMB.toFixed(1)}MB, type=${mediaType})`,
+  );
 
   // Read file content
   const fileBuffer = await fs.promises.readFile(filePath);
   const fileId = randomHex(16);
   const uuid = await md5Hex(new Uint8Array(fileBuffer));
-  const imageInfo = mediaType === "image" ? parseImageSize(fileBuffer) : undefined;
+  const imageInfo =
+    mediaType === "image" ? parseImageSize(fileBuffer) : undefined;
   const mimeType = guessMimeType(fileName);
 
   // 1. Get COS pre-signed config
@@ -618,7 +720,9 @@ export async function uploadMediaToCos(
 
   options?.onProgress?.(fileStat.size, fileStat.size);
 
-  log.info(`COS upload success: uuid=${uuid}, url=${url ? "received" : "pending"}`);
+  log.info(
+    `COS upload success: uuid=${uuid}, url=${url ? "received" : "pending"}`,
+  );
 
   return {
     uuid,
@@ -665,7 +769,12 @@ async function uploadMediaLegacy(
 
   const fileBuffer = await fs.promises.readFile(filePath);
   const boundary = `----FormBoundary${randomHex(8)}`;
-  const formData = buildMultipartFormData(boundary, fileBuffer, fileName, mediaType);
+  const formData = buildMultipartFormData(
+    boundary,
+    fileBuffer,
+    fileName,
+    mediaType,
+  );
 
   const authHeaders = await getAuthHeaders(account);
   const url = `https://${account.apiDomain}${LEGACY_UPLOAD_PATH}`;
@@ -680,7 +789,9 @@ async function uploadMediaLegacy(
   });
 
   if (!response.ok) {
-    throw new Error(`Upload failed: HTTP ${response.status} ${response.statusText}`);
+    throw new Error(
+      `Upload failed: HTTP ${response.status} ${response.statusText}`,
+    );
   }
 
   const result = (await response.json()) as {
@@ -720,7 +831,9 @@ export async function uploadMedia(
   try {
     return await uploadMediaToCos(account, filePath, options);
   } catch (cosError) {
-    log.warn(`COS upload failed: ${(cosError as Error).message}, trying legacy upload`);
+    log.warn(
+      `COS upload failed: ${(cosError as Error).message}, trying legacy upload`,
+    );
     try {
       return await uploadMediaLegacy(account, filePath, options);
     } catch (legacyError) {
@@ -741,10 +854,14 @@ function buildMultipartFormData(
 ): Uint8Array {
   const encoder = new TextEncoder();
 
-  const fieldName = mediaType === "image" ? "image" :
-    mediaType === "video" ? "video" :
-    mediaType === "audio" ? "audio" :
-    "file";
+  const fieldName =
+    mediaType === "image"
+      ? "image"
+      : mediaType === "video"
+        ? "video"
+        : mediaType === "audio"
+          ? "audio"
+          : "file";
 
   const parts: Uint8Array[] = [];
 
@@ -798,10 +915,13 @@ export async function downloadMedia(
   const response = await fetch(url);
 
   if (!response.ok) {
-    throw new Error(`Download failed: HTTP ${response.status} ${response.statusText}`);
+    throw new Error(
+      `Download failed: HTTP ${response.status} ${response.statusText}`,
+    );
   }
 
-  const finalFileName = fileName || extractFileNameFromUrl(url) || `media_${Date.now()}`;
+  const finalFileName =
+    fileName || extractFileNameFromUrl(url) || `media_${Date.now()}`;
   const filePath = path.join(targetDir, finalFileName);
 
   const arrayBuffer = await response.arrayBuffer();
@@ -833,7 +953,9 @@ export async function downloadAllMedia(
       const result = await downloadMedia(url, saveDir, info.fileName);
       results.push(result);
     } catch (err) {
-      createLog("media-download").error(`failed to download ${url}: ${(err as Error).message}`);
+      createLog("media-download").error(
+        `failed to download ${url}: ${(err as Error).message}`,
+      );
     }
   }
 

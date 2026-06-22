@@ -42,12 +42,13 @@ import { NodeFsAdapter } from "yuanbao-lite";
 
 const adapter = new NodeFsAdapter();
 adapter.write("/tmp/test.json", '{"hello":"world"}');
-console.log(adapter.read("/tmp/test.json"));  // {"hello":"world"}
+console.log(adapter.read("/tmp/test.json")); // {"hello":"world"}
 console.log(adapter.exists("/tmp/test.json")); // true
 adapter.remove("/tmp/test.json");
 ```
 
 **特点**：
+
 - 支持所有可选方法（`append`、`remove`、`listDir`）
 - `append` 使用 `appendFileSync`（高效追加）
 - 构造函数在浏览器中抛错（无 `node:fs`）
@@ -111,9 +112,10 @@ import { YuanbaoBot } from "yuanbao-lite";
 import { BrowserLocalStorageAdapter } from "./my-browser-adapter.js";
 
 const bot = new YuanbaoBot({
-  appKey, appSecret,
+  appKey,
+  appSecret,
   persistence: {
-    dir: "",  // 路径作为 localStorage key 后缀
+    dir: "", // 路径作为 localStorage key 后缀
     adapter: new BrowserLocalStorageAdapter("my-app:"),
   },
 });
@@ -139,8 +141,9 @@ new YuanbaoBot({ appKey, appSecret });
 
 ```typescript
 new YuanbaoBot({
-  appKey, appSecret,
-  persistence: null,  // 纯内存，重启丢失
+  appKey,
+  appSecret,
+  persistence: null, // 纯内存，重启丢失
 });
 ```
 
@@ -148,9 +151,10 @@ new YuanbaoBot({
 
 ```typescript
 new YuanbaoBot({
-  appKey, appSecret,
+  appKey,
+  appSecret,
   persistence: {
-    dir: "/data/my-bot",  // 基础目录
+    dir: "/data/my-bot", // 基础目录
     adapter: myCustomAdapter,
   },
 });
@@ -175,7 +179,7 @@ setDefaultPersistenceAdapter(myCustomAdapter);
 import { AliasStore } from "yuanbao-lite";
 
 const store = new AliasStore({
-  persistencePath: "aliases",  // 路径或 key
+  persistencePath: "aliases", // 路径或 key
   autoSave: true,
   persistenceAdapter: myAdapter,
 });
@@ -186,7 +190,11 @@ const store = new AliasStore({
 这些 store 使用模块级单例模式，通过 `initXxxStore()` 配置：
 
 ```typescript
-import { initBlockStore, initTrustStore, initRemindersStore } from "yuanbao-lite";
+import {
+  initBlockStore,
+  initTrustStore,
+  initRemindersStore,
+} from "yuanbao-lite";
 
 initBlockStore({
   persistencePath: "block",
@@ -228,11 +236,13 @@ export function getNodeModules(): NodeModules { return nodeModules; }
 ```
 
 **打包工具行为**：
+
 - esbuild / Vite / Rollup 会将三个 `import("node:*")` 拆分为独立 chunk
 - 浏览器运行时：`typeof process` 检查失败，动态 import 不执行，chunk 不加载
 - Node 运行时：动态 import 执行，`nodeModules` 填充
 
 **对 store 构造的影响**：
+
 - 使用默认 Node 持久化时，`NodeFsAdapter` 构造需要 `nodeModules` 已加载
 - `YuanbaoBot` 构造函数将 store 构造推迟到 `init()` 中
 - `init()` 内部 `await nodeModulesReady` 确保模块已加载
@@ -248,14 +258,16 @@ export function getNodeModules(): NodeModules { return nodeModules; }
 ### 大数据量场景
 
 消息历史（`history.jsonl`）可能很大：
+
 - Node：使用 `NodeFsAdapter.append`（高效追加）
 - 浏览器 localStorage：回退到 read-modify-write（每次写入全量数据）
 - 建议：浏览器中设置 `historyLimit` 较小值，或禁用历史持久化
 
 ```typescript
 new YuanbaoBot({
-  appKey, appSecret,
-  historyLimit: 100,  // 仅保留最近 100 条
+  appKey,
+  appSecret,
+  historyLimit: 100, // 仅保留最近 100 条
   persistence: {
     dir: "yb",
     adapter: myAdapter,
@@ -273,6 +285,7 @@ setLogLevel("debug");
 ```
 
 日志会显示：
+
 - 文件读取/写入路径
 - 加载的条目数
 - 适配器解析过程

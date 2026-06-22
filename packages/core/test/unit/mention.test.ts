@@ -57,14 +57,20 @@ describe("Mention parsing", () => {
   });
 
   it("parseMentions handles escaped @", () => {
-    const result = parseMentions("email me at \\@example.com", new AliasStore());
+    const result = parseMentions(
+      "email me at \\@example.com",
+      new AliasStore(),
+    );
     assert.equal(result.mentions.length, 0);
   });
 
   it("parseMentions returns cleaned text", () => {
     const result = parseMentions("hello @[Alice](u1)!", new AliasStore());
     // The cleaned text should contain the mention syntax
-    assert.ok(result.cleanedText.includes("Alice") || result.cleanedText === "hello @[Alice](u1)!");
+    assert.ok(
+      result.cleanedText.includes("Alice") ||
+        result.cleanedText === "hello @[Alice](u1)!",
+    );
   });
 });
 
@@ -124,7 +130,7 @@ describe("buildMentionMsgBody", () => {
     assert.ok(result.msgBody);
     assert.ok(result.msgBody.length > 0);
     // Should have at least one TIMCustomElem and one TIMTextElem
-    const types = result.msgBody.map(e => e.msg_type);
+    const types = result.msgBody.map((e) => e.msg_type);
     assert.ok(types.includes("TIMCustomElem") || types.includes("TIMTextElem"));
   });
 
@@ -139,7 +145,7 @@ describe("buildMentionMsgBody", () => {
     );
     assert.ok(result.msgBody.length >= 1);
     // Should be just text
-    const textElem = result.msgBody.find(e => e.msg_type === "TIMTextElem");
+    const textElem = result.msgBody.find((e) => e.msg_type === "TIMTextElem");
     assert.ok(textElem);
   });
 });
@@ -152,7 +158,9 @@ describe("extractMentionsFromMsgBody", () => {
         msg_type: "TIMCustomElem",
         msg_content: {
           data: Buffer.from(
-            JSON.stringify({ mention: { user_list: [{ user_id: "u1", nickname: "Alice" }] } }),
+            JSON.stringify({
+              mention: { user_list: [{ user_id: "u1", nickname: "Alice" }] },
+            }),
           ).toString("base64"),
         },
       },

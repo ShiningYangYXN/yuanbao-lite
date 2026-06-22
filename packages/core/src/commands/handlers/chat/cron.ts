@@ -20,29 +20,45 @@ export function register(cmdSys: CommandSystem): void {
     elevated: true,
     handler: async (ctx) => {
       const reminders = await import("../../../business/reminders.js");
-      const { addReminder, removeReminder, listReminders, parseCronExpression, startAllJobs } = reminders;
-      type SendFunction = (targetId: string, message: string, isGroup: boolean) => Promise<void>;
+      const {
+        addReminder,
+        removeReminder,
+        listReminders,
+        parseCronExpression,
+        startAllJobs,
+      } = reminders;
+      type SendFunction = (
+        targetId: string,
+        message: string,
+        isGroup: boolean,
+      ) => Promise<void>;
       const subCmd = ctx.args[0]?.toLowerCase();
 
       if (subCmd === "list") {
-        const jobs = listReminders(ctx.message.fromUserId).filter(j => j.type === "cron");
+        const jobs = listReminders(ctx.message.fromUserId).filter(
+          (j) => j.type === "cron",
+        );
         if (jobs.length === 0) {
           await ctx.reply("暂无定时任务");
           return;
         }
         if (ctx.useTable) {
-          const rows = jobs.map(j => [
+          const rows = jobs.map((j) => [
             j.id,
             j.cronExpr || "",
             j.isGroup ? `群${j.targetId}` : (j.targetId ?? j.userId),
             new Date(j.fireAt).toLocaleString("zh-CN"),
             j.message.substring(0, 30),
           ]);
-          await ctx.reply(`📋 定时任务 (${jobs.length}):\n${await ctx.formatTable(["ID", "表达式", "目标", "下次触发", "消息"], rows)}`);
+          await ctx.reply(
+            `📋 定时任务 (${jobs.length}):\n${await ctx.formatTable(["ID", "表达式", "目标", "下次触发", "消息"], rows)}`,
+          );
         } else {
-          const lines = jobs.map(j => {
+          const lines = jobs.map((j) => {
             const next = new Date(j.fireAt).toLocaleString("zh-CN");
-            const target = j.isGroup ? `群${j.targetId}` : j.targetId ?? j.userId;
+            const target = j.isGroup
+              ? `群${j.targetId}`
+              : (j.targetId ?? j.userId);
             return `  ${j.id}: ${j.cronExpr} → ${target} 下次: ${next}\n    "${j.message}"`;
           });
           await ctx.reply(`📋 定时任务 (${jobs.length}):\n${lines.join("\n")}`);
@@ -52,22 +68,24 @@ export function register(cmdSys: CommandSystem): void {
 
       if (subCmd === "cancel" && ctx.args[1]) {
         const ok = removeReminder(ctx.args[1]);
-        await ctx.reply(ok ? `✅ 已取消定时任务 ${ctx.args[1]}` : `未找到: ${ctx.args[1]}`);
+        await ctx.reply(
+          ok ? `✅ 已取消定时任务 ${ctx.args[1]}` : `未找到: ${ctx.args[1]}`,
+        );
         return;
       }
 
       if (ctx.args.length < 6) {
         await ctx.reply(
           "用法: /cron <cron表达式> <消息> [--to <目标ID>]\n" +
-          "cron表达式: 分 时 日 月 周 (5个字段)\n" +
-          "  * — 任意值\n" +
-          "  star/N — 每N个单位\n" +
-          "  N-M — 范围\n" +
-          "  N,M — 列表\n\n" +
-          "示例:\n" +
-          "  /cron 30 9 * * 1-5 早安\n" +
-          "  /cron 0 */2 * * * 每2小时喝水 --to 765035413 --group\n\n" +
-          "管理: /cron list | /cron cancel <ID>",
+            "cron表达式: 分 时 日 月 周 (5个字段)\n" +
+            "  * — 任意值\n" +
+            "  star/N — 每N个单位\n" +
+            "  N-M — 范围\n" +
+            "  N,M — 列表\n\n" +
+            "示例:\n" +
+            "  /cron 30 9 * * 1-5 早安\n" +
+            "  /cron 0 */2 * * * 每2小时喝水 --to 765035413 --group\n\n" +
+            "管理: /cron list | /cron cancel <ID>",
         );
         return;
       }
@@ -110,7 +128,9 @@ export function register(cmdSys: CommandSystem): void {
       let targetId: string;
       let isGroup: boolean;
       if (!targetArg) {
-        targetId = ctx.isGroup ? (ctx.groupCode ?? ctx.message.fromUserId) : ctx.message.fromUserId;
+        targetId = ctx.isGroup
+          ? (ctx.groupCode ?? ctx.message.fromUserId)
+          : ctx.message.fromUserId;
         isGroup = ctx.isGroup;
       } else {
         const resolved = await ctx.resolveTarget(targetArg);
@@ -140,11 +160,11 @@ export function register(cmdSys: CommandSystem): void {
 
       await ctx.reply(
         `🔄 定时任务已设置 [${id}]:\n` +
-        `  表达式: ${cronExpr}\n` +
-        `  消息: "${message}"\n` +
-        `  目标: ${isGroup ? "群" : "私聊"} ${targetId}\n` +
-        `  下次触发: ${new Date(nextFire).toLocaleString("zh-CN")}\n` +
-        `取消: /cron cancel ${id}`,
+          `  表达式: ${cronExpr}\n` +
+          `  消息: "${message}"\n` +
+          `  目标: ${isGroup ? "群" : "私聊"} ${targetId}\n` +
+          `  下次触发: ${new Date(nextFire).toLocaleString("zh-CN")}\n` +
+          `取消: /cron cancel ${id}`,
       );
     },
   });

@@ -35,7 +35,9 @@ export function register(cmdSys: CommandSystem): void {
       const level = ctx.args[0] as "debug" | "info" | "warn" | "error";
       const validLevels = ["debug", "info", "warn", "error"];
       if (!validLevels.includes(level)) {
-        await ctx.reply(`无效日志级别: ${level} (可选: ${validLevels.join("|")})`);
+        await ctx.reply(
+          `无效日志级别: ${level} (可选: ${validLevels.join("|")})`,
+        );
         return;
       }
       setLogLevel(level);
@@ -66,4 +68,3 @@ export function register(cmdSys: CommandSystem): void {
     },
   });
 }
-

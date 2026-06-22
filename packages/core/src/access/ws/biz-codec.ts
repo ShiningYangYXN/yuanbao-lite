@@ -109,7 +109,10 @@ export const BIZ_MSG_TYPES = {
   QueryBotInfoRsp: `${PKG}.QueryBotInfoRsp`,
 } as const;
 
-export function encodeBizPB(key: string, value: Record<string, unknown>): Uint8Array | null {
+export function encodeBizPB(
+  key: string,
+  value: Record<string, unknown>,
+): Uint8Array | null {
   try {
     const type = getRoot().lookupType(key);
     const message = type.create(value);
@@ -121,7 +124,10 @@ export function encodeBizPB(key: string, value: Record<string, unknown>): Uint8A
   }
 }
 
-export function decodeBizPB(key: string, data: Uint8Array | ArrayBuffer): unknown {
+export function decodeBizPB(
+  key: string,
+  data: Uint8Array | ArrayBuffer,
+): unknown {
   try {
     const buf = data instanceof Uint8Array ? data : new Uint8Array(data);
     const type = getRoot().lookupType(key);
@@ -132,7 +138,9 @@ export function decodeBizPB(key: string, data: Uint8Array | ArrayBuffer): unknow
 }
 
 /** Convert TS MsgBodyElement[] to protobuf format. */
-export function toProtoMsgBody(elements: YuanbaoMsgBodyElement[]): Record<string, unknown>[] {
+export function toProtoMsgBody(
+  elements: YuanbaoMsgBodyElement[],
+): Record<string, unknown>[] {
   return elements.map((el) => {
     const c = el.msg_content;
     return {
@@ -157,7 +165,9 @@ export function toProtoMsgBody(elements: YuanbaoMsgBodyElement[]): Record<string
 }
 
 /** Convert protobuf format message body back to TS MsgBodyElement[]. */
-export function fromProtoMsgBody(elements: Array<Record<string, unknown>>): YuanbaoMsgBodyElement[] {
+export function fromProtoMsgBody(
+  elements: Array<Record<string, unknown>>,
+): YuanbaoMsgBodyElement[] {
   if (!elements || !Array.isArray(elements)) {
     return [];
   }
@@ -167,24 +177,34 @@ export function fromProtoMsgBody(elements: Array<Record<string, unknown>>): Yuan
 
     if (mc?.text) content.text = mc.text;
     if (mc?.uuid) content.uuid = mc.uuid;
-    if (mc?.imageFormat !== undefined && mc?.imageFormat !== null) content.image_format = mc.imageFormat;
+    if (mc?.imageFormat !== undefined && mc?.imageFormat !== null)
+      content.image_format = mc.imageFormat;
     if (mc?.data) content.data = mc.data;
     if (mc?.desc) content.desc = mc.desc;
     if (mc?.ext) content.ext = mc.ext;
     if (mc?.sound) content.sound = mc.sound;
-    if (mc?.imageInfoArray && (mc.imageInfoArray as unknown[]).length > 0) content.image_info_array = mc.imageInfoArray;
+    if (mc?.imageInfoArray && (mc.imageInfoArray as unknown[]).length > 0)
+      content.image_info_array = mc.imageInfoArray;
     // Note: proto3 default value for uint32 is 0, so index=0 is omitted by protobuf decoding.
     // We must restore it for TIMFaceElem stickers where index=0 + data is present.
     if (mc?.index !== undefined && mc?.index !== null) {
       content.index = mc.index;
-    } else if ((el.msgType === "TIMFaceElem" || el.msgType === "TIMFaceElemTyping") && mc?.data) {
+    } else if (
+      (el.msgType === "TIMFaceElem" || el.msgType === "TIMFaceElemTyping") &&
+      mc?.data
+    ) {
       // Protobuf omitted index=0 for a sticker (TIMFaceElem with data) — restore it
       content.index = 0;
     }
     if (mc?.url) content.url = mc.url;
-    if (mc?.fileSize !== undefined && mc?.fileSize !== null) content.file_size = mc.fileSize;
+    if (mc?.fileSize !== undefined && mc?.fileSize !== null)
+      content.file_size = mc.fileSize;
     if (mc?.fileName) content.file_name = mc.fileName;
-    if (mc?.extMap && Object.keys(mc.extMap as Record<string, unknown>).length > 0) content.ext_map = mc.extMap;
+    if (
+      mc?.extMap &&
+      Object.keys(mc.extMap as Record<string, unknown>).length > 0
+    )
+      content.ext_map = mc.extMap;
 
     return {
       msg_type: (el.msgType as string) || "",
@@ -193,13 +213,18 @@ export function fromProtoMsgBody(elements: Array<Record<string, unknown>>): Yuan
   });
 }
 
-function toProtoLogExt(logExt?: YuanbaoLogInfoExt, traceId?: string): { traceId: string } | undefined {
+function toProtoLogExt(
+  logExt?: YuanbaoLogInfoExt,
+  traceId?: string,
+): { traceId: string } | undefined {
   const resolvedTraceId = traceId?.trim() || logExt?.trace_id?.trim();
   return resolvedTraceId ? { traceId: resolvedTraceId } : undefined;
 }
 
 /** Encode a C2C send message request. */
-export function encodeSendC2CMessageReq(data: WsSendC2CMessageData): Uint8Array | null {
+export function encodeSendC2CMessageReq(
+  data: WsSendC2CMessageData,
+): Uint8Array | null {
   const logExt = toProtoLogExt(undefined, data.trace_id);
   return encodeBizPB(BIZ_MSG_TYPES.SendC2CMessageReq, {
     msgId: data.msg_id ?? "",
@@ -210,13 +235,17 @@ export function encodeSendC2CMessageReq(data: WsSendC2CMessageData): Uint8Array 
     ...(data.msg_seq !== undefined ? { msgSeq: data.msg_seq } : {}),
     msgBody: toProtoMsgBody(data.msg_body),
     ...(data.ref_msg_id ? { refMsgId: data.ref_msg_id } : {}),
-    ...(data.cloud_custom_data ? { cloudCustomData: data.cloud_custom_data } : {}),
+    ...(data.cloud_custom_data
+      ? { cloudCustomData: data.cloud_custom_data }
+      : {}),
     ...(logExt ? { logExt } : {}),
   });
 }
 
 /** Encode group message send request. */
-export function encodeSendGroupMessageReq(data: WsSendGroupMessageData): Uint8Array | null {
+export function encodeSendGroupMessageReq(
+  data: WsSendGroupMessageData,
+): Uint8Array | null {
   const logExt = toProtoLogExt(undefined, data.trace_id);
   return encodeBizPB(BIZ_MSG_TYPES.SendGroupMessageReq, {
     msgId: data.msg_id ?? "",
@@ -227,13 +256,17 @@ export function encodeSendGroupMessageReq(data: WsSendGroupMessageData): Uint8Ar
     msgBody: toProtoMsgBody(data.msg_body),
     refMsgId: data.ref_msg_id ?? "",
     ...(data.msg_seq !== undefined ? { msgSeq: data.msg_seq } : {}),
-    ...(data.cloud_custom_data ? { cloudCustomData: data.cloud_custom_data } : {}),
+    ...(data.cloud_custom_data
+      ? { cloudCustomData: data.cloud_custom_data }
+      : {}),
     ...(logExt ? { logExt } : {}),
   });
 }
 
 /** Encode direct chat reply status heartbeat request. */
-export function encodeSendPrivateHeartbeatReq(data: WsSendPrivateHeartbeatData): Uint8Array | null {
+export function encodeSendPrivateHeartbeatReq(
+  data: WsSendPrivateHeartbeatData,
+): Uint8Array | null {
   return encodeBizPB(BIZ_MSG_TYPES.SendPrivateHeartbeatReq, {
     fromAccount: data.from_account,
     fromtAccount: data.from_account,
@@ -243,7 +276,9 @@ export function encodeSendPrivateHeartbeatReq(data: WsSendPrivateHeartbeatData):
 }
 
 /** Encode group chat reply status heartbeat request. */
-export function encodeSendGroupHeartbeatReq(data: WsSendGroupHeartbeatData): Uint8Array | null {
+export function encodeSendGroupHeartbeatReq(
+  data: WsSendGroupHeartbeatData,
+): Uint8Array | null {
   return encodeBizPB(BIZ_MSG_TYPES.SendGroupHeartbeatReq, {
     fromAccount: data.from_account,
     toAccount: data.to_account,
@@ -254,15 +289,25 @@ export function encodeSendGroupHeartbeatReq(data: WsSendGroupHeartbeatData): Uin
 }
 
 /** Decode inbound message proto bytes into YuanbaoInboundMessage. */
-export function decodeInboundMessage(data: Uint8Array | ArrayBuffer): YuanbaoInboundMessage | null {
-  const decoded = decodeBizPB(BIZ_MSG_TYPES.InboundMessagePush, data) as PBInboundMessage | null;
+export function decodeInboundMessage(
+  data: Uint8Array | ArrayBuffer,
+): YuanbaoInboundMessage | null {
+  const decoded = decodeBizPB(
+    BIZ_MSG_TYPES.InboundMessagePush,
+    data,
+  ) as PBInboundMessage | null;
   if (!decoded) {
     return null;
   }
 
-  const msgBody = decoded.msgBody ? fromProtoMsgBody(decoded.msgBody) : undefined;
+  const msgBody = decoded.msgBody
+    ? fromProtoMsgBody(decoded.msgBody)
+    : undefined;
   const traceId = decoded.logExt?.traceId?.trim();
-  const seqId = decoded.msgSeq !== undefined && decoded.msgSeq !== null ? String(decoded.msgSeq) : undefined;
+  const seqId =
+    decoded.msgSeq !== undefined && decoded.msgSeq !== null
+      ? String(decoded.msgSeq)
+      : undefined;
 
   return {
     callback_command: decoded.callbackCommand || undefined,
@@ -290,82 +335,151 @@ export function decodeInboundMessage(data: Uint8Array | ArrayBuffer): YuanbaoInb
 }
 
 /** Decode C2C outbound response. */
-export function decodeSendC2CMessageRsp(data: Uint8Array | ArrayBuffer, msgId: string): WsSendMessageResponse | null {
-  const decoded = decodeBizPB(BIZ_MSG_TYPES.SendC2CMessageRsp, data) as PBCodeMessageRsp | null;
+export function decodeSendC2CMessageRsp(
+  data: Uint8Array | ArrayBuffer,
+  msgId: string,
+): WsSendMessageResponse | null {
+  const decoded = decodeBizPB(
+    BIZ_MSG_TYPES.SendC2CMessageRsp,
+    data,
+  ) as PBCodeMessageRsp | null;
   if (!decoded) return null;
   return { msgId, code: decoded.code || 0, message: decoded.message || "" };
 }
 
 /** Decode group message outbound response. */
-export function decodeSendGroupMessageRsp(data: Uint8Array | ArrayBuffer, msgId: string): WsSendMessageResponse | null {
-  const decoded = decodeBizPB(BIZ_MSG_TYPES.SendGroupMessageRsp, data) as PBCodeMessageRsp | null;
+export function decodeSendGroupMessageRsp(
+  data: Uint8Array | ArrayBuffer,
+  msgId: string,
+): WsSendMessageResponse | null {
+  const decoded = decodeBizPB(
+    BIZ_MSG_TYPES.SendGroupMessageRsp,
+    data,
+  ) as PBCodeMessageRsp | null;
   if (!decoded) return null;
   return { msgId, code: decoded.code || 0, message: decoded.message || "" };
 }
 
 /** Decode outbound response (compatible with both C2C and group). */
-export function decodeSendMessageRsp(data: Uint8Array | ArrayBuffer, msgId: string): WsSendMessageResponse | null {
-  return decodeSendC2CMessageRsp(data, msgId) ?? decodeSendGroupMessageRsp(data, msgId);
+export function decodeSendMessageRsp(
+  data: Uint8Array | ArrayBuffer,
+  msgId: string,
+): WsSendMessageResponse | null {
+  return (
+    decodeSendC2CMessageRsp(data, msgId) ??
+    decodeSendGroupMessageRsp(data, msgId)
+  );
 }
 
 /** Encode query group info request. */
-export function encodeQueryGroupInfoReq(data: WsQueryGroupInfoData): Uint8Array | null {
-  return encodeBizPB(BIZ_MSG_TYPES.QueryGroupInfoReq, { groupCode: data.group_code });
+export function encodeQueryGroupInfoReq(
+  data: WsQueryGroupInfoData,
+): Uint8Array | null {
+  return encodeBizPB(BIZ_MSG_TYPES.QueryGroupInfoReq, {
+    groupCode: data.group_code,
+  });
 }
 
 /** Decode query group info response. */
-export function decodeQueryGroupInfoRsp(data: Uint8Array | ArrayBuffer, msgId: string): WsQueryGroupInfoResponse | null {
-  const decoded = decodeBizPB(BIZ_MSG_TYPES.QueryGroupInfoRsp, data) as PBQueryGroupInfoRsp | null;
+export function decodeQueryGroupInfoRsp(
+  data: Uint8Array | ArrayBuffer,
+  msgId: string,
+): WsQueryGroupInfoResponse | null {
+  const decoded = decodeBizPB(
+    BIZ_MSG_TYPES.QueryGroupInfoRsp,
+    data,
+  ) as PBQueryGroupInfoRsp | null;
   if (!decoded) return null;
   const gi = decoded.groupInfo;
   return {
     msgId,
     code: decoded.code || 0,
     msg: decoded.msg || "",
-    group_info: gi ? {
-      group_name: gi.groupName || "",
-      group_owner_user_id: gi.groupOwnerUserId || "",
-      group_owner_nickname: gi.groupOwnerNickname || "",
-      group_size: gi.groupSize || 0,
-    } : undefined,
+    group_info: gi
+      ? {
+          group_name: gi.groupName || "",
+          group_owner_user_id: gi.groupOwnerUserId || "",
+          group_owner_nickname: gi.groupOwnerNickname || "",
+          group_size: gi.groupSize || 0,
+        }
+      : undefined,
   };
 }
 
 /** Encode get group member list request. */
-export function encodeGetGroupMemberListReq(data: WsGetGroupMemberListData): Uint8Array | null {
-  return encodeBizPB(BIZ_MSG_TYPES.GetGroupMemberListReq, { groupCode: data.group_code });
+export function encodeGetGroupMemberListReq(
+  data: WsGetGroupMemberListData,
+): Uint8Array | null {
+  return encodeBizPB(BIZ_MSG_TYPES.GetGroupMemberListReq, {
+    groupCode: data.group_code,
+  });
 }
 
 /** Decode get group member list response. */
-export function decodeGetGroupMemberListRsp(data: Uint8Array | ArrayBuffer, msgId: string): WsGetGroupMemberListResponse | null {
-  const decoded = decodeBizPB(BIZ_MSG_TYPES.GetGroupMemberListRsp, data) as PBGetGroupMemberListRsp | null;
+export function decodeGetGroupMemberListRsp(
+  data: Uint8Array | ArrayBuffer,
+  msgId: string,
+): WsGetGroupMemberListResponse | null {
+  const decoded = decodeBizPB(
+    BIZ_MSG_TYPES.GetGroupMemberListRsp,
+    data,
+  ) as PBGetGroupMemberListRsp | null;
   if (!decoded) return null;
   const memberList = Array.isArray(decoded.memberList)
-    ? decoded.memberList.map(m => ({
-      user_id: m.userId || "",
-      nick_name: m.nickName || "",
-      user_type: m.userType || 0,
-    }))
+    ? decoded.memberList.map((m) => ({
+        user_id: m.userId || "",
+        nick_name: m.nickName || "",
+        user_type: m.userType || 0,
+      }))
     : [];
-  return { msgId, code: decoded.code || 0, message: decoded.message || "", member_list: memberList };
+  return {
+    msgId,
+    code: decoded.code || 0,
+    message: decoded.message || "",
+    member_list: memberList,
+  };
 }
 
 /** Decode direct chat reply status heartbeat response. */
-export function decodeSendPrivateHeartbeatRsp(data: Uint8Array | ArrayBuffer, msgId: string): WsHeartbeatResponse | null {
-  const decoded = decodeBizPB(BIZ_MSG_TYPES.SendPrivateHeartbeatRsp, data) as PBCodeMsgRsp | null;
+export function decodeSendPrivateHeartbeatRsp(
+  data: Uint8Array | ArrayBuffer,
+  msgId: string,
+): WsHeartbeatResponse | null {
+  const decoded = decodeBizPB(
+    BIZ_MSG_TYPES.SendPrivateHeartbeatRsp,
+    data,
+  ) as PBCodeMsgRsp | null;
   if (!decoded) return null;
-  return { msgId, code: decoded.code || 0, msg: decoded.msg || "", message: decoded.msg || "" };
+  return {
+    msgId,
+    code: decoded.code || 0,
+    msg: decoded.msg || "",
+    message: decoded.msg || "",
+  };
 }
 
 /** Decode group chat reply status heartbeat response. */
-export function decodeSendGroupHeartbeatRsp(data: Uint8Array | ArrayBuffer, msgId: string): WsHeartbeatResponse | null {
-  const decoded = decodeBizPB(BIZ_MSG_TYPES.SendGroupHeartbeatRsp, data) as PBCodeMsgRsp | null;
+export function decodeSendGroupHeartbeatRsp(
+  data: Uint8Array | ArrayBuffer,
+  msgId: string,
+): WsHeartbeatResponse | null {
+  const decoded = decodeBizPB(
+    BIZ_MSG_TYPES.SendGroupHeartbeatRsp,
+    data,
+  ) as PBCodeMsgRsp | null;
   if (!decoded) return null;
-  return { msgId, code: decoded.code || 0, msg: decoded.msg || "", message: decoded.msg || "" };
+  return {
+    msgId,
+    code: decoded.code || 0,
+    msg: decoded.msg || "",
+    message: decoded.msg || "",
+  };
 }
 
 /** Encode SyncInformationReq. */
-export function encodeSyncInformationReq(data: WsSyncInformationData): Uint8Array | null {
+export function encodeSyncInformationReq(
+  data: WsSyncInformationData,
+): Uint8Array | null {
   return encodeBizPB(BIZ_MSG_TYPES.SyncInformationReq, {
     syncType: data.syncType,
     botVersion: data.botVersion,
@@ -375,8 +489,14 @@ export function encodeSyncInformationReq(data: WsSyncInformationData): Uint8Arra
 }
 
 /** Decode SyncInformationRsp. */
-export function decodeSyncInformationRsp(data: Uint8Array | ArrayBuffer, msgId: string): WsSyncInformationResponse | null {
-  const decoded = decodeBizPB(BIZ_MSG_TYPES.SyncInformationRsp, data) as PBSyncInformationRsp | null;
+export function decodeSyncInformationRsp(
+  data: Uint8Array | ArrayBuffer,
+  msgId: string,
+): WsSyncInformationResponse | null {
+  const decoded = decodeBizPB(
+    BIZ_MSG_TYPES.SyncInformationRsp,
+    data,
+  ) as PBSyncInformationRsp | null;
   if (!decoded) return null;
   return { msgId, code: decoded.code || 0, msg: decoded.msg || "" };
 }
@@ -393,8 +513,14 @@ export function encodeQueryBotInfoReq(botId: string): Uint8Array | null {
 }
 
 /** Decode QueryBotInfoRsp. */
-export function decodeQueryBotInfoRsp(data: Uint8Array | ArrayBuffer, msgId: string): WsQueryBotInfoResponse | null {
-  const decoded = decodeBizPB(BIZ_MSG_TYPES.QueryBotInfoRsp, data) as PBQueryBotInfoRsp | null;
+export function decodeQueryBotInfoRsp(
+  data: Uint8Array | ArrayBuffer,
+  msgId: string,
+): WsQueryBotInfoResponse | null {
+  const decoded = decodeBizPB(
+    BIZ_MSG_TYPES.QueryBotInfoRsp,
+    data,
+  ) as PBQueryBotInfoRsp | null;
   if (!decoded) return null;
   return {
     msgId,

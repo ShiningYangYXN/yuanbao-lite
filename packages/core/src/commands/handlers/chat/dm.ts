@@ -31,7 +31,9 @@ export function register(cmdSys: CommandSystem): void {
       ctx.bot.getContactStore().touch(rawUserId);
       try {
         await ctx.bot.sendDirectMessage(userId, text);
-        await ctx.reply(`✅ 已发送私聊消息给 ${rawUserId === userId ? userId : `${rawUserId} (${userId})`}`);
+        await ctx.reply(
+          `✅ 已发送私聊消息给 ${rawUserId === userId ? userId : `${rawUserId} (${userId})`}`,
+        );
       } catch (err) {
         await ctx.reply(`❌ 发送失败: ${(err as Error).message}`);
       }

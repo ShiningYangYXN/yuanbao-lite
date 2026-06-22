@@ -25,11 +25,13 @@ const FETCH_TIMEOUT_MS = 15000;
  * Try Jina Reader to fetch and clean a URL.
  * Returns clean markdown text, or null on failure.
  */
-async function tryJinaReader(url: string): Promise<{ title: string; content: string } | null> {
+async function tryJinaReader(
+  url: string,
+): Promise<{ title: string; content: string } | null> {
   try {
     const response = await fetch(`${JINA_READER_URL}${url}`, {
       headers: {
-        "Accept": "text/markdown",
+        Accept: "text/markdown",
         "X-Return-Format": "markdown",
       },
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
@@ -72,14 +74,16 @@ async function tryJinaReader(url: string): Promise<{ title: string; content: str
  * Fallback: use defuddle to clean HTML locally.
  * Uses linkedom for DOM parsing (Node.js environment).
  */
-async function tryDefuddle(url: string): Promise<{ title: string; content: string } | null> {
+async function tryDefuddle(
+  url: string,
+): Promise<{ title: string; content: string } | null> {
   try {
     const { parseHTML } = await import("linkedom");
     const Defuddle = (await import("defuddle/node")).Defuddle;
     const response = await fetch(url, {
       headers: {
         "User-Agent": "Mozilla/5.0 (compatible; yuanbao-lite/11.3)",
-        "Accept": "text/html,application/xhtml+xml",
+        Accept: "text/html,application/xhtml+xml",
         "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
       },
       redirect: "follow",
@@ -106,7 +110,8 @@ export function register(cmdSys: CommandSystem): void {
   cmdSys.register({
     name: "visit",
     aliases: ["访问", "fetch"],
-    description: "访问网页并清洗内容注入上下文（Jina Reader 优先，defuddle 兜底）",
+    description:
+      "访问网页并清洗内容注入上下文（Jina Reader 优先，defuddle 兜底）",
     usage: "/visit <URL>",
     category: "utility" as CommandCategory,
     handler: async (ctx) => {
@@ -136,7 +141,9 @@ export function register(cmdSys: CommandSystem): void {
       }
 
       if (!result) {
-        await ctx.reply(`❌ 无法提取网页内容（Jina Reader 和 defuddle 均失败）`);
+        await ctx.reply(
+          `❌ 无法提取网页内容（Jina Reader 和 defuddle 均失败）`,
+        );
         return;
       }
 
@@ -145,34 +152,40 @@ export function register(cmdSys: CommandSystem): void {
 
       // Trim to max length
       if (content.length > MAX_CONTENT_LENGTH) {
-        content = content.substring(0, MAX_CONTENT_LENGTH) + "\n\n...(内容已截断，完整内容请访问原始URL)";
+        content =
+          content.substring(0, MAX_CONTENT_LENGTH) +
+          "\n\n...(内容已截断，完整内容请访问原始URL)";
       }
 
       // Store in content-store for /query reference
-      const { storeContent } = await import("../../../business/content-store.js");
+      const { storeContent } =
+        await import("../../../business/content-store.js");
       const fullContent = `标题: ${title}\nURL: ${url}\n\n${content}`;
       const contentId = storeContent("web_page", fullContent, url);
 
       // Inject into LLM context
       const engine = ctx.bot.getLlmEngine();
       if (engine) {
-        const convKey = ctx.isGroup && ctx.groupCode
-          ? `group:${ctx.groupCode}`
-          : `dm:${ctx.message.fromUserId}`;
-        engine.getConversationManager().addUserMessage(
-          convKey,
-          `[网页内容 ${contentId}] ${url}\n${fullContent}`,
-        );
+        const convKey =
+          ctx.isGroup && ctx.groupCode
+            ? `group:${ctx.groupCode}`
+            : `dm:${ctx.message.fromUserId}`;
+        engine
+          .getConversationManager()
+          .addUserMessage(
+            convKey,
+            `[网页内容 ${contentId}] ${url}\n${fullContent}`,
+          );
       }
 
       const preview = content.substring(0, 200).replace(/\n/g, " ");
       await ctx.reply(
         `✅ 网页内容已注入上下文 [${contentId}] (via ${method})\n` +
-        `标题: ${title}\n` +
-        `URL: ${url}\n` +
-        `内容长度: ${content.length} 字符\n` +
-        `预览: ${preview}${content.length > 200 ? "..." : ""}\n\n` +
-        `LLM 现在可以基于此内容回复。使用 /query ${contentId} 查看完整内容。`,
+          `标题: ${title}\n` +
+          `URL: ${url}\n` +
+          `内容长度: ${content.length} 字符\n` +
+          `预览: ${preview}${content.length > 200 ? "..." : ""}\n\n` +
+          `LLM 现在可以基于此内容回复。使用 /query ${contentId} 查看完整内容。`,
       );
     },
   });

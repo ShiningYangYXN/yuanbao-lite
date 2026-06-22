@@ -243,7 +243,10 @@ export function getTokenStatus(accountId: string): {
   expiresAt: number | null;
 } {
   if (tokenFetchPromises.has(accountId)) {
-    return { status: "refreshing", expiresAt: tokenCacheMap.get(accountId)?.expiresAt ?? null };
+    return {
+      status: "refreshing",
+      expiresAt: tokenCacheMap.get(accountId)?.expiresAt ?? null,
+    };
   }
   const cached = tokenCacheMap.get(accountId);
   if (!cached) {
@@ -275,7 +278,8 @@ export async function computeSignature(params: {
   appKey: string;
   appSecret: string;
 }): Promise<string> {
-  const plain = params.nonce + params.timestamp + params.appKey + params.appSecret;
+  const plain =
+    params.nonce + params.timestamp + params.appKey + params.appSecret;
   const keyBytes = encodeUtf8(params.appSecret);
   const msgBytes = encodeUtf8(plain);
 
@@ -294,7 +298,11 @@ export async function computeSignature(params: {
     false,
     ["sign"],
   );
-  const sigBuf = await cryptoObj.subtle.sign("HMAC", key, msgBytes as BufferSource);
+  const sigBuf = await cryptoObj.subtle.sign(
+    "HMAC",
+    key,
+    msgBytes as BufferSource,
+  );
   return bytesToHex(new Uint8Array(sigBuf));
 }
 
@@ -339,10 +347,17 @@ async function doFetchSignToken(
       .toISOString()
       .replace("Z", "+08:00")
       .replace(/\.\d{3}/, "");
-    const signature = await computeSignature({ nonce, timestamp, appKey, appSecret });
+    const signature = await computeSignature({
+      nonce,
+      timestamp,
+      appKey,
+      appSecret,
+    });
     const body = { app_key: appKey, nonce, signature, timestamp };
 
-    mlog.info(`signing token: url=${url}${attempt > 0 ? ` (retry ${attempt}/${SIGN_MAX_RETRIES})` : ""}`);
+    mlog.info(
+      `signing token: url=${url}${attempt > 0 ? ` (retry ${attempt}/${SIGN_MAX_RETRIES})` : ""}`,
+    );
 
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
@@ -362,10 +377,16 @@ async function doFetchSignToken(
     });
 
     if (!response.ok) {
-      throw new Error(`sign-token HTTP error: ${response.status} ${response.statusText}`);
+      throw new Error(
+        `sign-token HTTP error: ${response.status} ${response.statusText}`,
+      );
     }
 
-    const result = (await response.json()) as { code: number; data: SignTokenData; msg: string };
+    const result = (await response.json()) as {
+      code: number;
+      data: SignTokenData;
+      msg: string;
+    };
 
     if (result.code === 0) {
       mlog.info(`sign-token success: bot_id=${result.data.bot_id}`);
@@ -373,8 +394,10 @@ async function doFetchSignToken(
     }
 
     if (result.code === RETRYABLE_SIGN_CODE && attempt < SIGN_MAX_RETRIES) {
-      mlog.warn(`sign-token retryable: code=${result.code}, retrying in ${SIGN_RETRY_DELAY_MS}ms`);
-      await new Promise(r => setTimeout(r, SIGN_RETRY_DELAY_MS));
+      mlog.warn(
+        `sign-token retryable: code=${result.code}, retrying in ${SIGN_RETRY_DELAY_MS}ms`,
+      );
+      await new Promise((r) => setTimeout(r, SIGN_RETRY_DELAY_MS));
       continue;
     }
 
@@ -399,15 +422,21 @@ function scheduleTokenRefresh(
 
   const rawMs = durationSec * 1000 - CACHE_REFRESH_MARGIN_MS;
   const refreshAfterMs = Math.min(Math.max(rawMs, 60_000), MAX_SAFE_TIMEOUT_MS);
-  mlog.info(`[${account.accountId}][token-timer] scheduled refresh: ${Math.round(refreshAfterMs / 1000)}s later`);
+  mlog.info(
+    `[${account.accountId}][token-timer] scheduled refresh: ${Math.round(refreshAfterMs / 1000)}s later`,
+  );
 
   const timer = setTimeout(async () => {
     tokenRefreshTimers.delete(account.accountId);
     try {
-      mlog.info(`[${account.accountId}][token-timer] scheduled refresh triggered`);
+      mlog.info(
+        `[${account.accountId}][token-timer] scheduled refresh triggered`,
+      );
       await forceRefreshSignToken(account, log);
     } catch (err) {
-      mlog.error(`[${account.accountId}][token-timer] scheduled refresh failed: ${String(err)}`);
+      mlog.error(
+        `[${account.accountId}][token-timer] scheduled refresh failed: ${String(err)}`,
+      );
     }
   }, refreshAfterMs);
 
@@ -435,7 +464,9 @@ export async function getSignToken(
   const cached = tokenCacheMap.get(account.accountId);
   if (cached && cached.expiresAt > Date.now()) {
     const remainSec = Math.round((cached.expiresAt - Date.now()) / 1000);
-    tlog.info(`[${account.accountId}] using cached token (${remainSec}s remaining)`);
+    tlog.info(
+      `[${account.accountId}] using cached token (${remainSec}s remaining)`,
+    );
     return cached.data;
   }
 
@@ -451,7 +482,10 @@ export async function getSignToken(
       const data = await doFetchSignToken(account, log);
       const ttlMs = data.duration > 0 ? data.duration * 1000 : 0;
       if (ttlMs > 0) {
-        tokenCacheMap.set(account.accountId, { data, expiresAt: Date.now() + ttlMs });
+        tokenCacheMap.set(account.accountId, {
+          data,
+          expiresAt: Date.now() + ttlMs,
+        });
         if (data.bot_id) {
           account.botId = data.bot_id;
         }
@@ -472,7 +506,9 @@ export async function forceRefreshSignToken(
   log?: Log,
 ): Promise<SignTokenData> {
   const flog = createLog("http", log);
-  flog.warn(`[${account.accountId}][force-refresh] clearing cache and re-signing token`);
+  flog.warn(
+    `[${account.accountId}][force-refresh] clearing cache and re-signing token`,
+  );
   clearSignTokenCache(account.accountId);
   tokenFetchPromises.delete(account.accountId);
   return getSignToken(account, log);
@@ -536,19 +572,29 @@ export async function yuanbaoPost<T>(
     });
 
     if (response.status === 401 && attempt < HTTP_AUTH_RETRY_MAX) {
-      plog.warn(`[post][${account.accountId}] ${path} received 401, refreshing token`);
+      plog.warn(
+        `[post][${account.accountId}] ${path} received 401, refreshing token`,
+      );
       await forceRefreshSignToken(account, log);
       continue;
     }
 
     if (!response.ok) {
-      throw new Error(`[yuanbao-api][POST] ${path} HTTP ${response.status} ${response.statusText}`);
+      throw new Error(
+        `[yuanbao-api][POST] ${path} HTTP ${response.status} ${response.statusText}`,
+      );
     }
 
-    const json = (await response.json()) as { code?: number; data?: T; msg?: string };
+    const json = (await response.json()) as {
+      code?: number;
+      data?: T;
+      msg?: string;
+    };
 
     if (json.code !== 0 && json.code !== undefined) {
-      throw new Error(`[yuanbao-api][POST] ${path} business error: code=${json.code}, msg=${json.msg}`);
+      throw new Error(
+        `[yuanbao-api][POST] ${path} business error: code=${json.code}, msg=${json.msg}`,
+      );
     }
 
     plog.info(`[post][${account.accountId}] ${path} succeeded`);
@@ -565,7 +611,9 @@ export async function yuanbaoGet<T>(
   log?: Log,
 ): Promise<T> {
   const glog = createLog("http", log);
-  const url = applyProxy(`https://${account.apiDomain}${path}${params ? `?${new URLSearchParams(params).toString()}` : ""}`);
+  const url = applyProxy(
+    `https://${account.apiDomain}${path}${params ? `?${new URLSearchParams(params).toString()}` : ""}`,
+  );
 
   for (let attempt = 0; attempt <= HTTP_AUTH_RETRY_MAX; attempt++) {
     const authHeaders = await getAuthHeaders(account, log);
@@ -579,19 +627,29 @@ export async function yuanbaoGet<T>(
     });
 
     if (response.status === 401 && attempt < HTTP_AUTH_RETRY_MAX) {
-      glog.warn(`[get][${account.accountId}] ${path} received 401, refreshing token`);
+      glog.warn(
+        `[get][${account.accountId}] ${path} received 401, refreshing token`,
+      );
       await forceRefreshSignToken(account, log);
       continue;
     }
 
     if (!response.ok) {
-      throw new Error(`[yuanbao-api][GET] ${path} HTTP ${response.status} ${response.statusText}`);
+      throw new Error(
+        `[yuanbao-api][GET] ${path} HTTP ${response.status} ${response.statusText}`,
+      );
     }
 
-    const json = (await response.json()) as { code?: number; data?: T; msg?: string };
+    const json = (await response.json()) as {
+      code?: number;
+      data?: T;
+      msg?: string;
+    };
 
     if (json.code !== 0 && json.code !== undefined) {
-      throw new Error(`[yuanbao-api][GET] ${path} business error: code=${json.code}, msg=${json.msg}`);
+      throw new Error(
+        `[yuanbao-api][GET] ${path} business error: code=${json.code}, msg=${json.msg}`,
+      );
     }
 
     return (json.data ?? json) as T;

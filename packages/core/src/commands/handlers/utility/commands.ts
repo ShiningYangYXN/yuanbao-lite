@@ -18,22 +18,26 @@ export function register(cmdSys: CommandSystem): void {
     usage: "/commands   (列出所有命令名和别名)",
     category: "utility" as CommandCategory,
     handler: async (ctx) => {
-      const visible = cmdSys.getAll().filter(c => !c.hidden);
+      const visible = cmdSys.getAll().filter((c) => !c.hidden);
       if (visible.length === 0) {
         await ctx.reply("暂无可用命令");
         return;
       }
       if (ctx.useTable) {
-        const rows = visible.map(cmd => [
+        const rows = visible.map((cmd) => [
           `${cmdSys.config.prefix}${cmd.name}`,
           cmd.aliases?.length ? cmd.aliases.join(", ") : "",
           cmd.description || "",
         ]);
-        await ctx.reply(`📋 所有命令 (${visible.length} 个)\n${await ctx.formatTable(["命令", "别名", "描述"], rows)}`);
+        await ctx.reply(
+          `📋 所有命令 (${visible.length} 个)\n${await ctx.formatTable(["命令", "别名", "描述"], rows)}`,
+        );
       } else {
         const lines: string[] = [`📋 所有命令 (${visible.length} 个):`];
         for (const cmd of visible) {
-          const aliases = cmd.aliases?.length ? ` (${cmd.aliases.join(", ")})` : "";
+          const aliases = cmd.aliases?.length
+            ? ` (${cmd.aliases.join(", ")})`
+            : "";
           lines.push(`  ${cmdSys.config.prefix}${cmd.name}${aliases}`);
         }
         await ctx.reply(lines.join("\n"));

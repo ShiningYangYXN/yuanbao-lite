@@ -14,7 +14,8 @@ import type {
 } from "./types.js";
 
 const DEFAULT_API_DOMAIN = "bot.yuanbao.tencent.com";
-const DEFAULT_WS_GATEWAY_URL = "wss://bot-wss.yuanbao.tencent.com/wss/connection";
+const DEFAULT_WS_GATEWAY_URL =
+  "wss://bot-wss.yuanbao.tencent.com/wss/connection";
 
 function resolveOverflowPolicy(raw: string | undefined): YuanbaoOverflowPolicy {
   return raw === "stop" ? "stop" : "split";
@@ -65,11 +66,20 @@ export function resolveAccount(
 
   const wsGatewayUrl = config.wsUrl?.trim() || DEFAULT_WS_GATEWAY_URL;
   const wsMaxReconnectAttempts = 100;
-  const mediaMaxMb = config.mediaMaxMb && config.mediaMaxMb >= 1 ? config.mediaMaxMb : 20;
-  const historyLimit = config.historyLimit !== undefined && config.historyLimit >= 0 ? config.historyLimit : 100;
-  const disableBlockStreaming = config.disableBlockStreaming !== undefined ? config.disableBlockStreaming : false;
-  const requireMention = config.requireMention !== undefined ? config.requireMention : true;
-  const fallbackReply = config.fallbackReply?.trim() || "暂时无法解答，你可以换个问题问问我哦";
+  const mediaMaxMb =
+    config.mediaMaxMb && config.mediaMaxMb >= 1 ? config.mediaMaxMb : 20;
+  const historyLimit =
+    config.historyLimit !== undefined && config.historyLimit >= 0
+      ? config.historyLimit
+      : 100;
+  const disableBlockStreaming =
+    config.disableBlockStreaming !== undefined
+      ? config.disableBlockStreaming
+      : false;
+  const requireMention =
+    config.requireMention !== undefined ? config.requireMention : true;
+  const fallbackReply =
+    config.fallbackReply?.trim() || "暂时无法解答，你可以换个问题问问我哦";
   const markdownHintEnabled = config.markdownHintEnabled !== false;
   const enabled = config.enabled !== false;
   const configured = Boolean(appKey && appSecret);

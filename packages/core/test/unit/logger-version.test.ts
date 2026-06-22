@@ -12,7 +12,11 @@
 import { describe, it, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { createLog, setLogLevel, sanitize } from "../../src/logger.js";
-import { getVersion, getVersionString, versionReady } from "../../src/version.js";
+import {
+  getVersion,
+  getVersionString,
+  versionReady,
+} from "../../src/version.js";
 
 describe("Logger", () => {
   it("createLog returns module logger", () => {

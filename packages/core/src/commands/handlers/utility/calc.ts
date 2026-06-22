@@ -19,7 +19,9 @@ export function register(cmdSys: CommandSystem): void {
     category: "utility" as CommandCategory,
     handler: async (ctx) => {
       if (ctx.args.length === 0) {
-        await ctx.reply("用法: /calc <表达式>\n支持: + - * / % ** sqrt() sin() cos() log() 等");
+        await ctx.reply(
+          "用法: /calc <表达式>\n支持: + - * / % ** sqrt() sin() cos() log() 等",
+        );
         return;
       }
       const expr = ctx.args.join(" ");
@@ -32,19 +34,36 @@ export function register(cmdSys: CommandSystem): void {
         // Provide common math functions
         const sandbox = {
           sqrt: Math.sqrt,
-          sin: Math.sin, cos: Math.cos, tan: Math.tan,
-          asin: Math.asin, acos: Math.acos, atan: Math.atan,
-          log: Math.log, log2: Math.log2, log10: Math.log10,
-          exp: Math.exp, pow: Math.pow, abs: Math.abs,
-          floor: Math.floor, ceil: Math.ceil, round: Math.round,
-          max: Math.max, min: Math.min,
-          PI: Math.PI, E: Math.E,
+          sin: Math.sin,
+          cos: Math.cos,
+          tan: Math.tan,
+          asin: Math.asin,
+          acos: Math.acos,
+          atan: Math.atan,
+          log: Math.log,
+          log2: Math.log2,
+          log10: Math.log10,
+          exp: Math.exp,
+          pow: Math.pow,
+          abs: Math.abs,
+          floor: Math.floor,
+          ceil: Math.ceil,
+          round: Math.round,
+          max: Math.max,
+          min: Math.min,
+          PI: Math.PI,
+          E: Math.E,
         };
-        const fn = new Function(...Object.keys(sandbox), `"use strict"; return (${expr});`);
+        const fn = new Function(
+          ...Object.keys(sandbox),
+          `"use strict"; return (${expr});`,
+        );
         const result = fn(...Object.values(sandbox));
         if (typeof result === "number") {
           const formatted = Number.isFinite(result)
-            ? (Number.isInteger(result) ? String(result) : result.toFixed(10).replace(/\.?0+$/, ""))
+            ? Number.isInteger(result)
+              ? String(result)
+              : result.toFixed(10).replace(/\.?0+$/, "")
             : String(result);
           await ctx.reply(`🧮 ${expr} = ${formatted}`);
         } else {

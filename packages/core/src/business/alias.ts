@@ -49,8 +49,8 @@ export type AliasStoreConfig = {
 // ─── AliasStore ───
 
 export class AliasStore {
-  private aliases = new Map<string, AliasEntry>();   // alias -> entry
-  private idIndex = new Map<string, AliasEntry>();    // id -> entry
+  private aliases = new Map<string, AliasEntry>(); // alias -> entry
+  private idIndex = new Map<string, AliasEntry>(); // id -> entry
   private config: AliasStoreConfig;
   private log: ModuleLog;
   /**
@@ -90,7 +90,9 @@ export class AliasStore {
    */
   private getAdapter(): PersistenceAdapter {
     if (!this.config.persistencePath) {
-      throw new Error("AliasStore: persistencePath is required to use persistence");
+      throw new Error(
+        "AliasStore: persistencePath is required to use persistence",
+      );
     }
     if (this.config.persistenceAdapter) {
       return this.config.persistenceAdapter;
@@ -132,7 +134,9 @@ export class AliasStore {
     this.aliases.set(alias, entry);
     this.idIndex.set(id, entry);
 
-    this.log.info(`alias added: ${alias} -> ${id}${nickname ? ` (nick: ${nickname})` : ""}`);
+    this.log.info(
+      `alias added: ${alias} -> ${id}${nickname ? ` (nick: ${nickname})` : ""}`,
+    );
     this.maybeAutoSave();
 
     return entry;
@@ -243,7 +247,9 @@ export class AliasStore {
       const adapter = this.getAdapter();
       const data = [...this.aliases.values()];
       adapter.write(this.config.persistencePath, JSON.stringify(data, null, 2));
-      this.log.info(`aliases saved to ${this.config.persistencePath} (${data.length} entries)`);
+      this.log.info(
+        `aliases saved to ${this.config.persistencePath} (${data.length} entries)`,
+      );
       return true;
     } catch (err) {
       this.log.error(`failed to save aliases: ${(err as Error).message}`);
@@ -278,7 +284,9 @@ export class AliasStore {
         this.idIndex.set(entry.id, entry);
       }
 
-      this.log.info(`aliases loaded from ${this.config.persistencePath} (${data.length} entries)`);
+      this.log.info(
+        `aliases loaded from ${this.config.persistencePath} (${data.length} entries)`,
+      );
       return true;
     } catch (err) {
       this.log.error(`failed to load aliases: ${(err as Error).message}`);

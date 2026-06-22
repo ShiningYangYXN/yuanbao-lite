@@ -42,7 +42,11 @@ export type WsClientCallbacks = {
   onStateChange?: (state: WsClientState) => void;
   onError?: (error: Error) => void;
   onClose?: (code: number, reason: string) => void;
-  onKickout?: (data: { status: number; reason: string; otherDeviceName?: string }) => void;
+  onKickout?: (data: {
+    status: number;
+    reason: string;
+    otherDeviceName?: string;
+  }) => void;
   onAuthFailed?: (code: number) => Promise<WsConnectionConfig["auth"] | null>;
 };
 
@@ -82,7 +86,9 @@ export type WsSendGroupMessageData = {
   cloud_custom_data?: string;
 };
 
-export type WsOutboundMessageData = WsSendC2CMessageData | WsSendGroupMessageData;
+export type WsOutboundMessageData =
+  | WsSendC2CMessageData
+  | WsSendGroupMessageData;
 
 export const WS_HEARTBEAT = {
   UNKNOWN: 0,

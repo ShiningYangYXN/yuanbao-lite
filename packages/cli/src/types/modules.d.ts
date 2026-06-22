@@ -7,4 +7,3 @@ declare module "marked-terminal" {
   const markedTerminal: () => MarkedExtension;
   export default markedTerminal;
 }
-

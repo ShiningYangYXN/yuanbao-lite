@@ -46,12 +46,42 @@ export type ApiFormat =
   | "aws-bedrock-converse"
   | "azure-openai";
 
-export const API_FORMATS: Array<{ value: ApiFormat; label: string; defaultEndpoint: string; defaultModel: string }> = [
-  { value: "openai-chat-completions", label: "OpenAI Chat Completions (/v1/chat/completions)", defaultEndpoint: "https://api.openai.com/v1", defaultModel: "gpt-4o" },
-  { value: "anthropic-messages", label: "Anthropic Messages (/v1/messages) — Claude", defaultEndpoint: "https://api.anthropic.com", defaultModel: "claude-sonnet-4-20250514" },
-  { value: "google-gemini-rest", label: "Google Gemini REST API", defaultEndpoint: "https://generativelanguage.googleapis.com/v1beta", defaultModel: "gemini-2.0-flash" },
-  { value: "aws-bedrock-converse", label: "AWS Bedrock Converse API", defaultEndpoint: "", defaultModel: "anthropic.claude-3-5-sonnet-20241022-v2:0" },
-  { value: "azure-openai", label: "Azure OpenAI (deployment-based)", defaultEndpoint: "https://{resource}.openai.azure.com/openai", defaultModel: "gpt-4o" },
+export const API_FORMATS: Array<{
+  value: ApiFormat;
+  label: string;
+  defaultEndpoint: string;
+  defaultModel: string;
+}> = [
+  {
+    value: "openai-chat-completions",
+    label: "OpenAI Chat Completions (/v1/chat/completions)",
+    defaultEndpoint: "https://api.openai.com/v1",
+    defaultModel: "gpt-4o",
+  },
+  {
+    value: "anthropic-messages",
+    label: "Anthropic Messages (/v1/messages) — Claude",
+    defaultEndpoint: "https://api.anthropic.com",
+    defaultModel: "claude-sonnet-4-20250514",
+  },
+  {
+    value: "google-gemini-rest",
+    label: "Google Gemini REST API",
+    defaultEndpoint: "https://generativelanguage.googleapis.com/v1beta",
+    defaultModel: "gemini-2.0-flash",
+  },
+  {
+    value: "aws-bedrock-converse",
+    label: "AWS Bedrock Converse API",
+    defaultEndpoint: "",
+    defaultModel: "anthropic.claude-3-5-sonnet-20241022-v2:0",
+  },
+  {
+    value: "azure-openai",
+    label: "Azure OpenAI (deployment-based)",
+    defaultEndpoint: "https://{resource}.openai.azure.com/openai",
+    defaultModel: "gpt-4o",
+  },
 ];
 
 // ─── Provider Config ───
@@ -108,10 +138,28 @@ export type LlmTakeoverConfig = {
 
 // ─── Types ───
 
-export type ConversationHistory = { role: "system" | "user" | "assistant"; content: string };
-export type ConversationState = { history: ConversationHistory[]; lastResponseAt: number; messageCount: number };
-export type LlmResponse = { rawText: string; processedText: string; sent: boolean; chunkCount: number; tokensUsed?: number; markdownRawMode: boolean };
-export type TakeoverResult = { handled: boolean; response?: LlmResponse; error?: Error };
+export type ConversationHistory = {
+  role: "system" | "user" | "assistant";
+  content: string;
+};
+export type ConversationState = {
+  history: ConversationHistory[];
+  lastResponseAt: number;
+  messageCount: number;
+};
+export type LlmResponse = {
+  rawText: string;
+  processedText: string;
+  sent: boolean;
+  chunkCount: number;
+  tokensUsed?: number;
+  markdownRawMode: boolean;
+};
+export type TakeoverResult = {
+  handled: boolean;
+  response?: LlmResponse;
+  error?: Error;
+};
 
 // ─── Defaults ───
 
@@ -374,18 +422,31 @@ const DEFAULT_MAX_ITERATE = 50;
 
 // ─── Provider Factory ───
 
-function createLanguageModel(config: ProviderConfig, activeKey: string): LanguageModel {
+function createLanguageModel(
+  config: ProviderConfig,
+  activeKey: string,
+): LanguageModel {
   switch (config.apiFormat) {
     case "openai-chat-completions": {
-      const provider = createOpenAICompatible({ name: "openai-compatible", baseURL: config.baseUrl.replace(/\/+$/, ""), apiKey: activeKey });
+      const provider = createOpenAICompatible({
+        name: "openai-compatible",
+        baseURL: config.baseUrl.replace(/\/+$/, ""),
+        apiKey: activeKey,
+      });
       return provider(config.model);
     }
     case "anthropic-messages": {
-      const provider = createAnthropic({ baseURL: config.baseUrl.replace(/\/+$/, ""), apiKey: activeKey });
+      const provider = createAnthropic({
+        baseURL: config.baseUrl.replace(/\/+$/, ""),
+        apiKey: activeKey,
+      });
       return provider(config.model);
     }
     case "google-gemini-rest": {
-      const provider = createGoogleGenerativeAI({ baseURL: config.baseUrl.replace(/\/+$/, ""), apiKey: activeKey });
+      const provider = createGoogleGenerativeAI({
+        baseURL: config.baseUrl.replace(/\/+$/, ""),
+        apiKey: activeKey,
+      });
       return provider(config.model);
     }
     case "aws-bedrock-converse": {
@@ -394,7 +455,10 @@ function createLanguageModel(config: ProviderConfig, activeKey: string): Languag
       return provider(config.model);
     }
     case "azure-openai": {
-      const provider = createOpenAI({ baseURL: config.baseUrl.replace(/\/+$/, ""), apiKey: activeKey });
+      const provider = createOpenAI({
+        baseURL: config.baseUrl.replace(/\/+$/, ""),
+        apiKey: activeKey,
+      });
       return provider.chat(config.model);
     }
     default:
@@ -433,7 +497,8 @@ export function markdownToImText(markdown: string): string {
  */
 export function formatChatMessageForContext(msg: ChatMessage): string {
   // Timestamp: YYYY-MM-DD HH:MM:SS (local timezone, full date + time)
-  const ts = msg.timestamp > 0 ? formatDateTime(msg.timestamp) : "????-??-?? ??:??:??";
+  const ts =
+    msg.timestamp > 0 ? formatDateTime(msg.timestamp) : "????-??-?? ??:??:??";
 
   // Sender label: [昵称](用户ID) or [用户ID] when no nickname
   const nick = msg.fromNickname;
@@ -441,9 +506,10 @@ export function formatChatMessageForContext(msg: ChatMessage): string {
   const senderLabel = nick ? `[${nick}](${uid})` : `[${uid}]`;
 
   // Scope: @群名 (or @群号 if no name) for group, @DM for direct
-  const scope = msg.chatType === "group"
-    ? `@${msg.groupName || msg.groupCode || "群"}`
-    : "@DM";
+  const scope =
+    msg.chatType === "group"
+      ? `@${msg.groupName || msg.groupCode || "群"}`
+      : "@DM";
 
   // Quote suffix: only when the message references another message
   let quoteSuffix = "";
@@ -467,20 +533,25 @@ export function formatChatMessageForContext(msg: ChatMessage): string {
  * the URL in context, the LLM cannot use tools like /download or /attachment
  * to fetch media content.
  */
-function extractAttachmentUrlsForContext(rawBody: YuanbaoMsgBodyElement[] | undefined): string {
+function extractAttachmentUrlsForContext(
+  rawBody: YuanbaoMsgBodyElement[] | undefined,
+): string {
   if (!rawBody || !Array.isArray(rawBody)) return "";
   const urls: string[] = [];
   for (const el of rawBody) {
     const c = el.msg_content as Record<string, unknown> | undefined;
     if (!c) continue;
     if (el.msg_type === "TIMImageElem") {
-      const infoArray = c.image_info_array as Array<Record<string, unknown>> | undefined;
+      const infoArray = c.image_info_array as
+        | Array<Record<string, unknown>>
+        | undefined;
       const selected = infoArray?.[1] ?? infoArray?.[0];
       const url = typeof selected?.url === "string" ? selected.url : undefined;
       if (url) urls.push(`image=${url}`);
     } else if (el.msg_type === "TIMFileElem") {
       const url = typeof c.url === "string" ? c.url : undefined;
-      const fileName = typeof c.file_name === "string" ? c.file_name : undefined;
+      const fileName =
+        typeof c.file_name === "string" ? c.file_name : undefined;
       if (url) urls.push(`file=${fileName ?? ""} ${url}`);
     } else if (el.msg_type === "TIMVideoFileElem") {
       const url = typeof c.video_url === "string" ? c.video_url : undefined;
@@ -496,7 +567,7 @@ function extractAttachmentUrlsForContext(rawBody: YuanbaoMsgBodyElement[] | unde
 /** Format a Unix-ms timestamp as YYYY-MM-DD HH:MM:SS (local timezone). */
 function formatDateTime(ms: number): string {
   const d = new Date(ms);
-  const pad = (n: number) => n < 10 ? `0${n}` : String(n);
+  const pad = (n: number) => (n < 10 ? `0${n}` : String(n));
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
@@ -506,15 +577,22 @@ export class ConversationManager {
   private conversations = new Map<string, ConversationState>();
   private maxTurns: number;
 
-  constructor(maxTurns: number = DEFAULT_MAX_HISTORY_TURNS) { this.maxTurns = maxTurns; }
+  constructor(maxTurns: number = DEFAULT_MAX_HISTORY_TURNS) {
+    this.maxTurns = maxTurns;
+  }
 
   getKey(msg: ChatMessage): string {
-    return msg.chatType === "group" ? `group:${msg.groupCode}` : `dm:${msg.fromUserId}`;
+    return msg.chatType === "group"
+      ? `group:${msg.groupCode}`
+      : `dm:${msg.fromUserId}`;
   }
 
   getOrCreate(key: string): ConversationState {
     let state = this.conversations.get(key);
-    if (!state) { state = { history: [], lastResponseAt: 0, messageCount: 0 }; this.conversations.set(key, state); }
+    if (!state) {
+      state = { history: [], lastResponseAt: 0, messageCount: 0 };
+      this.conversations.set(key, state);
+    }
     return state;
   }
 
@@ -532,9 +610,15 @@ export class ConversationManager {
     this.trim(key);
   }
 
-  getHistory(key: string): ConversationHistory[] { return this.getOrCreate(key).history; }
-  clearHistory(key: string): void { this.conversations.delete(key); }
-  clearAll(): void { this.conversations.clear(); }
+  getHistory(key: string): ConversationHistory[] {
+    return this.getOrCreate(key).history;
+  }
+  clearHistory(key: string): void {
+    this.conversations.delete(key);
+  }
+  clearAll(): void {
+    this.conversations.clear();
+  }
 
   private trim(key: string): void {
     const s = this.getOrCreate(key);
@@ -542,8 +626,12 @@ export class ConversationManager {
     if (s.history.length > max) s.history = s.history.slice(-max);
   }
 
-  get size(): number { return this.conversations.size; }
-  get keys(): Iterable<string> { return this.conversations.keys(); }
+  get size(): number {
+    return this.conversations.size;
+  }
+  get keys(): Iterable<string> {
+    return this.conversations.keys();
+  }
 }
 
 // ─── LLM Engine ───
@@ -552,7 +640,10 @@ export class LlmTakeoverEngine {
   private config: Required<LlmTakeoverConfig>;
   private conversationManager: ConversationManager;
   private log: ModuleLog;
-  private mergeBuffer = new Map<string, { messages: ChatMessage[]; timer: ReturnType<typeof setTimeout> }>();
+  private mergeBuffer = new Map<
+    string,
+    { messages: ChatMessage[]; timer: ReturnType<typeof setTimeout> }
+  >();
   private persistencePath: string | undefined;
   private persistenceAdapter: PersistenceAdapter | null = null;
   private activeProviderName: string = "";
@@ -562,7 +653,12 @@ export class LlmTakeoverEngine {
   private providerFailures = 0;
   private usageRecords: UsageRecord[] = [];
 
-  constructor(config?: LlmTakeoverConfig & { persistencePath?: string; persistenceAdapter?: PersistenceAdapter }) {
+  constructor(
+    config?: LlmTakeoverConfig & {
+      persistencePath?: string;
+      persistenceAdapter?: PersistenceAdapter;
+    },
+  ) {
     this.config = {
       enabled: config?.enabled ?? true,
       systemPrompt: config?.systemPrompt ?? DEFAULT_SYSTEM_PROMPT,
@@ -588,7 +684,9 @@ export class LlmTakeoverEngine {
       maxFailuresBeforeSwitch: config?.maxFailuresBeforeSwitch ?? 3,
       userSystemPrompt: config?.userSystemPrompt ?? "",
     };
-    this.conversationManager = new ConversationManager(this.config.maxHistoryTurns);
+    this.conversationManager = new ConversationManager(
+      this.config.maxHistoryTurns,
+    );
     this.log = createLog("llm-takeover");
     this.persistencePath = config?.persistencePath;
     this.persistenceAdapter = config?.persistenceAdapter ?? null;
@@ -606,13 +704,17 @@ export class LlmTakeoverEngine {
    */
   private getAdapter(): PersistenceAdapter {
     if (!this.persistencePath) {
-      throw new Error("LlmTakeoverEngine: persistencePath is required to use persistence");
+      throw new Error(
+        "LlmTakeoverEngine: persistencePath is required to use persistence",
+      );
     }
     if (this.persistenceAdapter) return this.persistenceAdapter;
     return getDefaultPersistenceAdapter();
   }
 
-  getConfig(): Readonly<Required<LlmTakeoverConfig>> { return { ...this.config }; }
+  getConfig(): Readonly<Required<LlmTakeoverConfig>> {
+    return { ...this.config };
+  }
 
   getPoolStatus() {
     const provider = this.getActiveProviderConfig();
@@ -622,26 +724,40 @@ export class LlmTakeoverEngine {
       activeProvider: this.activeProviderName,
       activeKeyIndex: this.activeKeyIndex,
       keyPoolSize: keys.length,
-      keysInCooldown: keys.filter(k => (this.keyCooldowns.get(k) ?? 0) > now).length,
+      keysInCooldown: keys.filter((k) => (this.keyCooldowns.get(k) ?? 0) > now)
+        .length,
       providerPoolSize: Object.keys(this.config.customProviders).length,
       providerFailures: this.providerFailures,
       maxFailuresBeforeSwitch: this.config.maxFailuresBeforeSwitch,
     };
   }
 
-  getUsage(): { records: UsageRecord[]; totalTokens: number; totalCalls: number; byProvider: Record<string, { calls: number; tokens: number }> } {
+  getUsage(): {
+    records: UsageRecord[];
+    totalTokens: number;
+    totalCalls: number;
+    byProvider: Record<string, { calls: number; tokens: number }>;
+  } {
     const byProvider: Record<string, { calls: number; tokens: number }> = {};
     let totalTokens = 0;
     for (const r of this.usageRecords) {
       totalTokens += r.totalTokens;
-      if (!byProvider[r.provider]) byProvider[r.provider] = { calls: 0, tokens: 0 };
+      if (!byProvider[r.provider])
+        byProvider[r.provider] = { calls: 0, tokens: 0 };
       byProvider[r.provider].calls++;
       byProvider[r.provider].tokens += r.totalTokens;
     }
-    return { records: this.usageRecords.slice(-100), totalTokens, totalCalls: this.usageRecords.length, byProvider };
+    return {
+      records: this.usageRecords.slice(-100),
+      totalTokens,
+      totalCalls: this.usageRecords.length,
+      byProvider,
+    };
   }
 
-  clearUsage(): void { this.usageRecords = []; }
+  clearUsage(): void {
+    this.usageRecords = [];
+  }
 
   updateConfig(patch: Partial<LlmTakeoverConfig>): void {
     let changed = false;
@@ -650,31 +766,60 @@ export class LlmTakeoverEngine {
     // (which is appended after the default). Ignore any attempt to override systemPrompt.
     // if (patch.systemPrompt !== undefined) this.config.systemPrompt = patch.systemPrompt;
     if (patch.model !== undefined) this.config.model = patch.model;
-    if (patch.temperature !== undefined) this.config.temperature = patch.temperature;
+    if (patch.temperature !== undefined)
+      this.config.temperature = patch.temperature;
     if (patch.maxTokens !== undefined) this.config.maxTokens = patch.maxTokens;
-    if (patch.maxHistoryTurns !== undefined) this.config.maxHistoryTurns = patch.maxHistoryTurns;
-    if (patch.enableInGroup !== undefined) this.config.enableInGroup = patch.enableInGroup;
-    if (patch.enableInDirect !== undefined) this.config.enableInDirect = patch.enableInDirect;
-    if (patch.requireMentionInGroup !== undefined) this.config.requireMentionInGroup = patch.requireMentionInGroup;
-    if (patch.cooldownMs !== undefined) this.config.cooldownMs = patch.cooldownMs;
-    if (patch.mergeWindowMs !== undefined) this.config.mergeWindowMs = patch.mergeWindowMs;
-    if (patch.responsePrefix !== undefined) this.config.responsePrefix = patch.responsePrefix;
-    if (patch.shouldRespond !== undefined) this.config.shouldRespond = patch.shouldRespond;
-    if (patch.postProcess !== undefined) this.config.postProcess = patch.postProcess;
-    if (patch.markdownRawMode !== undefined) this.config.markdownRawMode = patch.markdownRawMode;
-    if (patch.maxIterate !== undefined) this.config.maxIterate = patch.maxIterate;
-    if (patch.provider !== undefined) { this.config.provider = patch.provider; this.activeProviderName = patch.provider; changed = true; }
-    if (patch.customProviders !== undefined) { this.config.customProviders = patch.customProviders; changed = true; }
-    if (patch.autoRotateKeys !== undefined) this.config.autoRotateKeys = patch.autoRotateKeys;
-    if (patch.autoSwitchProvider !== undefined) this.config.autoSwitchProvider = patch.autoSwitchProvider;
-    if (patch.keyCooldownMs !== undefined) this.config.keyCooldownMs = patch.keyCooldownMs;
-    if (patch.maxFailuresBeforeSwitch !== undefined) this.config.maxFailuresBeforeSwitch = patch.maxFailuresBeforeSwitch;
-    if (patch.userSystemPrompt !== undefined) this.config.userSystemPrompt = patch.userSystemPrompt;
-    if (changed) { this.activeKeyIndex = 0; this.providerFailures = 0; }
+    if (patch.maxHistoryTurns !== undefined)
+      this.config.maxHistoryTurns = patch.maxHistoryTurns;
+    if (patch.enableInGroup !== undefined)
+      this.config.enableInGroup = patch.enableInGroup;
+    if (patch.enableInDirect !== undefined)
+      this.config.enableInDirect = patch.enableInDirect;
+    if (patch.requireMentionInGroup !== undefined)
+      this.config.requireMentionInGroup = patch.requireMentionInGroup;
+    if (patch.cooldownMs !== undefined)
+      this.config.cooldownMs = patch.cooldownMs;
+    if (patch.mergeWindowMs !== undefined)
+      this.config.mergeWindowMs = patch.mergeWindowMs;
+    if (patch.responsePrefix !== undefined)
+      this.config.responsePrefix = patch.responsePrefix;
+    if (patch.shouldRespond !== undefined)
+      this.config.shouldRespond = patch.shouldRespond;
+    if (patch.postProcess !== undefined)
+      this.config.postProcess = patch.postProcess;
+    if (patch.markdownRawMode !== undefined)
+      this.config.markdownRawMode = patch.markdownRawMode;
+    if (patch.maxIterate !== undefined)
+      this.config.maxIterate = patch.maxIterate;
+    if (patch.provider !== undefined) {
+      this.config.provider = patch.provider;
+      this.activeProviderName = patch.provider;
+      changed = true;
+    }
+    if (patch.customProviders !== undefined) {
+      this.config.customProviders = patch.customProviders;
+      changed = true;
+    }
+    if (patch.autoRotateKeys !== undefined)
+      this.config.autoRotateKeys = patch.autoRotateKeys;
+    if (patch.autoSwitchProvider !== undefined)
+      this.config.autoSwitchProvider = patch.autoSwitchProvider;
+    if (patch.keyCooldownMs !== undefined)
+      this.config.keyCooldownMs = patch.keyCooldownMs;
+    if (patch.maxFailuresBeforeSwitch !== undefined)
+      this.config.maxFailuresBeforeSwitch = patch.maxFailuresBeforeSwitch;
+    if (patch.userSystemPrompt !== undefined)
+      this.config.userSystemPrompt = patch.userSystemPrompt;
+    if (changed) {
+      this.activeKeyIndex = 0;
+      this.providerFailures = 0;
+    }
     if (this.persistencePath) this.persistConfig();
   }
 
-  getPersistencePath(): string | undefined { return this.persistencePath; }
+  getPersistencePath(): string | undefined {
+    return this.persistencePath;
+  }
   persistConfig(): void {
     if (!this.persistencePath) return;
     try {
@@ -684,7 +829,9 @@ export class LlmTakeoverEngine {
       const { systemPrompt: _strip, ...persistable } = this.config;
       void _strip;
       adapter.write(this.persistencePath, JSON.stringify(persistable, null, 2));
-    } catch (e) { this.log.error(`persist failed: ${(e as Error).message}`); }
+    } catch (e) {
+      this.log.error(`persist failed: ${(e as Error).message}`);
+    }
   }
 
   private loadPersistedConfig(): void {
@@ -703,7 +850,9 @@ export class LlmTakeoverEngine {
       this.config = { ...this.config, ...saved };
       this.activeProviderName = this.config.provider;
     } catch (e) {
-      this.log.warn(`load persisted config failed: ${(e as Error).message} — overwriting with defaults`);
+      this.log.warn(
+        `load persisted config failed: ${(e as Error).message} — overwriting with defaults`,
+      );
       // File corrupt or unreadable — persist current defaults to overwrite
       this.persistConfig();
     }
@@ -714,8 +863,12 @@ export class LlmTakeoverEngine {
     if (!p) return false;
     return this.getActiveKeyPool(p).length > 0;
   }
-  getProvider(): { name: string } | null { return this.isReady ? { name: this.activeProviderName } : null; }
-  getConversationManager(): ConversationManager { return this.conversationManager; }
+  getProvider(): { name: string } | null {
+    return this.isReady ? { name: this.activeProviderName } : null;
+  }
+  getConversationManager(): ConversationManager {
+    return this.conversationManager;
+  }
 
   private getActiveProviderConfig(): ProviderConfig | null {
     return this.config.customProviders[this.activeProviderName] ?? null;
@@ -731,7 +884,10 @@ export class LlmTakeoverEngine {
     const now = Date.now();
     for (let i = 0; i < keys.length; i++) {
       const idx = (this.activeKeyIndex + i) % keys.length;
-      if ((this.keyCooldowns.get(keys[idx]) ?? 0) <= now) { this.activeKeyIndex = idx; return keys[idx]; }
+      if ((this.keyCooldowns.get(keys[idx]) ?? 0) <= now) {
+        this.activeKeyIndex = idx;
+        return keys[idx];
+      }
     }
     return keys[0];
   }
@@ -743,7 +899,8 @@ export class LlmTakeoverEngine {
       this.keyFailures.set(key, 0);
       const p = this.getActiveProviderConfig();
       const keys = this.getActiveKeyPool(p);
-      if (keys.length > 1 && this.config.autoRotateKeys) this.activeKeyIndex = (this.activeKeyIndex + 1) % keys.length;
+      if (keys.length > 1 && this.config.autoRotateKeys)
+        this.activeKeyIndex = (this.activeKeyIndex + 1) % keys.length;
     }
   }
   private markKeySuccess(): void {
@@ -755,7 +912,11 @@ export class LlmTakeoverEngine {
   }
   private markProviderFailed(): void {
     this.providerFailures++;
-    if (this.providerFailures >= this.config.maxFailuresBeforeSwitch && this.config.autoSwitchProvider && Object.keys(this.config.customProviders).length > 1) {
+    if (
+      this.providerFailures >= this.config.maxFailuresBeforeSwitch &&
+      this.config.autoSwitchProvider &&
+      Object.keys(this.config.customProviders).length > 1
+    ) {
       this.switchToNextProvider();
     }
   }
@@ -771,26 +932,41 @@ export class LlmTakeoverEngine {
 
   // ─── LLM Call ───
 
-  private async callLlm(messages: ConversationHistory[]): Promise<{ content: string; tokensUsed?: number; promptTokens?: number; completionTokens?: number }> {
+  private async callLlm(
+    messages: ConversationHistory[],
+  ): Promise<{
+    content: string;
+    tokensUsed?: number;
+    promptTokens?: number;
+    completionTokens?: number;
+  }> {
     const provider = this.getActiveProviderConfig();
-    if (!provider) throw new Error(`no provider configured: ${this.activeProviderName}`);
-    const maxAttempts = this.getActiveKeyPool(provider).length + Object.keys(this.config.customProviders).length;
+    if (!provider)
+      throw new Error(`no provider configured: ${this.activeProviderName}`);
+    const maxAttempts =
+      this.getActiveKeyPool(provider).length +
+      Object.keys(this.config.customProviders).length;
     let lastError: Error | null = null;
 
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       const activeKey = this.getActiveApiKey(provider);
       if (!activeKey) throw new Error("no API key available");
       try {
-        this.log.info(`calling LLM (${this.activeProviderName}/${provider.apiFormat}) attempt ${attempt + 1}/${maxAttempts}`);
+        this.log.info(
+          `calling LLM (${this.activeProviderName}/${provider.apiFormat}) attempt ${attempt + 1}/${maxAttempts}`,
+        );
         const model = createLanguageModel(provider, activeKey);
-        const systemMessages = messages.filter(m => m.role === "system");
-        const chatMessages = messages.filter(m => m.role !== "system");
-        const systemPrompt = systemMessages.map(m => m.content).join("\n");
+        const systemMessages = messages.filter((m) => m.role === "system");
+        const chatMessages = messages.filter((m) => m.role !== "system");
+        const systemPrompt = systemMessages.map((m) => m.content).join("\n");
 
         const result = await generateText({
           model,
           system: systemPrompt || undefined,
-          messages: chatMessages.map(m => ({ role: m.role as "user" | "assistant", content: m.content })),
+          messages: chatMessages.map((m) => ({
+            role: m.role as "user" | "assistant",
+            content: m.content,
+          })),
           temperature: this.config.temperature,
         });
 
@@ -800,7 +976,8 @@ export class LlmTakeoverEngine {
         const usageObj = result.usage as unknown as Record<string, number>;
         const promptTokens = usageObj?.inputTokens ?? 0;
         const completionTokens = usageObj?.outputTokens ?? 0;
-        const totalTokens = usageObj?.totalTokens ?? (promptTokens + completionTokens);
+        const totalTokens =
+          usageObj?.totalTokens ?? promptTokens + completionTokens;
         this.usageRecords.push({
           provider: this.activeProviderName,
           model: provider.model,
@@ -810,12 +987,23 @@ export class LlmTakeoverEngine {
           timestamp: Date.now(),
         });
 
-        return { content: result.text, tokensUsed: totalTokens, promptTokens, completionTokens };
+        return {
+          content: result.text,
+          tokensUsed: totalTokens,
+          promptTokens,
+          completionTokens,
+        };
       } catch (err) {
         lastError = err as Error;
         const msg = (err as Error).message.toLowerCase();
-        if (/401|403|429|rate.?limit|unauthor|invalid.?api.?key/.test(msg)) { this.markKeyFailed(activeKey); continue; }
-        if (/5\d{2}|server.?error|timeout|econnreset|enotfound/.test(msg)) { this.markProviderFailed(); continue; }
+        if (/401|403|429|rate.?limit|unauthor|invalid.?api.?key/.test(msg)) {
+          this.markKeyFailed(activeKey);
+          continue;
+        }
+        if (/5\d{2}|server.?error|timeout|econnreset|enotfound/.test(msg)) {
+          this.markProviderFailed();
+          continue;
+        }
         throw err;
       }
     }
@@ -838,7 +1026,11 @@ export class LlmTakeoverEngine {
     return formatChatMessageForContext(msg);
   }
 
-  private async buildLlmMessages(convKey: string, msg: ChatMessage, bot?: YuanbaoBot): Promise<ConversationHistory[]> {
+  private async buildLlmMessages(
+    convKey: string,
+    msg: ChatMessage,
+    bot?: YuanbaoBot,
+  ): Promise<ConversationHistory[]> {
     const messages: ConversationHistory[] = [];
     // Start with default system prompt, append user-defined prompt if set
     let systemPrompt = this.config.systemPrompt;
@@ -849,7 +1041,8 @@ export class LlmTakeoverEngine {
     // Inject master (bot owner) info so the LLM can @主人 when requesting authorization
     if (bot) {
       try {
-        const { getMasterUserId, getTrustEntry } = await import("../business/trust.js");
+        const { getMasterUserId, getTrustEntry } =
+          await import("../business/trust.js");
         // Try trust module first, fall back to bot.account.botOwnerId
         let masterId: string | null = getMasterUserId();
         if (!masterId) {
@@ -860,7 +1053,9 @@ export class LlmTakeoverEngine {
           const masterNick = entry?.nickname || "主人";
           systemPrompt += `\n\n## 当前主人信息\n主人昵称: ${masterNick}\n主人用户ID: ${masterId}\n当需要请求授权时，请使用 @[${masterNick}](${masterId}) @主人。`;
         }
-      } catch { /* trust module optional */ }
+      } catch {
+        /* trust module optional */
+      }
     }
 
     // Chat type context
@@ -876,51 +1071,77 @@ export class LlmTakeoverEngine {
         const historyStore = bot.getHistoryStore();
         const recent = historyStore.getRecent(30, { groupCode: msg.groupCode });
         if (recent.length > 0) {
-          const lines = recent.map(m => {
+          const lines = recent.map((m) => {
             const sender = m.fromNickname || m.fromUserId;
-            const time = new Date(m.timestamp).toLocaleTimeString("zh-CN", { hour12: false });
-            const shortId = m.id ? (m.id.length > 8 ? m.id.slice(-8) : m.id) : "?";
+            const time = new Date(m.timestamp).toLocaleTimeString("zh-CN", {
+              hour12: false,
+            });
+            const shortId = m.id
+              ? m.id.length > 8
+                ? m.id.slice(-8)
+                : m.id
+              : "?";
             return `[${time}] ${sender}(${m.fromUserId}): ${m.text || "(非文本)"} #${shortId}`;
           });
           systemPrompt += `\n\n=== 最近群聊记录 ===\n${lines.join("\n")}\n=== 记录结束 ===`;
         }
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     }
 
     // Inject available commands with block/grant status
     if (bot) {
       const cmdSys = bot.getCommandSystem();
       if (cmdSys) {
-        const commands = cmdSys.getAll().filter(c => !c.hidden);
+        const commands = cmdSys.getAll().filter((c) => !c.hidden);
         const isGroup = msg.chatType === "group";
         const unsafe = cmdSys.isUnsafeMode();
         const userId = msg.fromUserId;
         // Load block/trust status once for all commands
-        let isBlockedFn: ((userId: string, action: string) => boolean) | undefined;
-        let isBlockedFromCmdFn: ((userId: string, cmd: string) => boolean) | undefined;
+        let isBlockedFn:
+          | ((userId: string, action: string) => boolean)
+          | undefined;
+        let isBlockedFromCmdFn:
+          | ((userId: string, cmd: string) => boolean)
+          | undefined;
         let hasGrantFn: ((userId: string, cmd: string) => boolean) | undefined;
         let isTrustedFn: ((userId: string) => boolean) | undefined;
         try {
           const block = await import("../business/block.js");
           isBlockedFn = block.isBlockedFrom;
           isBlockedFromCmdFn = block.isBlockedFromCommand;
-        } catch { /* block module optional */ }
+        } catch {
+          /* block module optional */
+        }
         try {
           const trust = await import("../business/trust.js");
           hasGrantFn = trust.hasCommandGrant;
           isTrustedFn = trust.isTrusted;
-        } catch { /* trust module optional */ }
+        } catch {
+          /* trust module optional */
+        }
 
         const cmdLines: string[] = [];
         for (const cmd of commands) {
           if (isGroup && cmd.elevated && !unsafe) continue;
-          const aliases = cmd.aliases?.length ? ` (别名: ${cmd.aliases.join(", ")})` : "";
+          const aliases = cmd.aliases?.length
+            ? ` (别名: ${cmd.aliases.join(", ")})`
+            : "";
           const dmLabel = cmd.elevated ? " [仅私聊]" : "";
           // Check block/grant status for this command
           const statusTags: string[] = [];
-          if (isBlockedFromCmdFn && (isBlockedFromCmdFn(userId, cmd.name) || (isBlockedFn && isBlockedFn(userId, "all")))) {
+          if (
+            isBlockedFromCmdFn &&
+            (isBlockedFromCmdFn(userId, cmd.name) ||
+              (isBlockedFn && isBlockedFn(userId, "all")))
+          ) {
             statusTags.push("[已禁用]");
-          } else if (isBlockedFromCmdFn && (isBlockedFromCmdFn("*", cmd.name) || (isBlockedFn && isBlockedFn("*", "all")))) {
+          } else if (
+            isBlockedFromCmdFn &&
+            (isBlockedFromCmdFn("*", cmd.name) ||
+              (isBlockedFn && isBlockedFn("*", "all")))
+          ) {
             statusTags.push("[全局禁用]");
           } else if (cmd.elevated && isGroup && !unsafe) {
             // Check if user has grant or is trusted
@@ -932,8 +1153,11 @@ export class LlmTakeoverEngine {
               statusTags.push("[需授权]");
             }
           }
-          const status = statusTags.length > 0 ? ` ${statusTags.join(" ")}` : "";
-          cmdLines.push(`  /${cmd.name}${aliases}${dmLabel}${status} — ${cmd.description}${cmd.usage ? ` | 用法: ${cmd.usage}` : ""}`);
+          const status =
+            statusTags.length > 0 ? ` ${statusTags.join(" ")}` : "";
+          cmdLines.push(
+            `  /${cmd.name}${aliases}${dmLabel}${status} — ${cmd.description}${cmd.usage ? ` | 用法: ${cmd.usage}` : ""}`,
+          );
         }
         if (cmdLines.length > 0) {
           systemPrompt += `\n\n=== 可用命令 ===\n${cmdLines.join("\n")}\n=== 命令结束 ===`;
@@ -954,12 +1178,17 @@ export class LlmTakeoverEngine {
 
   // ─── Command Invoke Mechanism ───
 
-  private async handleCommandInvocations(bot: YuanbaoBot, msg: ChatMessage, text: string): Promise<{
+  private async handleCommandInvocations(
+    bot: YuanbaoBot,
+    msg: ChatMessage,
+    text: string,
+  ): Promise<{
     firstRoundText: string;
     hasFollowUp: boolean;
     followUpResults: string[];
   } | null> {
-    const invokePattern = /<<command>>\s*(\/\S+(?:\s[^<]*?)?)\s*<<command>>(\.\.\.)?/g;
+    const invokePattern =
+      /<<command>>\s*(\/\S+(?:\s[^<]*?)?)\s*<<command>>(\.\.\.)?/g;
     const matches = [...text.matchAll(invokePattern)];
     if (matches.length === 0) return null;
 
@@ -975,13 +1204,21 @@ export class LlmTakeoverEngine {
       const fullCmd = match[1].trim();
       const isFollowUp = Boolean(match[2]);
       cleanedText = cleanedText.replace(match[0], "");
-      this.log.info(`LLM invoke: ${fullCmd}${isFollowUp ? " (follow-up)" : ""}`);
+      this.log.info(
+        `LLM invoke: ${fullCmd}${isFollowUp ? " (follow-up)" : ""}`,
+      );
 
       const syntheticMsg: ChatMessage = { ...msg, text: fullCmd };
       try {
         let commandOutput = "";
-        const captureReply = async (output: string) => { commandOutput += output + "\n"; };
-        const result = await cmdSystem.dispatch(bot, syntheticMsg, captureReply);
+        const captureReply = async (output: string) => {
+          commandOutput += output + "\n";
+        };
+        const result = await cmdSystem.dispatch(
+          bot,
+          syntheticMsg,
+          captureReply,
+        );
 
         let resultText: string;
         if (result.handled && commandOutput.trim()) {
@@ -994,22 +1231,36 @@ export class LlmTakeoverEngine {
           resultText = "(命令未识别)";
           results.push(`⚡ ${fullCmd}: ${resultText}`);
         }
-        if (isFollowUp) { hasFollowUp = true; followUpResults.push(`[命令执行结果] ${fullCmd} → ${resultText}`); }
+        if (isFollowUp) {
+          hasFollowUp = true;
+          followUpResults.push(`[命令执行结果] ${fullCmd} → ${resultText}`);
+        }
       } catch (err) {
         const errorText = `执行失败 — ${(err as Error).message}`;
         results.push(`⚠️ ${fullCmd}: ${errorText}`);
-        if (isFollowUp) { hasFollowUp = true; followUpResults.push(`[命令执行结果] ${fullCmd} → ${errorText}`); }
+        if (isFollowUp) {
+          hasFollowUp = true;
+          followUpResults.push(`[命令执行结果] ${fullCmd} → ${errorText}`);
+        }
       }
     }
 
     cleanedText = cleanedText.trim();
     const resultSection = results.join("\n\n");
-    const firstRoundText = cleanedText ? (resultSection ? `${cleanedText}\n\n${resultSection}` : cleanedText) : resultSection;
+    const firstRoundText = cleanedText
+      ? resultSection
+        ? `${cleanedText}\n\n${resultSection}`
+        : cleanedText
+      : resultSection;
 
     return { firstRoundText, hasFollowUp, followUpResults };
   }
 
-  private async executeIterativeInvoke(bot: YuanbaoBot, msg: ChatMessage, initialFollowUpResults: string[]): Promise<void> {
+  private async executeIterativeInvoke(
+    bot: YuanbaoBot,
+    msg: ChatMessage,
+    initialFollowUpResults: string[],
+  ): Promise<void> {
     const convKey = this.conversationManager.getKey(msg);
     const maxIter = this.config.maxIterate;
     let followUpResults = initialFollowUpResults;
@@ -1022,58 +1273,104 @@ export class LlmTakeoverEngine {
         try {
           const isGroup = msg.chatType === "group";
           const limitMsg = `⚠️ 迭代调用已达上限 (${maxIter}轮)`;
-          if (isGroup && msg.groupCode) await bot.sendGroupMessage(msg.groupCode, limitMsg);
+          if (isGroup && msg.groupCode)
+            await bot.sendGroupMessage(msg.groupCode, limitMsg);
           else await bot.sendDirectMessage(msg.fromUserId, limitMsg);
-        } catch { /* ignore */ }
+        } catch {
+          /* ignore */
+        }
         break;
       }
 
       const followUpContext = followUpResults.join("\n");
-      this.conversationManager.addUserMessage(convKey, `[系统] 命令执行反馈 (第${iteration}轮):\n${followUpContext}\n\n请根据以上命令执行结果继续回复。如果还需要执行命令，继续使用 <<command>>...<<command>> 格式。`);
+      this.conversationManager.addUserMessage(
+        convKey,
+        `[系统] 命令执行反馈 (第${iteration}轮):\n${followUpContext}\n\n请根据以上命令执行结果继续回复。如果还需要执行命令，继续使用 <<command>>...<<command>> 格式。`,
+      );
 
       try {
-        this.log.info(`iterative invoke: round ${iteration}${maxIter > 0 ? `/${maxIter}` : ""} for ${convKey}`);
+        this.log.info(
+          `iterative invoke: round ${iteration}${maxIter > 0 ? `/${maxIter}` : ""} for ${convKey}`,
+        );
         const llmMessages = await this.buildLlmMessages(convKey, msg, bot);
         const llmResult = await this.callLlm(llmMessages);
         const rawText = llmResult.content;
-        if (!rawText || !rawText.trim()) { this.log.warn("iterative invoke: empty response, stopping"); break; }
+        if (!rawText || !rawText.trim()) {
+          this.log.warn("iterative invoke: empty response, stopping");
+          break;
+        }
 
-        let processedText = this.config.markdownRawMode ? rawText : markdownToImText(rawText);
-        try { processedText = await this.config.postProcess(processedText, msg); } catch { /* ignore */ }
-        if (this.config.responsePrefix) processedText = this.config.responsePrefix + processedText;
+        let processedText = this.config.markdownRawMode
+          ? rawText
+          : markdownToImText(rawText);
+        try {
+          processedText = await this.config.postProcess(processedText, msg);
+        } catch {
+          /* ignore */
+        }
+        if (this.config.responsePrefix)
+          processedText = this.config.responsePrefix + processedText;
 
         this.conversationManager.addAssistantMessage(convKey, rawText);
 
-        const invokeResult = await this.handleCommandInvocations(bot, msg, processedText);
+        const invokeResult = await this.handleCommandInvocations(
+          bot,
+          msg,
+          processedText,
+        );
         if (invokeResult) processedText = invokeResult.firstRoundText;
 
         await this.sendResponse(bot, msg, processedText);
 
-        if (!invokeResult?.hasFollowUp) { this.log.info(`iterative invoke: done after round ${iteration}`); break; }
+        if (!invokeResult?.hasFollowUp) {
+          this.log.info(`iterative invoke: done after round ${iteration}`);
+          break;
+        }
         followUpResults = invokeResult.followUpResults;
       } catch (err) {
-        this.log.error(`iterative invoke: round ${iteration} failed: ${(err as Error).message}`);
+        this.log.error(
+          `iterative invoke: round ${iteration} failed: ${(err as Error).message}`,
+        );
         break;
       }
     }
   }
 
-  private async sendResponse(bot: YuanbaoBot, msg: ChatMessage, text: string): Promise<number> {
+  private async sendResponse(
+    bot: YuanbaoBot,
+    msg: ChatMessage,
+    text: string,
+  ): Promise<number> {
     // No chunking — Yuanbao platform removed bot message limits.
     // Send the full text as a single message.
-    if (msg.chatType === "group" && msg.groupCode) await bot.sendGroupMessage(msg.groupCode, text);
+    if (msg.chatType === "group" && msg.groupCode)
+      await bot.sendGroupMessage(msg.groupCode, text);
     else await bot.sendDirectMessage(msg.fromUserId, text);
     return 1;
   }
 
   // ─── Main Entry ───
 
-  async handleMessage(bot: YuanbaoBot, msg: ChatMessage): Promise<TakeoverResult> {
+  async handleMessage(
+    bot: YuanbaoBot,
+    msg: ChatMessage,
+  ): Promise<TakeoverResult> {
     if (!this.config.enabled || !this.isReady) return { handled: false };
-    if (msg.chatType === "group" && !this.config.enableInGroup) return { handled: false };
-    if (msg.chatType === "direct" && !this.config.enableInDirect) return { handled: false };
-    if (msg.chatType === "group" && this.config.requireMentionInGroup && !msg.isMentioned) return { handled: false };
-    try { if (!(await this.config.shouldRespond(msg))) return { handled: false }; } catch { return { handled: false }; }
+    if (msg.chatType === "group" && !this.config.enableInGroup)
+      return { handled: false };
+    if (msg.chatType === "direct" && !this.config.enableInDirect)
+      return { handled: false };
+    if (
+      msg.chatType === "group" &&
+      this.config.requireMentionInGroup &&
+      !msg.isMentioned
+    )
+      return { handled: false };
+    try {
+      if (!(await this.config.shouldRespond(msg))) return { handled: false };
+    } catch {
+      return { handled: false };
+    }
 
     const convKey = this.conversationManager.getKey(msg);
 
@@ -1091,28 +1388,51 @@ export class LlmTakeoverEngine {
     return this.processMessage(bot, msg, convKey);
   }
 
-  private handleWithMerge(bot: YuanbaoBot, msg: ChatMessage, convKey: string): Promise<TakeoverResult> {
+  private handleWithMerge(
+    bot: YuanbaoBot,
+    msg: ChatMessage,
+    convKey: string,
+  ): Promise<TakeoverResult> {
     return new Promise((resolve) => {
       let buffer = this.mergeBuffer.get(convKey);
-      if (!buffer) { buffer = { messages: [], timer: null as unknown as ReturnType<typeof setTimeout> }; this.mergeBuffer.set(convKey, buffer); }
+      if (!buffer) {
+        buffer = {
+          messages: [],
+          timer: null as unknown as ReturnType<typeof setTimeout>,
+        };
+        this.mergeBuffer.set(convKey, buffer);
+      }
       buffer.messages.push(msg);
       if (buffer.timer) clearTimeout(buffer.timer);
       buffer.timer = setTimeout(async () => {
         const msgs = buffer!.messages;
         buffer!.messages = [];
         this.mergeBuffer.delete(convKey);
-        if (msgs.length === 0) { resolve({ handled: false }); return; }
+        if (msgs.length === 0) {
+          resolve({ handled: false });
+          return;
+        }
         for (const m of msgs) this.addContextMessage(m);
-        const result = await this.processMessage(bot, msgs[msgs.length - 1], convKey);
+        const result = await this.processMessage(
+          bot,
+          msgs[msgs.length - 1],
+          convKey,
+        );
         resolve(result);
       }, this.config.mergeWindowMs);
     });
   }
 
-  private async processMessage(bot: YuanbaoBot, msg: ChatMessage, convKey: string): Promise<TakeoverResult> {
+  private async processMessage(
+    bot: YuanbaoBot,
+    msg: ChatMessage,
+    convKey: string,
+  ): Promise<TakeoverResult> {
     try {
       const llmMessages = await this.buildLlmMessages(convKey, msg, bot);
-      this.log.info(`calling LLM for ${convKey}: "${msg.text.substring(0, 50)}..."`);
+      this.log.info(
+        `calling LLM for ${convKey}: "${msg.text.substring(0, 50)}..."`,
+      );
       const result = await this.callLlm(llmMessages);
 
       const rawText = result.content;
@@ -1124,19 +1444,32 @@ export class LlmTakeoverEngine {
         try {
           await this.sendResponse(bot, msg, fallback);
         } catch (err) {
-          this.log.error(`fallback reply send failed: ${(err as Error).message}`);
+          this.log.error(
+            `fallback reply send failed: ${(err as Error).message}`,
+          );
         }
         return { handled: true };
       }
 
-      let processedText = this.config.markdownRawMode ? rawText : markdownToImText(rawText);
-      try { processedText = await this.config.postProcess(processedText, msg); } catch { /* ignore */ }
-      if (this.config.responsePrefix) processedText = this.config.responsePrefix + processedText;
+      let processedText = this.config.markdownRawMode
+        ? rawText
+        : markdownToImText(rawText);
+      try {
+        processedText = await this.config.postProcess(processedText, msg);
+      } catch {
+        /* ignore */
+      }
+      if (this.config.responsePrefix)
+        processedText = this.config.responsePrefix + processedText;
 
       this.conversationManager.addAssistantMessage(convKey, rawText);
 
       // Handle command invocations
-      const invokeResult = await this.handleCommandInvocations(bot, msg, processedText);
+      const invokeResult = await this.handleCommandInvocations(
+        bot,
+        msg,
+        processedText,
+      );
       if (invokeResult) processedText = invokeResult.firstRoundText;
 
       // Send first round immediately
@@ -1144,12 +1477,26 @@ export class LlmTakeoverEngine {
 
       // Iterative invoke loop (async, non-blocking)
       if (invokeResult?.hasFollowUp) {
-        this.executeIterativeInvoke(bot, msg, invokeResult.followUpResults).catch(err => {
+        this.executeIterativeInvoke(
+          bot,
+          msg,
+          invokeResult.followUpResults,
+        ).catch((err) => {
           this.log.error(`iterative invoke error: ${(err as Error).message}`);
         });
       }
 
-      return { handled: true, response: { rawText, processedText, sent: true, chunkCount, tokensUsed: result.tokensUsed, markdownRawMode: this.config.markdownRawMode } };
+      return {
+        handled: true,
+        response: {
+          rawText,
+          processedText,
+          sent: true,
+          chunkCount,
+          tokensUsed: result.tokensUsed,
+          markdownRawMode: this.config.markdownRawMode,
+        },
+      };
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
       this.log.error(`LLM call failed: ${error.message}`);
@@ -1159,22 +1506,34 @@ export class LlmTakeoverEngine {
 
   // ─── Direct Chat ───
 
-  async chat(prompt: string, conversationKey?: string): Promise<{ rawText: string; processedText: string }> {
+  async chat(
+    prompt: string,
+    conversationKey?: string,
+  ): Promise<{ rawText: string; processedText: string }> {
     const key = conversationKey || "cli:default";
     this.conversationManager.addUserMessage(key, prompt);
     const messages = await this.buildLlmMessages(key, {
-      id: "cli", fromUserId: "cli-user", chatType: "direct", text: prompt, timestamp: Date.now(),
+      id: "cli",
+      fromUserId: "cli-user",
+      chatType: "direct",
+      text: prompt,
+      timestamp: Date.now(),
     });
     const result = await this.callLlm(messages);
     const rawText = result.content;
-    const processedText = this.config.markdownRawMode ? rawText : markdownToImText(rawText);
+    const processedText = this.config.markdownRawMode
+      ? rawText
+      : markdownToImText(rawText);
     this.conversationManager.addAssistantMessage(key, rawText);
     return { rawText, processedText };
   }
 }
 
 export function createLlmTakeover(
-  config?: LlmTakeoverConfig & { persistencePath?: string; persistenceAdapter?: PersistenceAdapter },
+  config?: LlmTakeoverConfig & {
+    persistencePath?: string;
+    persistenceAdapter?: PersistenceAdapter;
+  },
 ): LlmTakeoverEngine {
   return new LlmTakeoverEngine(config);
 }

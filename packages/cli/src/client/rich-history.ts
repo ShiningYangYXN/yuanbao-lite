@@ -11,7 +11,13 @@
  * @module cli/rich-history
  */
 
-import { existsSync, readFileSync, writeFileSync, mkdirSync, appendFileSync } from "node:fs";
+import {
+  existsSync,
+  readFileSync,
+  writeFileSync,
+  mkdirSync,
+  appendFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { createLog } from "@yuanbao-lite/core/logger";
@@ -47,7 +53,10 @@ export class RichHistory {
     if (!trimmed) return;
 
     // Skip if identical to the last entry (dedup consecutive)
-    if (this.entries.length > 0 && this.entries[this.entries.length - 1] === trimmed) {
+    if (
+      this.entries.length > 0 &&
+      this.entries[this.entries.length - 1] === trimmed
+    ) {
       return;
     }
 
@@ -107,7 +116,11 @@ export class RichHistory {
   search(query: string, limit = 20): string[] {
     const lowerQuery = query.toLowerCase();
     const results: string[] = [];
-    for (let i = this.entries.length - 1; i >= 0 && results.length < limit; i--) {
+    for (
+      let i = this.entries.length - 1;
+      i >= 0 && results.length < limit;
+      i--
+    ) {
       if (this.entries[i].toLowerCase().includes(lowerQuery)) {
         results.push(this.entries[i]);
       }
@@ -169,7 +182,7 @@ export class RichHistory {
         return;
       }
       const content = readFileSync(this.filePath, "utf-8");
-      const lines = content.split("\n").filter(l => l.trim());
+      const lines = content.split("\n").filter((l) => l.trim());
 
       // Deduplicate consecutive entries during load
       const deduped: string[] = [];
@@ -180,9 +193,8 @@ export class RichHistory {
       }
 
       // Trim to max size
-      this.entries = deduped.length > this.maxSize
-        ? deduped.slice(-this.maxSize)
-        : deduped;
+      this.entries =
+        deduped.length > this.maxSize ? deduped.slice(-this.maxSize) : deduped;
 
       this.currentIndex = this.entries.length;
     } catch {

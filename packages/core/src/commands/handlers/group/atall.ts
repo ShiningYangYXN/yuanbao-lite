@@ -24,7 +24,9 @@ export function register(cmdSys: CommandSystem): void {
       let message: string;
 
       if (ctx.args.length < 1) {
-        await ctx.reply("用法: /atall <群号> <消息>\n或: /atall <消息>  (当前群聊中)");
+        await ctx.reply(
+          "用法: /atall <群号> <消息>\n或: /atall <消息>  (当前群聊中)",
+        );
         return;
       }
 
@@ -76,9 +78,8 @@ export function register(cmdSys: CommandSystem): void {
         } catch {
           // member list fetch failed — just report send success
         }
-        const countHint = memberCount >= 0
-          ? `（已逐个展开 @${memberCount} 个成员）`
-          : "";
+        const countHint =
+          memberCount >= 0 ? `（已逐个展开 @${memberCount} 个成员）` : "";
         await ctx.reply(`✅ 已发送 @所有人 消息到群 ${groupCode}${countHint}`);
       } catch (err) {
         await ctx.reply(`❌ 发送失败: ${(err as Error).message}`);

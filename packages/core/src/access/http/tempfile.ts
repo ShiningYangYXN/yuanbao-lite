@@ -22,7 +22,7 @@ import { getNodeModules } from "../persistence/adapter.js";
 function randomHex(byteLength: number): string {
   const bytes = new Uint8Array(byteLength);
   globalThis.crypto.getRandomValues(bytes);
-  return Array.from(bytes, b => b.toString(16).padStart(2, "0")).join("");
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 /**
@@ -32,7 +32,10 @@ function randomHex(byteLength: number): string {
 function basename(filePath: string): string {
   const path = getNodeModules().path;
   if (path) return path.basename(filePath);
-  const lastSlash = Math.max(filePath.lastIndexOf("/"), filePath.lastIndexOf("\\"));
+  const lastSlash = Math.max(
+    filePath.lastIndexOf("/"),
+    filePath.lastIndexOf("\\"),
+  );
   return filePath.slice(lastSlash + 1);
 }
 
@@ -88,8 +91,7 @@ function buildMultipart(
   }
 
   // File part
-  const header =
-    `--${boundary}\r\nContent-Disposition: form-data; name="${fileFieldName}"; filename="${fileName}"\r\nContent-Type: application/octet-stream\r\n\r\n`;
+  const header = `--${boundary}\r\nContent-Disposition: form-data; name="${fileFieldName}"; filename="${fileName}"\r\nContent-Type: application/octet-stream\r\n\r\n`;
   parts.push(encoder.encode(header));
   parts.push(fileBuffer);
 
@@ -115,7 +117,11 @@ function buildMultipart(
  * Node-only — uses `node:fs.existsSync` and `statSync`. Under browser,
  * throws a clear error (callers should provide file content directly).
  */
-function validateFile(filePath: string): { fileName: string; fileSize: number; fileBuffer: Buffer } {
+function validateFile(filePath: string): {
+  fileName: string;
+  fileSize: number;
+  fileBuffer: Buffer;
+} {
   const { fs } = getNodeModules();
   if (!fs) {
     throw new Error(
@@ -129,7 +135,11 @@ function validateFile(filePath: string): { fileName: string; fileSize: number; f
   const fileStat = fs.statSync(filePath);
   const fileName = basename(filePath);
 
-  return { fileName, fileSize: fileStat.size, fileBuffer: undefined as unknown as Buffer };
+  return {
+    fileName,
+    fileSize: fileStat.size,
+    fileBuffer: undefined as unknown as Buffer,
+  };
 }
 
 /**
@@ -167,14 +177,18 @@ function formatSize(bytes: number): string {
  * Response: JSON with data.url (page URL); direct URL is obtained by replacing
  *           the path segment: `/dl/` insertion after the domain.
  */
-export async function uploadToTmpfiles(filePath: string): Promise<TempFileUploadResult> {
+export async function uploadToTmpfiles(
+  filePath: string,
+): Promise<TempFileUploadResult> {
   const log = createLog("tmpfiles");
 
   const { fileName, fileSize } = validateFile(filePath);
   const sizeMB = fileSize / (1024 * 1024);
 
   if (sizeMB > 100) {
-    throw new Error(`File too large: ${sizeMB.toFixed(1)}MB exceeds tmpfiles.org limit of ~100MB`);
+    throw new Error(
+      `File too large: ${sizeMB.toFixed(1)}MB exceeds tmpfiles.org limit of ~100MB`,
+    );
   }
 
   log.info(`uploading: ${fileName} (${formatSize(fileSize)})`);
@@ -193,7 +207,9 @@ export async function uploadToTmpfiles(filePath: string): Promise<TempFileUpload
 
   if (!resp.ok) {
     const body = await resp.text().catch(() => "");
-    throw new Error(`tmpfiles.org upload failed: HTTP ${resp.status} — ${body}`);
+    throw new Error(
+      `tmpfiles.org upload failed: HTTP ${resp.status} — ${body}`,
+    );
   }
 
   const data = (await resp.json()) as {
@@ -239,21 +255,31 @@ export async function uploadToTmpfiles(filePath: string): Promise<TempFileUpload
  * Form field: "files[]"
  * Response: JSON with files[0].url and files[0].name
  */
-export async function uploadToUguu(filePath: string): Promise<TempFileUploadResult> {
+export async function uploadToUguu(
+  filePath: string,
+): Promise<TempFileUploadResult> {
   const log = createLog("uguu");
 
   const { fileName, fileSize } = validateFile(filePath);
   const sizeMB = fileSize / (1024 * 1024);
 
   if (sizeMB > 128) {
-    throw new Error(`File too large: ${sizeMB.toFixed(1)}MB exceeds uguu.se limit of ~128MB`);
+    throw new Error(
+      `File too large: ${sizeMB.toFixed(1)}MB exceeds uguu.se limit of ~128MB`,
+    );
   }
 
   log.info(`uploading: ${fileName} (${formatSize(fileSize)})`);
 
   const fileBuffer = await loadFile(filePath);
   const boundary = `----UguuBoundary${randomHex(8)}`;
-  const formData = buildMultipart(boundary, {}, "files[]", fileBuffer, fileName);
+  const formData = buildMultipart(
+    boundary,
+    {},
+    "files[]",
+    fileBuffer,
+    fileName,
+  );
 
   const resp = await fetch("https://uguu.se/upload.php", {
     method: "POST",
@@ -280,7 +306,9 @@ export async function uploadToUguu(filePath: string): Promise<TempFileUploadResu
   };
 
   if (!data.success || !data.files?.[0]?.url) {
-    throw new Error(`uguu.se upload failed: ${data.error || JSON.stringify(data)}`);
+    throw new Error(
+      `uguu.se upload failed: ${data.error || JSON.stringify(data)}`,
+    );
   }
 
   const file = data.files[0];
@@ -323,10 +351,14 @@ export async function uploadToLitterbox(
   const sizeMB = fileSize / (1024 * 1024);
 
   if (sizeMB > 100) {
-    throw new Error(`File too large: ${sizeMB.toFixed(1)}MB exceeds litterbox limit of ~100MB`);
+    throw new Error(
+      `File too large: ${sizeMB.toFixed(1)}MB exceeds litterbox limit of ~100MB`,
+    );
   }
 
-  log.info(`uploading: ${fileName} (${formatSize(fileSize)}), expires in ${expire}`);
+  log.info(
+    `uploading: ${fileName} (${formatSize(fileSize)}), expires in ${expire}`,
+  );
 
   const fileBuffer = await loadFile(filePath);
   const boundary = `----LitterboxBoundary${randomHex(8)}`;
@@ -338,13 +370,16 @@ export async function uploadToLitterbox(
     fileName,
   );
 
-  const resp = await fetch("https://litterbox.catbox.moe/resources/internals/api.php", {
-    method: "POST",
-    headers: {
-      "Content-Type": `multipart/form-data; boundary=${boundary}`,
+  const resp = await fetch(
+    "https://litterbox.catbox.moe/resources/internals/api.php",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": `multipart/form-data; boundary=${boundary}`,
+      },
+      body: Buffer.from(formData),
     },
-    body: Buffer.from(formData),
-  });
+  );
 
   if (!resp.ok) {
     const body = await resp.text().catch(() => "");
@@ -376,7 +411,9 @@ export async function uploadToLitterbox(
 
 // ─── GoFile wrapper (adapts existing module to TempFileUploadResult) ───
 
-async function uploadViaGoFile(filePath: string): Promise<TempFileUploadResult> {
+async function uploadViaGoFile(
+  filePath: string,
+): Promise<TempFileUploadResult> {
   const result = await uploadToGoFile(filePath);
   return {
     providerName: "gofile",
@@ -428,9 +465,9 @@ export async function uploadToTempFile(
   const log = createLog("tempfile");
   const providerName = provider || DEFAULT_PROVIDER;
 
-  const p = PROVIDERS.find(p => p.name === providerName);
+  const p = PROVIDERS.find((p) => p.name === providerName);
   if (!p) {
-    const available = PROVIDERS.map(p => p.name).join(", ");
+    const available = PROVIDERS.map((p) => p.name).join(", ");
     throw new Error(
       `Unknown temp file provider "${providerName}". Available: ${available}`,
     );
@@ -445,7 +482,7 @@ export async function uploadToTempFile(
     log.error(`${providerName} upload failed: ${message}`);
 
     // Fallback: try the next provider if the chosen one fails
-    const fallbackOrder = PROVIDERS.filter(fb => fb.name !== providerName);
+    const fallbackOrder = PROVIDERS.filter((fb) => fb.name !== providerName);
     for (const fallback of fallbackOrder) {
       log.info(`trying fallback provider: ${fallback.name}`);
       try {
@@ -457,7 +494,9 @@ export async function uploadToTempFile(
       }
     }
 
-    throw new Error(`All temp file providers failed. Last error: ${message}`, { cause: err });
+    throw new Error(`All temp file providers failed. Last error: ${message}`, {
+      cause: err,
+    });
   }
 }
 

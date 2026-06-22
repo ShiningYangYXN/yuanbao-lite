@@ -15,11 +15,22 @@ export function register(cmdSys: CommandSystem): void {
     name: "trust",
     aliases: ["信任", "受信"],
     description: "管理受信用户列表和单命令授权（主人自动受信，不可移除）",
-    usage: "/trust [list|add <ID> [昵称]|remove <ID>|grant <ID> <命令> [分钟|forever]|revoke <ID> <命令>|grants [ID]|status|help]",
+    usage:
+      "/trust [list|add <ID> [昵称]|remove <ID>|grant <ID> <命令> [分钟|forever]|revoke <ID> <命令>|grants [ID]|status|help]",
     category: "system" as CommandCategory,
     handler: async (ctx) => {
       const trust = await import("../../../business/trust.js");
-      const { isTrusted, addTrust, removeTrust, listTrust, getMasterUserId, grantCommand, revokeCommand, listCommandGrants, getTrustEntry } = trust;
+      const {
+        isTrusted,
+        addTrust,
+        removeTrust,
+        listTrust,
+        getMasterUserId,
+        grantCommand,
+        revokeCommand,
+        listCommandGrants,
+        getTrustEntry,
+      } = trust;
       const subCmd = ctx.args[0]?.toLowerCase();
       const userId = ctx.message.fromUserId;
 
@@ -27,19 +38,19 @@ export function register(cmdSys: CommandSystem): void {
       if (subCmd === "help" || subCmd === "?") {
         await ctx.reply(
           "📋 /trust 子命令帮助:\n\n" +
-          "  /trust                    查看信任列表\n" +
-          "  /trust list               同上\n" +
-          "  /trust add <ID> [昵称]    添加受信用户\n" +
-          "  /trust remove <ID>        移除受信用户（主人不可移除）\n" +
-          "  /trust grant <ID> <命令> [分钟|forever]\n" +
-          "                            授权单命令给单用户（默认5分钟）\n" +
-          "  /trust revoke <ID> <命令> 撤销单用户单命令授权\n" +
-          "  /trust grants [ID]        查看单命令授权（默认自己）\n" +
-          "  /trust status             查看自己的信任状态\n" +
-          "  /trust help               显示此帮助\n\n" +
-          "命令名无需加/前缀（如 shell, 不是 /shell）\n" +
-          "不可授权命令: unsafe, trust, block, config, init, daemon\n" +
-          "被封禁用户不能被添加到信任列表",
+            "  /trust                    查看信任列表\n" +
+            "  /trust list               同上\n" +
+            "  /trust add <ID> [昵称]    添加受信用户\n" +
+            "  /trust remove <ID>        移除受信用户（主人不可移除）\n" +
+            "  /trust grant <ID> <命令> [分钟|forever]\n" +
+            "                            授权单命令给单用户（默认5分钟）\n" +
+            "  /trust revoke <ID> <命令> 撤销单用户单命令授权\n" +
+            "  /trust grants [ID]        查看单命令授权（默认自己）\n" +
+            "  /trust status             查看自己的信任状态\n" +
+            "  /trust help               显示此帮助\n\n" +
+            "命令名无需加/前缀（如 shell, 不是 /shell）\n" +
+            "不可授权命令: unsafe, trust, block, config, init, daemon\n" +
+            "被封禁用户不能被添加到信任列表",
         );
         return;
       }
@@ -49,16 +60,22 @@ export function register(cmdSys: CommandSystem): void {
         const trusted = isTrusted(userId);
         const master = getMasterUserId();
         const grants = listCommandGrants(userId);
-        const grantLines = grants.length > 0
-          ? grants.map(g => `    ${g.command} — ${g.forever ? "永久" : `${Math.ceil((g.expiresAt - Date.now()) / 60000)}分钟后过期`}`).join("\n")
-          : "    (无)";
+        const grantLines =
+          grants.length > 0
+            ? grants
+                .map(
+                  (g) =>
+                    `    ${g.command} — ${g.forever ? "永久" : `${Math.ceil((g.expiresAt - Date.now()) / 60000)}分钟后过期`}`,
+                )
+                .join("\n")
+            : "    (无)";
         await ctx.reply(
           `📊 信任状态:\n` +
-          `  你的ID: ${userId}\n` +
-          `  是否受信: ${trusted ? "是" : "否"}\n` +
-          `  是否主人: ${userId === master ? "是" : "否"}\n` +
-          `  主人ID: ${master ?? "(未设置)"}\n` +
-          `  单命令授权:\n${grantLines}`,
+            `  你的ID: ${userId}\n` +
+            `  是否受信: ${trusted ? "是" : "否"}\n` +
+            `  是否主人: ${userId === master ? "是" : "否"}\n` +
+            `  主人ID: ${master ?? "(未设置)"}\n` +
+            `  单命令授权:\n${grantLines}`,
         );
         return;
       }
@@ -68,7 +85,9 @@ export function register(cmdSys: CommandSystem): void {
       // Unsafe mode also bypasses elevated + trust check (trusted user enabled it).
       const bypassChecks = ctx.source === "cli" || cmdSys.isUnsafeMode();
       if (!bypassChecks && ctx.message.chatType === "group") {
-        await ctx.reply("⚠️ 此操作仅限私聊使用。请私聊机器人发送此命令。\n或在群聊中开启危险模式：/unsafe on");
+        await ctx.reply(
+          "⚠️ 此操作仅限私聊使用。请私聊机器人发送此命令。\n或在群聊中开启危险模式：/unsafe on",
+        );
         return;
       }
 
@@ -77,9 +96,9 @@ export function register(cmdSys: CommandSystem): void {
       if (!bypassChecks && !isTrusted(userId)) {
         await ctx.reply(
           `❌ 权限不足：你需要受信才能管理信任列表。\n` +
-          `你的用户ID: ${userId}\n` +
-          `请联系主人发送: /trust add ${userId}\n` +
-          `或由主人开启危险模式后在群聊中执行`,
+            `你的用户ID: ${userId}\n` +
+            `请联系主人发送: /trust add ${userId}\n` +
+            `或由主人开启危险模式后在群聊中执行`,
         );
         return;
       }
@@ -92,8 +111,10 @@ export function register(cmdSys: CommandSystem): void {
           return;
         }
         if (ctx.useTable) {
-          const rows = entries.map(e => {
-            const grantCount = e.commandGrants ? Object.keys(e.commandGrants).length : 0;
+          const rows = entries.map((e) => {
+            const grantCount = e.commandGrants
+              ? Object.keys(e.commandGrants).length
+              : 0;
             return [
               e.nickname || "",
               e.userId,
@@ -102,17 +123,23 @@ export function register(cmdSys: CommandSystem): void {
               new Date(e.trustedAt).toLocaleString("zh-CN"),
             ];
           });
-          await ctx.reply(`📋 信任列表 (${entries.length} 人):\n${await ctx.formatTable(["昵称", "用户ID", "角色", "授权数", "受信时间"], rows)}`);
+          await ctx.reply(
+            `📋 信任列表 (${entries.length} 人):\n${await ctx.formatTable(["昵称", "用户ID", "角色", "授权数", "受信时间"], rows)}`,
+          );
         } else {
-          const lines = entries.map(e => {
+          const lines = entries.map((e) => {
             const crown = e.isMaster || e.userId === master ? "👑" : "👤";
             const nick = e.nickname ? ` (${e.nickname})` : "";
             const masterTag = e.isMaster ? " [主人]" : "";
-            const grantCount = e.commandGrants ? Object.keys(e.commandGrants).length : 0;
+            const grantCount = e.commandGrants
+              ? Object.keys(e.commandGrants).length
+              : 0;
             const grantTag = grantCount > 0 ? ` [${grantCount}个授权]` : "";
             return `  ${crown} ${e.userId}${nick}${masterTag}${grantTag}  受信于 ${new Date(e.trustedAt).toLocaleString("zh-CN")}`;
           });
-          await ctx.reply(`📋 信任列表 (${entries.length} 人):\n${lines.join("\n")}`);
+          await ctx.reply(
+            `📋 信任列表 (${entries.length} 人):\n${lines.join("\n")}`,
+          );
         }
         return;
       }
@@ -126,7 +153,9 @@ export function register(cmdSys: CommandSystem): void {
         const nickname = ctx.args.slice(2).join(" ");
         const result = await addTrust(targetId, nickname);
         if (result.ok) {
-          await ctx.reply(`✅ 已将 ${targetId}${nickname ? ` (${nickname})` : ""} 加入信任列表`);
+          await ctx.reply(
+            `✅ 已将 ${targetId}${nickname ? ` (${nickname})` : ""} 加入信任列表`,
+          );
         } else if (result.reason === "already") {
           await ctx.reply(`${targetId} 已在信任列表中（昵称已更新）`);
         } else {
@@ -142,9 +171,10 @@ export function register(cmdSys: CommandSystem): void {
         }
         const targetId = await ctx.resolveAtReference(ctx.args[1]);
         const result = removeTrust(targetId);
-        await ctx.reply(result.ok
-          ? `✅ 已将 ${targetId} 移出信任列表`
-          : `❌ ${result.reason}`,
+        await ctx.reply(
+          result.ok
+            ? `✅ 已将 ${targetId} 移出信任列表`
+            : `❌ ${result.reason}`,
         );
         return;
       }
@@ -154,14 +184,18 @@ export function register(cmdSys: CommandSystem): void {
       // The user does NOT need to be trusted first — this is a standalone grant.
       if (subCmd === "grant") {
         if (ctx.args.length < 3) {
-          await ctx.reply("用法: /trust grant <用户ID> <命令名> [分钟|forever]\n默认: 5分钟, forever=永久\n命令名可加/也可不加，支持别名（如 sh = shell）\n不可授权命令: unsafe, trust, block, config, init, daemon");
+          await ctx.reply(
+            "用法: /trust grant <用户ID> <命令名> [分钟|forever]\n默认: 5分钟, forever=永久\n命令名可加/也可不加，支持别名（如 sh = shell）\n不可授权命令: unsafe, trust, block, config, init, daemon",
+          );
           return;
         }
         const targetId = await ctx.resolveAtReference(ctx.args[1]);
         // Resolve command name: accepts "shell", "/shell", "sh" (alias) → "shell"
         const resolved = cmdSys.resolveCommandName(ctx.args[2]);
         if (!resolved) {
-          await ctx.reply(`❌ 未知命令: ${ctx.args[2]}\n提示: 可用 /commands 查看所有命令和别名`);
+          await ctx.reply(
+            `❌ 未知命令: ${ctx.args[2]}\n提示: 可用 /commands 查看所有命令和别名`,
+          );
           return;
         }
         const cmdName = resolved;
@@ -177,10 +211,12 @@ export function register(cmdSys: CommandSystem): void {
           return;
         }
         const result = await grantCommand(targetId, cmdName, durationMs);
-        const expiryStr = durationMs === Infinity ? "永久" : `${durationMs / 60000}分钟`;
-        await ctx.reply(result.ok
-          ? `✅ 已授权 ${cmdName} 给 ${targetId} (${expiryStr})`
-          : `❌ ${result.reason}`,
+        const expiryStr =
+          durationMs === Infinity ? "永久" : `${durationMs / 60000}分钟`;
+        await ctx.reply(
+          result.ok
+            ? `✅ 已授权 ${cmdName} 给 ${targetId} (${expiryStr})`
+            : `❌ ${result.reason}`,
         );
         return;
       }
@@ -188,7 +224,9 @@ export function register(cmdSys: CommandSystem): void {
       // /trust revoke <userID> /command
       if (subCmd === "revoke") {
         if (ctx.args.length < 3) {
-          await ctx.reply("用法: /trust revoke <用户ID> <命令名>\n命令名可加/也可不加，支持别名");
+          await ctx.reply(
+            "用法: /trust revoke <用户ID> <命令名>\n命令名可加/也可不加，支持别名",
+          );
           return;
         }
         const targetId = await ctx.resolveAtReference(ctx.args[1]);
@@ -200,16 +238,19 @@ export function register(cmdSys: CommandSystem): void {
         }
         const cmdName = resolved;
         const result = revokeCommand(targetId, cmdName);
-        await ctx.reply(result.ok
-          ? `✅ 已撤销 ${targetId} 的 ${cmdName} 授权`
-          : `❌ ${result.reason}`,
+        await ctx.reply(
+          result.ok
+            ? `✅ 已撤销 ${targetId} 的 ${cmdName} 授权`
+            : `❌ ${result.reason}`,
         );
         return;
       }
 
       // /trust grants <userID> — list a user's command grants
       if (subCmd === "grants") {
-        const targetId = ctx.args[1] ? await ctx.resolveAtReference(ctx.args[1]) : userId;
+        const targetId = ctx.args[1]
+          ? await ctx.resolveAtReference(ctx.args[1])
+          : userId;
         const grants = listCommandGrants(targetId);
         const entry = getTrustEntry(targetId);
         const name = entry?.nickname ?? targetId;
@@ -217,21 +258,26 @@ export function register(cmdSys: CommandSystem): void {
           await ctx.reply(`📋 ${name} 的单命令授权: (无)`);
           return;
         }
-        const lines = grants.map(g => `  ${g.command} — ${g.forever ? "永久" : `${Math.ceil((g.expiresAt - Date.now()) / 60000)}分钟后过期`}`);
-        await ctx.reply(`📋 ${name} 的单命令授权 (${grants.length} 个):\n${lines.join("\n")}`);
+        const lines = grants.map(
+          (g) =>
+            `  ${g.command} — ${g.forever ? "永久" : `${Math.ceil((g.expiresAt - Date.now()) / 60000)}分钟后过期`}`,
+        );
+        await ctx.reply(
+          `📋 ${name} 的单命令授权 (${grants.length} 个):\n${lines.join("\n")}`,
+        );
         return;
       }
 
       await ctx.reply(
         "用法:\n" +
-        "  /trust                          查看信任列表\n" +
-        "  /trust list                     同上\n" +
-        "  /trust add <ID> [昵称]          添加受信用户\n" +
-        "  /trust remove <ID>              移除受信用户（主人不可移除）\n" +
-        "  /trust grant <ID> /命令 [分钟]  授权单命令给单用户（默认5分钟）\n" +
-        "  /trust revoke <ID> /命令        撤销单用户单命令授权\n" +
-        "  /trust grants [ID]              查看单命令授权（默认自己）\n" +
-        "  /trust status                   查看自己的信任状态",
+          "  /trust                          查看信任列表\n" +
+          "  /trust list                     同上\n" +
+          "  /trust add <ID> [昵称]          添加受信用户\n" +
+          "  /trust remove <ID>              移除受信用户（主人不可移除）\n" +
+          "  /trust grant <ID> /命令 [分钟]  授权单命令给单用户（默认5分钟）\n" +
+          "  /trust revoke <ID> /命令        撤销单用户单命令授权\n" +
+          "  /trust grants [ID]              查看单命令授权（默认自己）\n" +
+          "  /trust status                   查看自己的信任状态",
       );
     },
   });

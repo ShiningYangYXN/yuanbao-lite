@@ -4,16 +4,16 @@ Yuanbao Lite 内置 53 个斜杠命令，覆盖聊天、群管、媒体、LLM、
 
 ## 命令分类
 
-| 分类 | 命令数 | 说明 |
-|------|--------|------|
-| info | 9 | 信息查询（status, version, ping, ip, whoami 等） |
-| chat | 8 | 聊天与贴纸（dm, group, reply, mention, sticker 等） |
-| group | 8 | 群聊管理（groups, members, join, search 等） |
-| history | 4 | 消息历史（history, hsearch, hclear, inspect） |
-| system | 8 | 系统管理（shell, term, daemon, config, log 等） |
-| llm | 2 | LLM 控制（llm, new） |
-| media | 5 | 媒体文件（upload, download, file, img, attachment） |
-| utility | 9 | 实用工具（echo, calc, alias, contacts, account 等） |
+| 分类    | 命令数 | 说明                                                |
+| ------- | ------ | --------------------------------------------------- |
+| info    | 9      | 信息查询（status, version, ping, ip, whoami 等）    |
+| chat    | 8      | 聊天与贴纸（dm, group, reply, mention, sticker 等） |
+| group   | 8      | 群聊管理（groups, members, join, search 等）        |
+| history | 4      | 消息历史（history, hsearch, hclear, inspect）       |
+| system  | 8      | 系统管理（shell, term, daemon, config, log 等）     |
+| llm     | 2      | LLM 控制（llm, new）                                |
+| media   | 5      | 媒体文件（upload, download, file, img, attachment） |
+| utility | 9      | 实用工具（echo, calc, alias, contacts, account 等） |
 
 完整命令列表请参考 [README.md](../README.md#命令列表) 或使用 `/help` 命令。
 
@@ -32,6 +32,7 @@ block > trust > unsafe
 ### elevated 命令
 
 标记为 `elevated: true` 的命令需要特殊权限才能在群聊中执行：
+
 - 私聊：所有者（master）可直接执行
 - 群聊：需要 `/unsafe on` 或 `/trust grant <用户> <命令>`
 
@@ -52,7 +53,7 @@ await bot.registerCommand({
   description: "查询天气",
   usage: "/weather <城市>",
   category: "utility",
-  elevated: false,  // 是否需要 elevated 权限
+  elevated: false, // 是否需要 elevated 权限
   handler: async (ctx) => {
     const city = ctx.args[0];
     if (!city) {
@@ -73,14 +74,14 @@ await bot.registerCommand({
 interface CommandContext {
   bot: YuanbaoBot;
   message: ChatMessage;
-  args: string[];           // 已解析的参数
-  text: string;             // 完整命令文本
+  args: string[]; // 已解析的参数
+  text: string; // 完整命令文本
   commandName: string;
   isGroup: boolean;
   groupCode?: string;
-  source: "cli" | "chat";   // 命令来源
-  showAll: boolean;         // --all 标志
-  useTable: boolean;        // 表格输出模式
+  source: "cli" | "chat"; // 命令来源
+  showAll: boolean; // --all 标志
+  useTable: boolean; // 表格输出模式
   reply: (text: string) => Promise<void>;
 }
 ```
@@ -89,9 +90,9 @@ interface CommandContext {
 
 ```typescript
 interface CommandResult {
-  handled: boolean;         // 是否被处理
-  reply?: string;           // 回复文本（可选）
-  error?: string;           // 错误信息
+  handled: boolean; // 是否被处理
+  reply?: string; // 回复文本（可选）
+  error?: string; // 错误信息
 }
 ```
 
@@ -142,13 +143,13 @@ export function registerAll(cmdSys: CommandSystem): void {
 
 以下命令进入阻塞模式，5 分钟无操作自动退出：
 
-| 命令 | 用途 | 退出方式 |
-|------|------|----------|
-| `/init` | 配置向导 | 完成或 `/init cancel` |
-| `/llm config` | LLM 配置向导 | 完成或 `/llm config cancel` |
-| `/term` | 交互式终端 | `/term exit` 或 `exit` |
-| `/switch group <群号>` | 上下文切换 | `/switch exit` |
-| `/join <群号>` | 加入群聊上下文 | `/switch exit` |
+| 命令                   | 用途           | 退出方式                    |
+| ---------------------- | -------------- | --------------------------- |
+| `/init`                | 配置向导       | 完成或 `/init cancel`       |
+| `/llm config`          | LLM 配置向导   | 完成或 `/llm config cancel` |
+| `/term`                | 交互式终端     | `/term exit` 或 `exit`      |
+| `/switch group <群号>` | 上下文切换     | `/switch exit`              |
+| `/join <群号>`         | 加入群聊上下文 | `/switch exit`              |
 
 阻塞式会话使用 session-scoped 隔离（同一用户 + 同一会话才捕获）。
 
@@ -156,12 +157,12 @@ export function registerAll(cmdSys: CommandSystem): void {
 
 以下命令依赖 Node.js 运行时，在浏览器中调用会返回错误信息：
 
-| 命令 | 依赖 | 浏览器行为 |
-|------|------|-----------|
-| `/shell` | `node:child_process` | 返回"需要 Node.js 运行时" |
-| `/term` | `node:child_process` | 同上 |
-| `/tempfile` | `node:fs` | 同上 |
-| `/myip` | `node:os`（部分） | 跳过本地接口检测，仅显示公网 IP |
+| 命令        | 依赖                 | 浏览器行为                      |
+| ----------- | -------------------- | ------------------------------- |
+| `/shell`    | `node:child_process` | 返回"需要 Node.js 运行时"       |
+| `/term`     | `node:child_process` | 同上                            |
+| `/tempfile` | `node:fs`            | 同上                            |
+| `/myip`     | `node:os`（部分）    | 跳过本地接口检测，仅显示公网 IP |
 
 ## 命令帮助
 
@@ -173,18 +174,21 @@ export function registerAll(cmdSys: CommandSystem): void {
 
 ```typescript
 new YuanbaoBot({
-  appKey, appSecret,
+  appKey,
+  appSecret,
   commands: {
-    prefix: "/",                    // 命令前缀
-    caseSensitive: false,           // 大小写敏感
-    enableInGroup: true,            // 群聊启用
-    enableInDirect: true,           // 私聊启用
-    requireMentionInGroup: true,    // 群聊需要 @bot
+    prefix: "/", // 命令前缀
+    caseSensitive: false, // 大小写敏感
+    enableInGroup: true, // 群聊启用
+    enableInDirect: true, // 私聊启用
+    requireMentionInGroup: true, // 群聊需要 @bot
     helpHeader: "🤖 我的 Bot 命令",
     helpFooter: "输入 /help <命令名> 查看详细用法",
-    showUsage: true,                // 显示用法提示
+    showUsage: true, // 显示用法提示
   },
-  customCommands: [/* ... */],
+  customCommands: [
+    /* ... */
+  ],
 });
 ```
 
@@ -192,7 +196,8 @@ new YuanbaoBot({
 
 ```typescript
 new YuanbaoBot({
-  appKey, appSecret,
-  commands: false,  // 完全禁用，减小 bundle
+  appKey,
+  appSecret,
+  commands: false, // 完全禁用，减小 bundle
 });
 ```

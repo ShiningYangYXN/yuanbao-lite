@@ -21,12 +21,12 @@ block > trust > unsafe
 
 每个用户可有多个封禁范围（叠加）：
 
-| 范围 | 说明 |
-|------|------|
-| `[all]` | 拒绝所有交互（命令 + LLM） |
-| `[llm]` | 拒绝 LLM 自动回复 |
-| `[command]` | 拒绝所有斜杠命令 |
-| `<命令名>` | 拒绝特定命令（如 `shell`） |
+| 范围        | 说明                       |
+| ----------- | -------------------------- |
+| `[all]`     | 拒绝所有交互（命令 + LLM） |
+| `[llm]`     | 拒绝 LLM 自动回复          |
+| `[command]` | 拒绝所有斜杠命令           |
+| `<命令名>`  | 拒绝特定命令（如 `shell`） |
 
 **注意**：权限组必须带方括号，命令名不带。
 
@@ -114,6 +114,7 @@ bot.on("ready", async () => {
 ### 不可授权命令
 
 以下命令不能通过 `/unsafe allow` 授权（安全考虑）：
+
 - `unsafe` 本身
 - `trust`、`block`
 - `config`、`init`
@@ -130,11 +131,22 @@ bot.on("ready", async () => {
 
 ```typescript
 const blocked = [
-  "process", "require", "module", "exports",
-  "global", "GLOBAL", "root",
-  "child_process", "fs", "path", "os",
-  "fetch", "XMLHttpRequest", "WebSocket",
-  "eval", "Function",
+  "process",
+  "require",
+  "module",
+  "exports",
+  "global",
+  "GLOBAL",
+  "root",
+  "child_process",
+  "fs",
+  "path",
+  "os",
+  "fetch",
+  "XMLHttpRequest",
+  "WebSocket",
+  "eval",
+  "Function",
 ];
 ```
 
@@ -184,6 +196,7 @@ const blocked = [
 ## 6. CLI 全局权限
 
 通过 CLI 执行的所有命令绕过所有限制。这是设计行为：
+
 - CLI 用户通常就是 Bot 所有者
 - CLI 通过 daemon 本地 HTTP 执行（127.0.0.1）
 - 远程访问需通过 SSH 隧道
@@ -204,9 +217,17 @@ Logger 自动屏蔽敏感字段：
 
 ```typescript
 const SENSITIVE_KEYS = new Set([
-  "token", "signature", "app_key", "appkey", "appsecret",
-  "app_secret", "secret", "password", "x-token",
-  "cloud_custom_data", "model_output",
+  "token",
+  "signature",
+  "app_key",
+  "appkey",
+  "appsecret",
+  "app_secret",
+  "secret",
+  "password",
+  "x-token",
+  "cloud_custom_data",
+  "model_output",
 ]);
 
 function maskValue(value: string): string {

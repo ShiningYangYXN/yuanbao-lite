@@ -29,17 +29,28 @@ async function ensureMarked(): Promise<(text: string) => string> {
  */
 export function formatCliTable(headers: string[], rows: string[][]): string {
   const table = new Table({
-    head: headers.map(h => chalk.bold.cyan(h)),
+    head: headers.map((h) => chalk.bold.cyan(h)),
     style: { head: [], border: ["grey"], compact: false },
     chars: {
-      "top": "─", "top-mid": "┬", "top-left": "┌", "top-right": "┐",
-      "bottom": "─", "bottom-mid": "┴", "bottom-left": "└", "bottom-right": "┘",
-      "left": "│", "left-mid": "├", "mid": "─", "mid-mid": "┼",
-      "right": "│", "right-mid": "┤", "middle": "│",
+      top: "─",
+      "top-mid": "┬",
+      "top-left": "┌",
+      "top-right": "┐",
+      bottom: "─",
+      "bottom-mid": "┴",
+      "bottom-left": "└",
+      "bottom-right": "┘",
+      left: "│",
+      "left-mid": "├",
+      mid: "─",
+      "mid-mid": "┼",
+      right: "│",
+      "right-mid": "┤",
+      middle: "│",
     },
   });
   for (const row of rows) {
-    table.push(row.map(cell => colorizeCell(cell)));
+    table.push(row.map((cell) => colorizeCell(cell)));
   }
   return table.toString();
 }
@@ -93,9 +104,12 @@ export function coloredName(userId: string, nickname: string): string {
  */
 function colorizeMentions(text: string): string {
   // Replace @[nick](id) with colored version
-  return text.replace(/@\[([^\]]*)\]\(([^)]+)\)/g, (_match, nickname, userId) => {
-    return chalk.cyan(`@${coloredName(userId, nickname)}`);
-  });
+  return text.replace(
+    /@\[([^\]]*)\]\(([^)]+)\)/g,
+    (_match, nickname, userId) => {
+      return chalk.cyan(`@${coloredName(userId, nickname)}`);
+    },
+  );
 }
 
 /**
@@ -136,7 +150,13 @@ export function formatInboundMessage(
   const mentionMark = msg.isMentioned ? chalk.yellow(" @我") : "";
 
   // Detect attachments in text
-  const hasAttachment = msg.text && (msg.text.includes("[image:") || msg.text.includes("[file:") || msg.text.includes("[video:") || msg.text.includes("[voice:") || msg.text.includes("[附件:"));
+  const hasAttachment =
+    msg.text &&
+    (msg.text.includes("[image:") ||
+      msg.text.includes("[file:") ||
+      msg.text.includes("[video:") ||
+      msg.text.includes("[voice:") ||
+      msg.text.includes("[附件:"));
   const attachMark = hasAttachment ? chalk.blue(" 📎") : "";
 
   // Detect content references
@@ -160,17 +180,22 @@ export function formatInboundMessage(
  *   📤出站  →  群名/DM · 11:45:14
  *       消息文本
  */
-export function formatOutboundMessage(text: string, to: string, isGroup: boolean): string {
+export function formatOutboundMessage(
+  text: string,
+  to: string,
+  isGroup: boolean,
+): string {
   const time = chalk.dim(formatTime(Date.now()));
   const scope = isGroup ? chalk.cyan(`群${to}`) : chalk.dim(`私聊`);
   const header = `  ${chalk.magenta("📤 出站")}  ${chalk.dim("→")}  ${scope} ${chalk.dim("·")} ${time}`;
-  const displayText = text.length > 500 ? text.substring(0, 500) + chalk.dim("...") : text;
+  const displayText =
+    text.length > 500 ? text.substring(0, 500) + chalk.dim("...") : text;
   const body = `      ${displayText}`;
   return `${header}\n${body}`;
 }
 
 function formatTime(ts: number): string {
   const d = new Date(ts);
-  const pad = (n: number) => n < 10 ? `0${n}` : String(n);
+  const pad = (n: number) => (n < 10 ? `0${n}` : String(n));
   return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }

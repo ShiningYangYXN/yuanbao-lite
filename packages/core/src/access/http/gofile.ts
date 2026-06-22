@@ -22,7 +22,10 @@ import { getNodeModules } from "../persistence/adapter.js";
 function basename(filePath: string): string {
   const path = getNodeModules().path;
   if (path) return path.basename(filePath);
-  const lastSlash = Math.max(filePath.lastIndexOf("/"), filePath.lastIndexOf("\\"));
+  const lastSlash = Math.max(
+    filePath.lastIndexOf("/"),
+    filePath.lastIndexOf("\\"),
+  );
   return filePath.slice(lastSlash + 1);
 }
 
@@ -56,7 +59,9 @@ const MAX_FILE_SIZE_MB = 500; // GoFile free tier limit
  * @param filePath - Local file path to upload
  * @returns Upload result with download URLs
  */
-export async function uploadToGoFile(filePath: string): Promise<GoFileUploadResult> {
+export async function uploadToGoFile(
+  filePath: string,
+): Promise<GoFileUploadResult> {
   const log = createLog("gofile");
 
   // File system access — Node-only. Under browser, callers must provide
@@ -76,7 +81,9 @@ export async function uploadToGoFile(filePath: string): Promise<GoFileUploadResu
   const fileSizeMB = fileStat.size / (1024 * 1024);
 
   if (fileSizeMB > MAX_FILE_SIZE_MB) {
-    throw new Error(`File too large: ${fileSizeMB.toFixed(1)}MB exceeds GoFile limit of ${MAX_FILE_SIZE_MB}MB`);
+    throw new Error(
+      `File too large: ${fileSizeMB.toFixed(1)}MB exceeds GoFile limit of ${MAX_FILE_SIZE_MB}MB`,
+    );
   }
 
   const fileName = basename(filePath);
@@ -119,7 +126,9 @@ export async function uploadToGoFile(filePath: string): Promise<GoFileUploadResu
   }
 
   const result: GoFileUploadResult = {
-    pageUrl: uploadData.data.downloadPage || `https://gofile.io/d/${uploadData.data.parentFolderCode || ""}`,
+    pageUrl:
+      uploadData.data.downloadPage ||
+      `https://gofile.io/d/${uploadData.data.parentFolderCode || ""}`,
     directUrl: uploadData.data.directLink || "",
     fileId: uploadData.data.id || "",
     fileName: uploadData.data.name || fileName,
@@ -141,9 +150,10 @@ export async function uploadAndFormatLink(
   const result = await uploadToGoFile(filePath);
 
   const desc = description ? ` (${description})` : "";
-  const sizeStr = result.fileSize > 1024 * 1024
-    ? `${(result.fileSize / (1024 * 1024)).toFixed(1)}MB`
-    : `${(result.fileSize / 1024).toFixed(0)}KB`;
+  const sizeStr =
+    result.fileSize > 1024 * 1024
+      ? `${(result.fileSize / (1024 * 1024)).toFixed(1)}MB`
+      : `${(result.fileSize / 1024).toFixed(0)}KB`;
 
   return `文件分享${desc}: ${result.fileName} [${sizeStr}]\n链接: ${result.pageUrl}`;
 }
@@ -171,7 +181,11 @@ export const goFileProvider: TempFileProvider = {
   },
 };
 
-function buildMultipart(boundary: string, fileBuffer: Buffer, fileName: string): Uint8Array {
+function buildMultipart(
+  boundary: string,
+  fileBuffer: Buffer,
+  fileName: string,
+): Uint8Array {
   const encoder = new TextEncoder();
 
   const parts: Uint8Array[] = [];

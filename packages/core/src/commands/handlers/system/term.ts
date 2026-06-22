@@ -22,9 +22,13 @@ export function register(cmdSys: CommandSystem): void {
     handler: async (ctx) => {
       const sessionKey = sessionKeyFromMessage(ctx.message);
       if (ctx.args[0]?.toLowerCase() === "exit") {
-        const sessions = (cmdSys as unknown as { _termSessions?: Map<string, unknown> })._termSessions;
+        const sessions = (
+          cmdSys as unknown as { _termSessions?: Map<string, unknown> }
+        )._termSessions;
         if (sessions) {
-          const session = sessions.get(sessionKey) as { shell: { kill: (sig: string) => void } } | undefined;
+          const session = sessions.get(sessionKey) as
+            | { shell: { kill: (sig: string) => void } }
+            | undefined;
           if (session) {
             session.shell.kill("SIGTERM");
             sessions.delete(sessionKey);
@@ -35,7 +39,24 @@ export function register(cmdSys: CommandSystem): void {
       }
 
       // Start terminal session
-      const sessions = (cmdSys as unknown as { _termSessions?: Map<string, { shell: { kill: (sig: string) => void; killed: boolean; exitCode: number | null; stdout: { on: (e: string, cb: (d: Buffer) => void) => void }; stderr: { on: (e: string, cb: (d: Buffer) => void) => void }; on: (e: string, cb: (code: number | null) => void) => void; stdin: { write: (s: string) => boolean } | null } }> })._termSessions;
+      const sessions = (
+        cmdSys as unknown as {
+          _termSessions?: Map<
+            string,
+            {
+              shell: {
+                kill: (sig: string) => void;
+                killed: boolean;
+                exitCode: number | null;
+                stdout: { on: (e: string, cb: (d: Buffer) => void) => void };
+                stderr: { on: (e: string, cb: (d: Buffer) => void) => void };
+                on: (e: string, cb: (code: number | null) => void) => void;
+                stdin: { write: (s: string) => boolean } | null;
+              };
+            }
+          >;
+        }
+      )._termSessions;
       if (!sessions) {
         await ctx.reply("❌ 终端会话管理不可用");
         return;
@@ -51,13 +72,19 @@ export function register(cmdSys: CommandSystem): void {
       // Spawn a persistent shell process (Node-only — uses node:child_process).
       // Under browser, the dynamic import resolves to an error which we catch
       // and surface to the user with a clear message.
-      type SpawnFn = (cmd: string, args: string[], opts: Record<string, unknown>) => unknown;
+      type SpawnFn = (
+        cmd: string,
+        args: string[],
+        opts: Record<string, unknown>,
+      ) => unknown;
       let spawn: SpawnFn;
       try {
         const childProcess = await import("node:child_process");
         spawn = childProcess.spawn as unknown as SpawnFn;
       } catch (err) {
-        await ctx.reply(`❌ /term 需要 Node.js 运行时（node:child_process 不可用）: ${(err as Error).message}`);
+        await ctx.reply(
+          `❌ /term 需要 Node.js 运行时（node:child_process 不可用）: ${(err as Error).message}`,
+        );
         return;
       }
       const shell = spawn("bash", ["--noprofile", "--norc"], {
@@ -104,7 +131,12 @@ export function register(cmdSys: CommandSystem): void {
           if (session.idleTimer) clearInterval(session.idleTimer);
           shell.kill("SIGTERM");
           sessions.delete(sessionKey);
-          ctx.bot.sendDirectMessage(ctx.message.fromUserId, "⏰ 终端已超时（5分钟无操作），自动退出").catch(() => { });
+          ctx.bot
+            .sendDirectMessage(
+              ctx.message.fromUserId,
+              "⏰ 终端已超时（5分钟无操作），自动退出",
+            )
+            .catch(() => {});
         }
       }, 30_000);
 
@@ -112,11 +144,11 @@ export function register(cmdSys: CommandSystem): void {
 
       await ctx.reply(
         "🖥️ 交互式终端已启动\n\n" +
-        "接下来的消息将作为 shell 命令执行。\n" +
-        "工作目录和环境变量变更会保留。\n" +
-        "发送 /term exit 退出终端。\n" +
-        "5分钟无操作自动退出。\n\n" +
-        "示例: cd /tmp, export FOO=bar, ls -la",
+          "接下来的消息将作为 shell 命令执行。\n" +
+          "工作目录和环境变量变更会保留。\n" +
+          "发送 /term exit 退出终端。\n" +
+          "5分钟无操作自动退出。\n\n" +
+          "示例: cd /tmp, export FOO=bar, ls -la",
       );
     },
   });
@@ -126,7 +158,15 @@ export function register(cmdSys: CommandSystem): void {
   // The terminal input handler is called by YuanbaoBot.handleDispatch when a
   // user has an active session (intercepts non-slash messages).
   type TermSession = {
-    shell: { kill: (sig: string) => void; killed: boolean; exitCode: number | null; stdout: { on: (e: string, cb: (d: Buffer) => void) => void }; stderr: { on: (e: string, cb: (d: Buffer) => void) => void }; on: (e: string, cb: (code: number | null) => void) => void; stdin: { write: (s: string) => boolean } | null };
+    shell: {
+      kill: (sig: string) => void;
+      killed: boolean;
+      exitCode: number | null;
+      stdout: { on: (e: string, cb: (d: Buffer) => void) => void };
+      stderr: { on: (e: string, cb: (d: Buffer) => void) => void };
+      on: (e: string, cb: (code: number | null) => void) => void;
+      stdin: { write: (s: string) => boolean } | null;
+    };
     lastActivity: number;
     lastExitCode: number | null;
     outputBuffer: string;
@@ -134,101 +174,127 @@ export function register(cmdSys: CommandSystem): void {
     idleTimer: ReturnType<typeof setInterval> | null;
   };
   const termSessions = new Map<string, TermSession>();
-  (cmdSys as unknown as { _termSessions: Map<string, unknown> })._termSessions = termSessions;
+  (cmdSys as unknown as { _termSessions: Map<string, unknown> })._termSessions =
+    termSessions;
 
-  (cmdSys as unknown as { _handleTermInput: (bot: unknown, sessionKey: string, text: string, reply: (t: string) => Promise<void>) => Promise<boolean> })._handleTermInput =
-    async (bot: unknown, sessionKey: string, text: string, reply: (t: string) => Promise<void>): Promise<boolean> => {
-      const session = termSessions.get(sessionKey);
-      if (!session) return false;
+  (
+    cmdSys as unknown as {
+      _handleTermInput: (
+        bot: unknown,
+        sessionKey: string,
+        text: string,
+        reply: (t: string) => Promise<void>,
+      ) => Promise<boolean>;
+    }
+  )._handleTermInput = async (
+    bot: unknown,
+    sessionKey: string,
+    text: string,
+    reply: (t: string) => Promise<void>,
+  ): Promise<boolean> => {
+    const session = termSessions.get(sessionKey);
+    if (!session) return false;
 
-      // Check if shell has exited
-      if (session.shell.killed || session.shell.exitCode !== null) {
-        termSessions.delete(sessionKey);
-        if (session.idleTimer) clearInterval(session.idleTimer);
-        await reply(`🖥️ 终端进程已退出 (退出码: ${session.lastExitCode ?? 0})`);
-        return true;
-      }
+    // Check if shell has exited
+    if (session.shell.killed || session.shell.exitCode !== null) {
+      termSessions.delete(sessionKey);
+      if (session.idleTimer) clearInterval(session.idleTimer);
+      await reply(`🖥️ 终端进程已退出 (退出码: ${session.lastExitCode ?? 0})`);
+      return true;
+    }
 
-      // Check 5-minute timeout
-      if (Date.now() - session.lastActivity > 5 * 60 * 1000) {
-        session.shell.kill("SIGTERM");
-        if (session.idleTimer) clearInterval(session.idleTimer);
-        termSessions.delete(sessionKey);
-        await reply("⏰ 终端已超时（5分钟无操作），自动退出");
-        return true;
-      }
+    // Check 5-minute timeout
+    if (Date.now() - session.lastActivity > 5 * 60 * 1000) {
+      session.shell.kill("SIGTERM");
+      if (session.idleTimer) clearInterval(session.idleTimer);
+      termSessions.delete(sessionKey);
+      await reply("⏰ 终端已超时（5分钟无操作），自动退出");
+      return true;
+    }
 
-      session.lastActivity = Date.now();
-      const cmd = text.trim();
+    session.lastActivity = Date.now();
+    const cmd = text.trim();
 
-      // Check for exit command
-      if (cmd === "exit" || cmd === "quit" || cmd === "/term exit" || cmd === "/term") {
-        session.shell.kill("SIGTERM");
-        if (session.idleTimer) clearInterval(session.idleTimer);
-        termSessions.delete(sessionKey);
-        await reply(`🖥️ 终端已退出${session.lastExitCode !== null ? ` (最后退出码: ${session.lastExitCode})` : ""}`);
-        return true;
-      }
+    // Check for exit command
+    if (
+      cmd === "exit" ||
+      cmd === "quit" ||
+      cmd === "/term exit" ||
+      cmd === "/term"
+    ) {
+      session.shell.kill("SIGTERM");
+      if (session.idleTimer) clearInterval(session.idleTimer);
+      termSessions.delete(sessionKey);
+      await reply(
+        `🖥️ 终端已退出${session.lastExitCode !== null ? ` (最后退出码: ${session.lastExitCode})` : ""}`,
+      );
+      return true;
+    }
 
-      // Execute command in the persistent shell
-      session.outputBuffer = "";
-      const marker = `__TERM_MARKER_${Date.now()}__`;
-      let resolved = false;
+    // Execute command in the persistent shell
+    session.outputBuffer = "";
+    const marker = `__TERM_MARKER_${Date.now()}__`;
+    let resolved = false;
 
-      const outputPromise = new Promise<string>((resolve) => {
-        const timeout = setTimeout(() => {
-          if (!resolved) {
-            resolved = true;
-            resolve(session.outputBuffer);
-            session.outputBuffer = "";
-          }
-        }, 30_000);
+    const outputPromise = new Promise<string>((resolve) => {
+      const timeout = setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          resolve(session.outputBuffer);
+          session.outputBuffer = "";
+        }
+      }, 30_000);
 
-        const checkOutput = () => {
-          if (resolved) return;
-          if (session.outputBuffer.includes(marker)) {
-            resolved = true;
-            clearTimeout(timeout);
-            const fullBuffer = session.outputBuffer;
-            session.outputBuffer = "";
-            resolve(fullBuffer);
-          } else {
-            setTimeout(checkOutput, 50);
-          }
-        };
-        checkOutput();
-      });
+      const checkOutput = () => {
+        if (resolved) return;
+        if (session.outputBuffer.includes(marker)) {
+          resolved = true;
+          clearTimeout(timeout);
+          const fullBuffer = session.outputBuffer;
+          session.outputBuffer = "";
+          resolve(fullBuffer);
+        } else {
+          setTimeout(checkOutput, 50);
+        }
+      };
+      checkOutput();
+    });
 
-      if (session.shell.stdin) {
-        session.shell.stdin.write(`${cmd}\n`);
-        session.shell.stdin.write(`echo "${marker}$?|$(whoami)|$(hostname)|$(pwd)"\n`);
-      }
+    if (session.shell.stdin) {
+      session.shell.stdin.write(`${cmd}\n`);
+      session.shell.stdin.write(
+        `echo "${marker}$?|$(whoami)|$(hostname)|$(pwd)"\n`,
+      );
+    }
 
-      const rawBuffer = await outputPromise;
+    const rawBuffer = await outputPromise;
 
-      const markerIdx = rawBuffer.indexOf(marker);
-      const output = markerIdx >= 0
+    const markerIdx = rawBuffer.indexOf(marker);
+    const output =
+      markerIdx >= 0
         ? rawBuffer.slice(0, markerIdx).replace(/\r\n/g, "\n").trim()
         : rawBuffer.replace(/\r\n/g, "\n").trim();
-      const afterMarker = markerIdx >= 0
-        ? rawBuffer.slice(markerIdx + marker.length).trim()
-        : "";
+    const afterMarker =
+      markerIdx >= 0 ? rawBuffer.slice(markerIdx + marker.length).trim() : "";
 
-      const promptParts = afterMarker.split("|");
-      if (promptParts.length >= 1) {
-        session.lastExitCode = parseInt(promptParts[0], 10) || 0;
-      }
-      const userInfo = promptParts.length >= 2 ? promptParts[1] : "";
-      const hostInfo = promptParts.length >= 3 ? promptParts[2] : "";
-      const cwdInfo = promptParts.length >= 4 ? promptParts[3] : "";
-      const home = process.env.HOME || "";
-      const promptStr = (userInfo && hostInfo && cwdInfo)
+    const promptParts = afterMarker.split("|");
+    if (promptParts.length >= 1) {
+      session.lastExitCode = parseInt(promptParts[0], 10) || 0;
+    }
+    const userInfo = promptParts.length >= 2 ? promptParts[1] : "";
+    const hostInfo = promptParts.length >= 3 ? promptParts[2] : "";
+    const cwdInfo = promptParts.length >= 4 ? promptParts[3] : "";
+    const home = process.env.HOME || "";
+    const promptStr =
+      userInfo && hostInfo && cwdInfo
         ? `${userInfo}@${hostInfo}:${home && cwdInfo.startsWith(home) ? "~" + cwdInfo.slice(home.length) : cwdInfo}$ `
         : "$ ";
 
-      const cleanOutput = output || "(无输出)";
-      // Interactive terminal never truncates output — user expects full output
-      await reply(`${promptStr}${cmd}\n${cleanOutput}\n[退出码: ${session.lastExitCode ?? 0}]`);
-      return true;
-    };
+    const cleanOutput = output || "(无输出)";
+    // Interactive terminal never truncates output — user expects full output
+    await reply(
+      `${promptStr}${cmd}\n${cleanOutput}\n[退出码: ${session.lastExitCode ?? 0}]`,
+    );
+    return true;
+  };
 }

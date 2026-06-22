@@ -49,7 +49,7 @@ import { BrowserLocalStorageAdapter } from "./my-browser-adapter.js";
 const bot = new YuanbaoBot({
   appKey: "你的AppKey",
   appSecret: "你的AppSecret",
-  commands: false,  // 可选：禁用命令系统减小 bundle
+  commands: false, // 可选：禁用命令系统减小 bundle
   persistence: {
     dir: "yuanbao-lite",
     adapter: new BrowserLocalStorageAdapter(),
@@ -114,7 +114,7 @@ bot.on("ready", (data) => {
   console.log(`   connectId: ${data.connectId}`);
   console.log(`   botId: ${bot.getAccount().botId}`);
   console.log(`   ownerId: ${bot.getAccount().botOwnerId}`);
-  
+
   // 发送测试消息给自己
   const selfId = bot.getAccount().botOwnerId;
   if (selfId) {
@@ -141,17 +141,21 @@ await bot.start();
 ### Q: 启动时报 "No WebSocket constructor available"
 
 **A**: 运行在 Node 18-20 且未安装 `ws` 包。解决：
+
 ```bash
 npm install ws
 ```
+
 或升级到 Node 21+（内置 `globalThis.WebSocket`）。
 
 ### Q: 启动时报 "getDefaultPersistenceDir() requires Node.js runtime"
 
 **A**: 在浏览器中未提供持久化配置。解决：
+
 ```typescript
 new YuanbaoBot({
-  appKey, appSecret,
+  appKey,
+  appSecret,
   persistence: {
     dir: "my-app",
     adapter: myBrowserAdapter,
@@ -162,16 +166,19 @@ new YuanbaoBot({
 ### Q: `getAliasStore()` 抛出 "not initialized"
 
 **A**: 使用默认 Node 持久化时，store 构造是异步的（需 `await nodeModulesReady`）。解决：
+
 ```typescript
 const bot = new YuanbaoBot({ appKey, appSecret });
 await bot.init(); // 显式初始化
 const store = bot.getAliasStore(); // 现在 OK
 ```
+
 或直接 `await bot.start()`（内部会调用 `init()`）。
 
 ### Q: CORS 错误（浏览器）
 
 **A**: Tencent HTTP 端点（`bot.yuanbao.tencent.com`）不允许浏览器直连。需要部署一个 CORS 代理：
+
 - 开发环境：使用 Vite/webpack 的 proxy 配置
 - 生产环境：部署 serverless function 转发请求
 

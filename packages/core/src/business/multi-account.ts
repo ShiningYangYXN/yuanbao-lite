@@ -37,7 +37,10 @@ export type AccountEntry = {
 
 export type MultiAccountConfig = {
   /** Account definitions: id -> bot config */
-  accounts?: Record<string, YuanbaoBotConfig & { name?: string; tags?: string[] }>;
+  accounts?: Record<
+    string,
+    YuanbaoBotConfig & { name?: string; tags?: string[] }
+  >;
   /** The default active account ID */
   defaultAccountId?: string;
 };
@@ -56,7 +59,10 @@ export type MultiAccountEvent = {
 export class MultiAccountManager {
   private accounts = new Map<string, AccountEntry>();
   private activeAccountId: string | null = null;
-  private eventHandlers = new Map<string, Set<(event: MultiAccountEvent) => void>>();
+  private eventHandlers = new Map<
+    string,
+    Set<(event: MultiAccountEvent) => void>
+  >();
   private log: ModuleLog;
 
   constructor(config?: MultiAccountConfig) {
@@ -70,7 +76,10 @@ export class MultiAccountManager {
     }
 
     // Set default active account
-    if (config?.defaultAccountId && this.accounts.has(config.defaultAccountId)) {
+    if (
+      config?.defaultAccountId &&
+      this.accounts.has(config.defaultAccountId)
+    ) {
       this.activeAccountId = config.defaultAccountId;
       this.accounts.get(config.defaultAccountId)!.active = true;
     } else if (this.accounts.size > 0) {
@@ -96,7 +105,9 @@ export class MultiAccountManager {
     tags?: string[],
   ): AccountEntry {
     if (this.accounts.has(id)) {
-      throw new Error(`Account "${id}" already exists. Remove it first or use a different ID.`);
+      throw new Error(
+        `Account "${id}" already exists. Remove it first or use a different ID.`,
+      );
     }
 
     const bot = new YuanbaoBot(config);
@@ -270,7 +281,9 @@ export class MultiAccountManager {
     for (const [id] of this.accounts) {
       promises.push(
         this.startAccount(id).catch((err) => {
-          this.log.error(`failed to start account ${id}: ${(err as Error).message}`);
+          this.log.error(
+            `failed to start account ${id}: ${(err as Error).message}`,
+          );
         }),
       );
     }

@@ -4,8 +4,10 @@
 
 [![npm version](https://img.shields.io/npm/v/yuanbao-lite.svg)](https://www.npmjs.com/package/yuanbao-lite)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![OctoCounts](https://api.octocounts.com/badge/YuanbaoTeam/yuanbao-openclaw-plugin/branch/main)](https://octocounts.com/github/YuanbaoTeam/yuanbao-openclaw-plugin/tree/main)
 
 > 📖 完整开发文档请查看 [docs/](docs/README.md)
+> 🦞 OpenClaw实例请查看 [CLAW.md](CLAW.md)
 
 ## 特性
 
@@ -84,22 +86,22 @@ npx yb-cli rc /help
 
 ## 运行时支持
 
-| 运行时 | 核心功能 | 命令系统 | 文件上传 | /shell |
-|--------|----------|----------|----------|--------|
-| Node.js 21+ | ✅ | ✅ | ✅ | ✅ |
-| Node.js 18+ | ✅ | ✅ | ✅ | ✅ |
-| 现代浏览器 | ✅ | ✅ | ❌ | ❌ |
-| Edge Worker | ✅ | ✅ | ❌ | ❌ |
+| 运行时      | 核心功能 | 命令系统 | 文件上传 | /shell |
+| ----------- | -------- | -------- | -------- | ------ |
+| Node.js 21+ | ✅       | ✅       | ✅       | ✅     |
+| Node.js 18+ | ✅       | ✅       | ✅       | ✅     |
+| 现代浏览器  | ✅       | ✅       | ❌       | ❌     |
+| Edge Worker | ✅       | ✅       | ❌       | ❌     |
 
 ## 包结构
 
 本包通过 `exports` 字段提供多个入口：
 
-| 子路径 | 说明 | 浏览器可用 |
-|--------|------|-----------|
-| `yuanbao-lite` | 核心库（YuanbaoBot + 所有 store + 业务逻辑） | ✅ |
-| `yuanbao-lite/commands` | CommandSystem 运行时类 | ✅ |
-| `yuanbao-lite/cli` | CLI 入口（仅 Node） | ❌ |
+| 子路径                  | 说明                                         | 浏览器可用 |
+| ----------------------- | -------------------------------------------- | ---------- |
+| `yuanbao-lite`          | 核心库（YuanbaoBot + 所有 store + 业务逻辑） | ✅         |
+| `yuanbao-lite/commands` | CommandSystem 运行时类                       | ✅         |
+| `yuanbao-lite/cli`      | CLI 入口（仅 Node）                          | ❌         |
 
 ## 核心概念
 
@@ -120,10 +122,11 @@ await bot.start();
 
 ```typescript
 new YuanbaoBot({
-  appKey, appSecret,
+  appKey,
+  appSecret,
   persistence: {
     dir: "my-app",
-    adapter: myAdapter,  // 实现 PersistenceAdapter 接口
+    adapter: myAdapter, // 实现 PersistenceAdapter 接口
   },
 });
 ```
@@ -148,7 +151,8 @@ await bot.registerCommand({
 
 ```typescript
 new YuanbaoBot({
-  appKey, appSecret,
+  appKey,
+  appSecret,
   llmConfig: {
     provider: "my-openai",
     customProviders: {

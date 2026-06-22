@@ -138,10 +138,7 @@ export class ConfigStore {
   private data: CliConfigData;
   private autoSave: boolean;
 
-  constructor(options?: {
-    configDir?: string;
-    autoSave?: boolean;
-  }) {
+  constructor(options?: { configDir?: string; autoSave?: boolean }) {
     this.configDir = normalizePath(options?.configDir) || getDefaultConfigDir();
     this.configPath = joinPath(this.configDir, DEFAULT_CONFIG_FILE);
     this.autoSave = options?.autoSave ?? true;
@@ -163,7 +160,10 @@ export class ConfigStore {
 
   /** Get the active profile. */
   getActiveProfile(): CliProfile {
-    return this.data.profiles[this.data.activeProfile] || this.createDefaultProfile("default");
+    return (
+      this.data.profiles[this.data.activeProfile] ||
+      this.createDefaultProfile("default")
+    );
   }
 
   /** Get the active profile name. */
@@ -188,7 +188,9 @@ export class ConfigStore {
   }
 
   /** Get a global setting. */
-  getGlobal<K extends keyof NonNullable<CliConfigData["global"]>>(key: K): NonNullable<CliConfigData["global"]>[K] | undefined {
+  getGlobal<K extends keyof NonNullable<CliConfigData["global"]>>(
+    key: K,
+  ): NonNullable<CliConfigData["global"]>[K] | undefined {
     return this.data.global?.[key];
   }
 
@@ -218,8 +220,12 @@ export class ConfigStore {
     }
 
     // Normalize paths
-    if ((key === "stickerDir" || key === "downloadDir") && typeof value === "string") {
-      (this.data.profiles[profileName] as Record<string, unknown>)[key] = normalizeDir(value);
+    if (
+      (key === "stickerDir" || key === "downloadDir") &&
+      typeof value === "string"
+    ) {
+      (this.data.profiles[profileName] as Record<string, unknown>)[key] =
+        normalizeDir(value);
     } else {
       (this.data.profiles[profileName] as Record<string, unknown>)[key] = value;
     }
@@ -228,7 +234,10 @@ export class ConfigStore {
   }
 
   /** Set a global setting. */
-  setGlobal<K extends keyof NonNullable<CliConfigData["global"]>>(key: K, value: NonNullable<CliConfigData["global"]>[K]): void {
+  setGlobal<K extends keyof NonNullable<CliConfigData["global"]>>(
+    key: K,
+    value: NonNullable<CliConfigData["global"]>[K],
+  ): void {
     if (!this.data.global) this.data.global = {};
     this.data.global[key] = value;
     this.maybeAutoSave();
@@ -249,8 +258,10 @@ export class ConfigStore {
       ...profile,
     };
     // Normalize directory paths
-    if (newProfile.stickerDir) newProfile.stickerDir = normalizeDir(newProfile.stickerDir);
-    if (newProfile.downloadDir) newProfile.downloadDir = normalizeDir(newProfile.downloadDir);
+    if (newProfile.stickerDir)
+      newProfile.stickerDir = normalizeDir(newProfile.stickerDir);
+    if (newProfile.downloadDir)
+      newProfile.downloadDir = normalizeDir(newProfile.downloadDir);
 
     this.data.profiles[name] = newProfile;
     this.maybeAutoSave();
@@ -275,8 +286,10 @@ export class ConfigStore {
     Object.assign(this.data.profiles[profileName], partial);
     // Normalize paths again
     const profile = this.data.profiles[profileName];
-    if (profile.stickerDir) profile.stickerDir = normalizeDir(profile.stickerDir);
-    if (profile.downloadDir) profile.downloadDir = normalizeDir(profile.downloadDir);
+    if (profile.stickerDir)
+      profile.stickerDir = normalizeDir(profile.stickerDir);
+    if (profile.downloadDir)
+      profile.downloadDir = normalizeDir(profile.downloadDir);
     this.maybeAutoSave();
   }
 
@@ -317,10 +330,13 @@ export class ConfigStore {
 
       // Normalize all directory paths
       for (const profile of Object.values(this.data.profiles)) {
-        if (profile.stickerDir) profile.stickerDir = normalizeDir(profile.stickerDir);
-        if (profile.downloadDir) profile.downloadDir = normalizeDir(profile.downloadDir);
+        if (profile.stickerDir)
+          profile.stickerDir = normalizeDir(profile.stickerDir);
+        if (profile.downloadDir)
+          profile.downloadDir = normalizeDir(profile.downloadDir);
       }
-      if (this.data.global?.configDir) this.data.global.configDir = normalizeDir(this.data.global.configDir);
+      if (this.data.global?.configDir)
+        this.data.global.configDir = normalizeDir(this.data.global.configDir);
 
       return true;
     } catch (err) {
@@ -377,12 +393,14 @@ export class ConfigStore {
       llmProvider: profile.llmProvider,
       llmApiKey: profile.llmApiKey,
       llmBaseUrl: profile.llmBaseUrl,
-      llm: profile.llmEnabled ? {
-        enabled: true,
-        model: profile.llmModel,
-        systemPrompt: profile.llmSystemPrompt,
-        provider: profile.llmProvider,
-      } : undefined,
+      llm: profile.llmEnabled
+        ? {
+            enabled: true,
+            model: profile.llmModel,
+            systemPrompt: profile.llmSystemPrompt,
+            provider: profile.llmProvider,
+          }
+        : undefined,
     };
   }
 
@@ -396,7 +414,14 @@ export class ConfigStore {
         default: this.createDefaultProfile("default"),
       },
       global: {
-        downloadDir: normalizeDir(joinPath(getDefaultPersistenceDir(), "..", "Downloads", "yuanbao-lite")),
+        downloadDir: normalizeDir(
+          joinPath(
+            getDefaultPersistenceDir(),
+            "..",
+            "Downloads",
+            "yuanbao-lite",
+          ),
+        ),
       },
     };
   }
@@ -424,7 +449,10 @@ export class ConfigStore {
 
 let globalConfigStore: ConfigStore | null = null;
 
-export function getGlobalConfigStore(options?: { configDir?: string; autoSave?: boolean }): ConfigStore {
+export function getGlobalConfigStore(options?: {
+  configDir?: string;
+  autoSave?: boolean;
+}): ConfigStore {
   if (!globalConfigStore) {
     globalConfigStore = new ConfigStore(options);
   }

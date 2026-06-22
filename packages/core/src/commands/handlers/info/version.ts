@@ -12,16 +12,16 @@ import type { CommandCategory } from "../../types.js";
 
 export function register(cmdSys: CommandSystem): void {
   cmdSys.register({
-        name: "version",
-        aliases: ["v", "ver", "版本"],
-        description: "查看版本信息",
-        usage: "/version   (显示当前版本号)",
-        category: "info" as CommandCategory,
-        handler: async (ctx) => {
-          const { getVersion } = await import("../../../version.js");
-          await ctx.reply(
-            `📦 Yuanbao Lite v${getVersion()}\n轻量级独立腾讯元宝机器人客户端`,
-          );
-        },
-      });
+    name: "version",
+    aliases: ["v", "ver", "版本"],
+    description: "查看版本信息",
+    usage: "/version   (显示当前版本号)",
+    category: "info" as CommandCategory,
+    handler: async (ctx) => {
+      const { getVersion } = await import("../../../version.js");
+      await ctx.reply(
+        `📦 Yuanbao Lite v${getVersion()}\n轻量级独立腾讯元宝机器人客户端`,
+      );
+    },
+  });
 }

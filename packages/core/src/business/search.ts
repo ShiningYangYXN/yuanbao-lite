@@ -166,7 +166,9 @@ export class SearchEngine {
   /**
    * Query and cache group info for a specific group code.
    */
-  async fetchAndCacheGroupInfo(groupCode: string): Promise<CachedGroupInfo | null> {
+  async fetchAndCacheGroupInfo(
+    groupCode: string,
+  ): Promise<CachedGroupInfo | null> {
     try {
       const rsp = await this.bot.queryGroupInfo(groupCode);
       if (rsp.code === 0 && rsp.group_info) {
@@ -183,7 +185,9 @@ export class SearchEngine {
       }
       return null;
     } catch (err) {
-      this.log.warn(`failed to fetch group info for ${groupCode}: ${(err as Error).message}`);
+      this.log.warn(
+        `failed to fetch group info for ${groupCode}: ${(err as Error).message}`,
+      );
       return null;
     }
   }
@@ -208,7 +212,8 @@ export class SearchEngine {
 
     for (const member of members) {
       const nameMatch = member.nick_name.toLowerCase().includes(lowerQuery);
-      const idMatch = member.user_id.includes(lowerQuery) || member.user_id === query;
+      const idMatch =
+        member.user_id.includes(lowerQuery) || member.user_id === query;
 
       if (nameMatch || idMatch) {
         let score = 0;
@@ -262,7 +267,7 @@ export class SearchEngine {
     for (let i = 0; i < codes.length; i += batchSize) {
       const batch = codes.slice(i, i + batchSize);
       const batchResults = await Promise.all(
-        batch.map(code => this.searchGroupMembers(code, query)),
+        batch.map((code) => this.searchGroupMembers(code, query)),
       );
       for (const results of batchResults) {
         allResults.push(...results);
@@ -297,7 +302,9 @@ export class SearchEngine {
       }
       return [];
     } catch (err) {
-      this.log.warn(`failed to fetch members for ${groupCode}: ${(err as Error).message}`);
+      this.log.warn(
+        `failed to fetch members for ${groupCode}: ${(err as Error).message}`,
+      );
       // Return stale cache if available
       const cached = this.memberCache.get(groupCode);
       return cached?.members ?? [];
@@ -328,8 +335,8 @@ export class SearchEngine {
     for (let i = 0; i < groupCodes.length; i += batchSize) {
       const batch = groupCodes.slice(i, i + batchSize);
       await Promise.all([
-        ...batch.map(code => this.fetchAndCacheGroupInfo(code)),
-        ...batch.map(code => this.getGroupMembers(code)),
+        ...batch.map((code) => this.fetchAndCacheGroupInfo(code)),
+        ...batch.map((code) => this.getGroupMembers(code)),
       ]);
     }
   }
@@ -337,7 +344,11 @@ export class SearchEngine {
   /**
    * Get cache statistics.
    */
-  getCacheStats(): { groups: number; memberLists: number; oldestCache?: number } {
+  getCacheStats(): {
+    groups: number;
+    memberLists: number;
+    oldestCache?: number;
+  } {
     let oldestCache: number | undefined;
     for (const info of this.groupCache.values()) {
       if (!oldestCache || info.cachedAt < oldestCache) {

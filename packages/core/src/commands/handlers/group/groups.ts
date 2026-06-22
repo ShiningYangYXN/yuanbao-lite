@@ -15,7 +15,8 @@ export function register(cmdSys: CommandSystem): void {
     name: "groups",
     aliases: ["glist"],
     description: "群聊管理（列表默认20条，--all显示全部）",
-    usage: "/groups [--all] <list|add|rm|rename|note|tag|fav|join|search> [参数]   (--all/-a 显示全部)",
+    usage:
+      "/groups [--all] <list|add|rm|rename|note|tag|fav|join|search> [参数]   (--all/-a 显示全部)",
     category: "group" as CommandCategory,
     elevated: true,
     handler: async (ctx) => {
@@ -46,8 +47,11 @@ export function register(cmdSys: CommandSystem): void {
           }
 
           const updatedEntry = store.get(groupCode);
-          const displayName = updatedEntry?.name || updatedEntry?.groupName || groupCode;
-          await ctx.reply(`✅ 群聊已收藏: ${displayName}${tag ? ` [${tag}]` : ""}`);
+          const displayName =
+            updatedEntry?.name || updatedEntry?.groupName || groupCode;
+          await ctx.reply(
+            `✅ 群聊已收藏: ${displayName}${tag ? ` [${tag}]` : ""}`,
+          );
           break;
         }
         case "remove":
@@ -58,7 +62,11 @@ export function register(cmdSys: CommandSystem): void {
             return;
           }
           const removed = store.remove(ctx.args[1]);
-          await ctx.reply(removed ? `✅ 群聊已从收藏移除: ${ctx.args[1]}` : `未找到群聊: ${ctx.args[1]}`);
+          await ctx.reply(
+            removed
+              ? `✅ 群聊已从收藏移除: ${ctx.args[1]}`
+              : `未找到群聊: ${ctx.args[1]}`,
+          );
           break;
         }
         case "rename": {
@@ -67,7 +75,11 @@ export function register(cmdSys: CommandSystem): void {
             return;
           }
           const ok = store.rename(ctx.args[1], ctx.args.slice(2).join(" "));
-          await ctx.reply(ok ? `✅ 群聊已重命名为: ${ctx.args.slice(2).join(" ")}` : `未找到群聊: ${ctx.args[1]}`);
+          await ctx.reply(
+            ok
+              ? `✅ 群聊已重命名为: ${ctx.args.slice(2).join(" ")}`
+              : `未找到群聊: ${ctx.args[1]}`,
+          );
           break;
         }
         case "note":
@@ -80,7 +92,9 @@ export function register(cmdSys: CommandSystem): void {
             store.add(ctx.args[1]);
           }
           const ok = store.setNotes(ctx.args[1], ctx.args.slice(2).join(" "));
-          await ctx.reply(ok ? "✅ 群聊备注已更新" : `❌ 设置备注失败: ${ctx.args[1]}`);
+          await ctx.reply(
+            ok ? "✅ 群聊备注已更新" : `❌ 设置备注失败: ${ctx.args[1]}`,
+          );
           break;
         }
         case "tag": {
@@ -92,7 +106,9 @@ export function register(cmdSys: CommandSystem): void {
             store.add(ctx.args[1]);
           }
           const ok = store.setTag(ctx.args[1], ctx.args.slice(2).join(" "));
-          await ctx.reply(ok ? "✅ 群聊标签已更新" : `❌ 设置标签失败: ${ctx.args[1]}`);
+          await ctx.reply(
+            ok ? "✅ 群聊标签已更新" : `❌ 设置标签失败: ${ctx.args[1]}`,
+          );
           break;
         }
         case "fav":
@@ -107,7 +123,11 @@ export function register(cmdSys: CommandSystem): void {
           }
           const ok = store.toggleFavorite(ctx.args[1]);
           const entry = store.get(ctx.args[1]);
-          await ctx.reply(ok ? `✅ ${entry?.favorite ? "已收藏" : "已取消收藏"}: ${ctx.args[1]}` : `未找到群聊: ${ctx.args[1]}`);
+          await ctx.reply(
+            ok
+              ? `✅ ${entry?.favorite ? "已收藏" : "已取消收藏"}: ${ctx.args[1]}`
+              : `未找到群聊: ${ctx.args[1]}`,
+          );
           break;
         }
         case "search":
@@ -120,7 +140,7 @@ export function register(cmdSys: CommandSystem): void {
           if (results.length === 0) {
             await ctx.reply("未找到匹配的群聊");
           } else {
-            const lines = results.map(g => {
+            const lines = results.map((g) => {
               const fav = g.favorite ? "⭐" : " ";
               const displayName = g.name || g.groupName || "未知";
               return `  ${fav} ${g.groupCode} — ${displayName}${g.tag ? ` [${g.tag}]` : ""}`;
@@ -157,20 +177,24 @@ export function register(cmdSys: CommandSystem): void {
             }
           }
           if (ctx.useTable) {
-            const rows = all.map(g => [
+            const rows = all.map((g) => [
               g.groupCode,
               g.name || g.groupName || "未知",
               g.tag || "",
               g.favorite ? "⭐" : "",
             ]);
-            await ctx.reply(`📋 收藏群聊列表 (${all.length} 个)\n${await ctx.formatTable(["群号", "名称", "标签", "收藏"], rows)}`);
+            await ctx.reply(
+              `📋 收藏群聊列表 (${all.length} 个)\n${await ctx.formatTable(["群号", "名称", "标签", "收藏"], rows)}`,
+            );
           } else {
-            const lines = all.map(g => {
+            const lines = all.map((g) => {
               const fav = g.favorite ? "⭐" : " ";
               const displayName = g.name || g.groupName || "未知";
               return `  ${fav} ${g.groupCode} — ${displayName}${g.tag ? ` [${g.tag}]` : ""}`;
             });
-            await ctx.reply(`📋 收藏群聊列表:\n${lines.join("\n")}\n共 ${all.length} 个群聊`);
+            await ctx.reply(
+              `📋 收藏群聊列表:\n${lines.join("\n")}\n共 ${all.length} 个群聊`,
+            );
           }
           break;
         }

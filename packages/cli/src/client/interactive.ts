@@ -15,9 +15,16 @@
 
 import * as readline from "node:readline";
 import chalk from "chalk";
-import { getDefaultClient, type DaemonClient } from "@yuanbao-lite/core/access/daemon/client";
+import {
+  getDefaultClient,
+  type DaemonClient,
+} from "@yuanbao-lite/core/access/daemon/client";
 import { RichHistory } from "./rich-history.js";
-import { getCompletions, type CompletionContext, type CompletionResult } from "./auto-complete.js";
+import {
+  getCompletions,
+  type CompletionContext,
+  type CompletionResult,
+} from "./auto-complete.js";
 import {
   COLORS,
   printH1,
@@ -117,7 +124,9 @@ export async function runInteractive(): Promise<void> {
       // (per dispatch rule 2: 续行本来就要拆行).
       if (input.endsWith("\\") && !input.endsWith("\\\\")) {
         state.multilineBuffer += input.slice(0, -1) + "\n";
-        rl.setPrompt(chalk.dim("... ") + " ".repeat(state.chatTarget.length + 2));
+        rl.setPrompt(
+          chalk.dim("... ") + " ".repeat(state.chatTarget.length + 2),
+        );
         rl.prompt();
         return;
       }
@@ -188,7 +197,10 @@ async function processLine(line: string, client: DaemonClient): Promise<void> {
   // Split by \n — this includes both pasted multi-line input AND lines joined
   // by \ continuation (which preserve \n per the readline handler above).
   // Each line is dispatched independently in its original order.
-  const lines = line.split(/\n/).map(l => l.trim()).filter(l => l.length > 0);
+  const lines = line
+    .split(/\n/)
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0);
   if (lines.length === 0) return;
 
   for (const ln of lines) {
@@ -200,7 +212,10 @@ async function processLine(line: string, client: DaemonClient): Promise<void> {
   }
 }
 
-async function processSingleCommand(line: string, client: DaemonClient): Promise<void> {
+async function processSingleCommand(
+  line: string,
+  client: DaemonClient,
+): Promise<void> {
   // /exit /quit /q
   if (line === "/exit" || line === "/quit" || line === "/q") {
     state.running = false;
@@ -228,7 +243,9 @@ async function processSingleCommand(line: string, client: DaemonClient): Promise
 
   // /switch — show locally + delegate
   if (line === "/switch" || line.startsWith("/switch ")) {
-    printStatus(`当前模式: ${state.chatMode} ${state.chatTarget ? `→ ${state.chatTarget}` : ""}`);
+    printStatus(
+      `当前模式: ${state.chatMode} ${state.chatTarget ? `→ ${state.chatTarget}` : ""}`,
+    );
     await dispatchCommand(line, client);
     return;
   }
@@ -240,8 +257,10 @@ async function processSingleCommand(line: string, client: DaemonClient): Promise
   }
 }
 
-async function sendChatMessage(text: string, client: DaemonClient): Promise<void> {
-
+async function sendChatMessage(
+  text: string,
+  client: DaemonClient,
+): Promise<void> {
   // Non-slash input — check if a wizard session is active
   // If so, route the input to the wizard instead of sending as chat message
   try {
@@ -285,15 +304,22 @@ async function sendChatMessage(text: string, client: DaemonClient): Promise<void
   }
 }
 
-async function dispatchCommand(line: string, client: DaemonClient): Promise<void> {
+async function dispatchCommand(
+  line: string,
+  client: DaemonClient,
+): Promise<void> {
   const chatMode = state.chatMode === "group" ? "group" : "direct";
   const chatTarget = state.chatTarget || "cli";
 
   // Check for commands that should terminate the CLI after execution
-  const shouldExitAfter = line.startsWith("/daemon stop") || line.startsWith("/daemon reset");
+  const shouldExitAfter =
+    line.startsWith("/daemon stop") || line.startsWith("/daemon reset");
 
   try {
-    const result = await client.runCommand(line, { chatMode: chatMode as "direct" | "group", chatTarget });
+    const result = await client.runCommand(line, {
+      chatMode: chatMode as "direct" | "group",
+      chatTarget,
+    });
     if (!result.ok) {
       printError(`命令执行失败: ${result.error ?? "unknown error"}`);
       return;
@@ -352,10 +378,7 @@ function handleChatCommand(line: string): void {
 
 // ─── Tab completion ───
 
-function completer(
-  line: string,
-  ctx: CompletionContext,
-): [string[], string] {
+function completer(line: string, ctx: CompletionContext): [string[], string] {
   try {
     const result: CompletionResult = getCompletions(line, ctx);
     return [result.completions, result.replaceFrom];
@@ -415,7 +438,10 @@ function handleSseEvent(event: string, data: unknown): void {
   }
 }
 
-async function printInboundMessage(msg: ChatMessage, isGroup: boolean): Promise<void> {
+async function printInboundMessage(
+  msg: ChatMessage,
+  isGroup: boolean,
+): Promise<void> {
   if (msg.fromUserId === "cli") return;
   const { formatInboundMessage } = await import("../utils/cli-format.js");
   process.stdout.write("\n");
@@ -423,7 +449,11 @@ async function printInboundMessage(msg: ChatMessage, isGroup: boolean): Promise<
   process.stdout.write("\n");
 }
 
-async function printOutboundMessage(text: string, to: string, isGroup: boolean): Promise<void> {
+async function printOutboundMessage(
+  text: string,
+  to: string,
+  isGroup: boolean,
+): Promise<void> {
   const { formatOutboundMessage } = await import("../utils/cli-format.js");
   process.stdout.write("\n");
   console.log(formatOutboundMessage(text, to, isGroup));
@@ -434,7 +464,9 @@ function printStateChange(s: BotState): void {
   if (s.connected) {
     printResult(`bot 已连接${s.botId ? ` (botId=${s.botId})` : ""}`);
   } else {
-    printWarn(`bot 状态变更: ${s.status}${s.lastError ? ` — ${s.lastError}` : ""}`);
+    printWarn(
+      `bot 状态变更: ${s.status}${s.lastError ? ` — ${s.lastError}` : ""}`,
+    );
   }
 }
 
@@ -454,9 +486,13 @@ function currentPrompt(): string {
 
 function printWelcome(version: string, pid: number, port: number): void {
   printH1(`Yuanbao Lite CLI v${version}`);
-  console.log(`  ${COLORS.dim("shell-mode · readline + RichHistory + auto-complete")}`);
+  console.log(
+    `  ${COLORS.dim("shell-mode · readline + RichHistory + auto-complete")}`,
+  );
   console.log(`  ${COLORS.dim(`daemon pid=${pid} port=${port}`)}`);
-  console.log(`  ${COLORS.dim("/help 查看命令  ·  ↑↓ 历史  ·  Tab 补全  ·  \\ 换行  ·  Ctrl+C 退出")}`);
+  console.log(
+    `  ${COLORS.dim("/help 查看命令  ·  ↑↓ 历史  ·  Tab 补全  ·  \\ 换行  ·  Ctrl+C 退出")}`,
+  );
   console.log("");
 }
 
@@ -470,10 +506,13 @@ type LiteAlias = { alias: string; id: string; nickname?: string };
 
 function makeLiteContactStore(contacts: LiteContact[]) {
   return {
-    getAll: () => contacts.map(c => ({ ...c, favorite: false, createdAt: 0 })),
-    resolve: (nameOrId: string) => contacts.find(c => c.name === nameOrId || c.id === nameOrId)?.id ?? nameOrId,
+    getAll: () =>
+      contacts.map((c) => ({ ...c, favorite: false, createdAt: 0 })),
+    resolve: (nameOrId: string) =>
+      contacts.find((c) => c.name === nameOrId || c.id === nameOrId)?.id ??
+      nameOrId,
     get: (nameOrId: string) => {
-      const c = contacts.find(x => x.name === nameOrId || x.id === nameOrId);
+      const c = contacts.find((x) => x.name === nameOrId || x.id === nameOrId);
       return c ? { ...c, favorite: false, createdAt: 0 } : undefined;
     },
   };
@@ -481,23 +520,46 @@ function makeLiteContactStore(contacts: LiteContact[]) {
 
 function makeLiteGroupStore(groups: LiteGroup[]) {
   return {
-    getAll: () => groups.map(g => ({ ...g, groupName: g.name, favorite: false, createdAt: 0, lastActiveAt: 0 })),
-    resolve: (nameOrCode: string) => groups.find(g => g.name === nameOrCode || g.groupCode === nameOrCode)?.groupCode ?? nameOrCode,
+    getAll: () =>
+      groups.map((g) => ({
+        ...g,
+        groupName: g.name,
+        favorite: false,
+        createdAt: 0,
+        lastActiveAt: 0,
+      })),
+    resolve: (nameOrCode: string) =>
+      groups.find((g) => g.name === nameOrCode || g.groupCode === nameOrCode)
+        ?.groupCode ?? nameOrCode,
     get: (code: string) => {
-      const g = groups.find(x => x.groupCode === code);
-      return g ? { ...g, groupName: g.name, favorite: false, createdAt: 0, lastActiveAt: 0 } : undefined;
+      const g = groups.find((x) => x.groupCode === code);
+      return g
+        ? {
+            ...g,
+            groupName: g.name,
+            favorite: false,
+            createdAt: 0,
+            lastActiveAt: 0,
+          }
+        : undefined;
     },
   };
 }
 
 function makeLiteAliasStore(aliases: LiteAlias[]) {
   return {
-    getAll: () => aliases.map(a => ({ ...a, createdAt: 0 })),
-    resolve: (aliasOrId: string) => aliases.find(a => a.alias === aliasOrId || a.id === aliasOrId)?.id ?? aliasOrId,
+    getAll: () => aliases.map((a) => ({ ...a, createdAt: 0 })),
+    resolve: (aliasOrId: string) =>
+      aliases.find((a) => a.alias === aliasOrId || a.id === aliasOrId)?.id ??
+      aliasOrId,
     get: (aliasOrId: string) => {
-      const a = aliases.find(x => x.alias === aliasOrId || x.id === aliasOrId);
+      const a = aliases.find(
+        (x) => x.alias === aliasOrId || x.id === aliasOrId,
+      );
       return a ? { ...a, createdAt: 0 } : undefined;
     },
-    getNickname: (aliasOrId: string) => aliases.find(a => a.alias === aliasOrId || a.id === aliasOrId)?.nickname,
+    getNickname: (aliasOrId: string) =>
+      aliases.find((a) => a.alias === aliasOrId || a.id === aliasOrId)
+        ?.nickname,
   };
 }

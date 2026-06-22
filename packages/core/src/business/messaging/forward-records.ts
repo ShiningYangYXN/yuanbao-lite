@@ -78,7 +78,9 @@ export function parseForwardMsgData(
     return undefined;
   }
 
-  const entries = Object.entries(extMap).filter(([key]) => key.startsWith(FORWARD_KEY_PREFIX));
+  const entries = Object.entries(extMap).filter(([key]) =>
+    key.startsWith(FORWARD_KEY_PREFIX),
+  );
   if (entries.length === 0) {
     return undefined;
   }
@@ -184,7 +186,12 @@ function appendMedia(
   linkUrls: string[],
 ): string {
   const mediaType = (media.type || media.doc_type || "").toLowerCase();
-  const url = media.url || media.origin_url || media.parse_file_url || media.link_url || "";
+  const url =
+    media.url ||
+    media.origin_url ||
+    media.parse_file_url ||
+    media.link_url ||
+    "";
 
   switch (mediaType) {
     case "image": {

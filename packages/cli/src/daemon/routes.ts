@@ -86,7 +86,10 @@ export async function handleRoute(
       return { status: 200, body: { ok: true, version: getVersion() } };
 
     default:
-      return { status: 404, body: { ok: false, error: `not found: ${method} ${path}` } };
+      return {
+        status: 404,
+        body: { ok: false, error: `not found: ${method} ${path}` },
+      };
   }
 }
 
@@ -162,30 +165,51 @@ function shutdown(ctx: RouteContext): RouteResult {
   return { status: 200, body: { ok: true, message: "shutting down" } };
 }
 
-async function sendDm(ctx: RouteContext, body: Record<string, unknown>): Promise<RouteResult> {
+async function sendDm(
+  ctx: RouteContext,
+  body: Record<string, unknown>,
+): Promise<RouteResult> {
   const bot = requireConnected(ctx);
   const userId = asString(body.userId, "userId");
   const message = asString(body.message, "message");
   await bot.sendDirectMessage(userId, message);
-  return { status: 200, body: { ok: true, sent: { to: userId, length: message.length } } };
+  return {
+    status: 200,
+    body: { ok: true, sent: { to: userId, length: message.length } },
+  };
 }
 
-async function sendGroup(ctx: RouteContext, body: Record<string, unknown>): Promise<RouteResult> {
+async function sendGroup(
+  ctx: RouteContext,
+  body: Record<string, unknown>,
+): Promise<RouteResult> {
   const bot = requireConnected(ctx);
   const groupCode = asString(body.groupCode, "groupCode");
   const message = asString(body.message, "message");
   await bot.sendGroupMessage(groupCode, message);
-  return { status: 200, body: { ok: true, sent: { to: groupCode, length: message.length } } };
+  return {
+    status: 200,
+    body: { ok: true, sent: { to: groupCode, length: message.length } },
+  };
 }
 
-async function upload(ctx: RouteContext, body: Record<string, unknown>): Promise<RouteResult> {
+async function upload(
+  ctx: RouteContext,
+  body: Record<string, unknown>,
+): Promise<RouteResult> {
   const bot = requireConnected(ctx);
   const filePath = asString(body.filePath, "filePath");
   const resolved = resolve(filePath);
   if (!existsSync(resolved)) {
-    return { status: 400, body: { ok: false, error: `file not found: ${resolved}` } };
+    return {
+      status: 400,
+      body: { ok: false, error: `file not found: ${resolved}` },
+    };
   }
-  const type = typeof body.type === "string" ? (body.type as "image" | "file" | "video" | "audio") : undefined;
+  const type =
+    typeof body.type === "string"
+      ? (body.type as "image" | "file" | "video" | "audio")
+      : undefined;
   const result = await bot.uploadMedia(resolved, type);
   return {
     status: 200,
@@ -200,15 +224,20 @@ async function upload(ctx: RouteContext, body: Record<string, unknown>): Promise
   };
 }
 
-async function download(ctx: RouteContext, body: Record<string, unknown>): Promise<RouteResult> {
+async function download(
+  ctx: RouteContext,
+  body: Record<string, unknown>,
+): Promise<RouteResult> {
   // Download doesn't strictly require bot connectivity (it's a plain HTTP fetch),
   // but we keep it daemon-side so the CLI is uniformly thin.
   const url = asString(body.url, "url");
   const dir = typeof body.dir === "string" ? body.dir : undefined;
-  const fileName = typeof body.fileName === "string" ? body.fileName : undefined;
+  const fileName =
+    typeof body.fileName === "string" ? body.fileName : undefined;
 
   // Lazy-import to avoid pulling in node:fs IO paths at module load
-  const { downloadMedia } = await import("@yuanbao-lite/core/access/http/media");
+  const { downloadMedia } =
+    await import("@yuanbao-lite/core/access/http/media");
   const result = await downloadMedia(url, dir, fileName);
   return {
     status: 200,
@@ -222,29 +251,49 @@ async function download(ctx: RouteContext, body: Record<string, unknown>): Promi
   };
 }
 
-async function runCommand(ctx: RouteContext, body: Record<string, unknown>): Promise<RouteResult> {
+async function runCommand(
+  ctx: RouteContext,
+  body: Record<string, unknown>,
+): Promise<RouteResult> {
   const bot = requireBot(ctx);
   const text = asString(body.text, "text");
   const cmdSys = bot.getCommandSystem();
   if (!cmdSys) {
-    return { status: 500, body: { ok: false, error: "command system disabled" } };
+    return {
+      status: 500,
+      body: { ok: false, error: "command system disabled" },
+    };
   }
 
   // If chatMode is dm/group, the dispatcher will see the synthetic message
   // as direct/group respectively — this lets /commands like /contacts work
   // consistently regardless of which mode the caller is in.
-  const chatMode = (typeof body.chatMode === "string" ? body.chatMode : "direct") as "direct" | "group";
-  const chatTarget = typeof body.chatTarget === "string" ? body.chatTarget : "cli";
+  const chatMode = (
+    typeof body.chatMode === "string" ? body.chatMode : "direct"
+  ) as "direct" | "group";
+  const chatTarget =
+    typeof body.chatTarget === "string" ? body.chatTarget : "cli";
   // Source: "cli" (from CLI) or "chat" (from IM). Affects coloring + elevated bypass.
-  const source = (typeof body.source === "string" && body.source === "cli") ? "cli" : "chat";
+  const source =
+    typeof body.source === "string" && body.source === "cli" ? "cli" : "chat";
   // Optional: override fromUserId (for testing trust-gated commands as master).
   // Defaults to "cli" for normal CLI usage.
-  const fromUserId = typeof body.fromUserId === "string" && body.fromUserId.trim() ? body.fromUserId.trim() : "cli";
-  const fromNickname = typeof body.fromNickname === "string" && body.fromNickname.trim() ? body.fromNickname.trim() : fromUserId;
+  const fromUserId =
+    typeof body.fromUserId === "string" && body.fromUserId.trim()
+      ? body.fromUserId.trim()
+      : "cli";
+  const fromNickname =
+    typeof body.fromNickname === "string" && body.fromNickname.trim()
+      ? body.fromNickname.trim()
+      : fromUserId;
   // Optional: quote message ID (for /inspect and /reply commands that use the
   // quoted message). When provided, the synthetic message will have quoteMsgId set.
-  const quoteMsgId = typeof body.quoteMsgId === "string" && body.quoteMsgId.trim() ? body.quoteMsgId.trim() : undefined;
-  const quoteMsgSeq = typeof body.quoteMsgSeq === "number" ? body.quoteMsgSeq : undefined;
+  const quoteMsgId =
+    typeof body.quoteMsgId === "string" && body.quoteMsgId.trim()
+      ? body.quoteMsgId.trim()
+      : undefined;
+  const quoteMsgSeq =
+    typeof body.quoteMsgSeq === "number" ? body.quoteMsgSeq : undefined;
 
   const syntheticMsg: ChatMessage = {
     id: `cli-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -253,7 +302,9 @@ async function runCommand(ctx: RouteContext, body: Record<string, unknown>): Pro
     chatType: chatMode,
     text,
     timestamp: Date.now(),
-    ...(chatMode === "group" ? { groupCode: chatTarget, groupName: undefined } : {}),
+    ...(chatMode === "group"
+      ? { groupCode: chatTarget, groupName: undefined }
+      : {}),
     ...(quoteMsgId !== undefined ? { quoteMsgId } : {}),
     ...(quoteMsgSeq !== undefined ? { quoteMsgSeq } : {}),
   };
@@ -264,7 +315,12 @@ async function runCommand(ctx: RouteContext, body: Record<string, unknown>): Pro
   };
 
   try {
-    const result = await cmdSys.dispatchWithSource(bot, syntheticMsg, onReply, source);
+    const result = await cmdSys.dispatchWithSource(
+      bot,
+      syntheticMsg,
+      onReply,
+      source,
+    );
     return {
       status: 200,
       body: {
@@ -313,25 +369,37 @@ function completions(ctx: RouteContext): RouteResult {
   const contacts = getGlobalContactStore({
     persistencePath: join(homedir(), ".yuanbao-lite", "contacts.json"),
     autoSave: true,
-  }).getAll("name").map(c => ({ id: c.id, name: c.name, tag: c.tag }));
+  })
+    .getAll("name")
+    .map((c) => ({ id: c.id, name: c.name, tag: c.tag }));
 
   const groups = bot
-    ? bot.getGroupStore().getAll("lastActive").map(g => ({
-      groupCode: g.groupCode,
-      name: g.name ?? g.groupName ?? "",
-      tag: g.tag,
-    }))
+    ? bot
+        .getGroupStore()
+        .getAll("lastActive")
+        .map((g) => ({
+          groupCode: g.groupCode,
+          name: g.name ?? g.groupName ?? "",
+          tag: g.tag,
+        }))
     : [];
 
   const aliases = bot
-    ? bot.getAliasStore().getAll().map(a => ({ alias: a.alias, id: a.id, nickname: a.nickname }))
+    ? bot
+        .getAliasStore()
+        .getAll()
+        .map((a) => ({ alias: a.alias, id: a.id, nickname: a.nickname }))
     : [];
 
-  const commands = bot?.getCommandSystem()?.getVisibleCommands().map(c => ({
-    name: c.name,
-    aliases: c.aliases ?? [],
-    description: c.description,
-  })) ?? [];
+  const commands =
+    bot
+      ?.getCommandSystem()
+      ?.getVisibleCommands()
+      .map((c) => ({
+        name: c.name,
+        aliases: c.aliases ?? [],
+        description: c.description,
+      })) ?? [];
 
   return {
     status: 200,
@@ -343,31 +411,57 @@ function completions(ctx: RouteContext): RouteResult {
  * Handle wizard input from CLI. Checks if user has an active /init or /llm config
  * wizard session and feeds the input to it.
  */
-async function wizardInput(ctx: RouteContext, body: Record<string, unknown>): Promise<RouteResult> {
+async function wizardInput(
+  ctx: RouteContext,
+  body: Record<string, unknown>,
+): Promise<RouteResult> {
   const bot = requireBot(ctx);
   const cmdSys = bot.getCommandSystem();
   if (!cmdSys) {
-    return { status: 500, body: { ok: false, error: "command system disabled" } };
+    return {
+      status: 500,
+      body: { ok: false, error: "command system disabled" },
+    };
   }
   const userId = typeof body.userId === "string" ? body.userId : "cli";
   const text = typeof body.text === "string" ? body.text : "";
 
   const cs = cmdSys as unknown as {
     _initWizardSessions?: Map<string, unknown>;
-    _handleInitWizardInput?: (bot: unknown, uid: string, txt: string, reply: (t: string) => Promise<void>) => Promise<boolean>;
+    _handleInitWizardInput?: (
+      bot: unknown,
+      uid: string,
+      txt: string,
+      reply: (t: string) => Promise<void>,
+    ) => Promise<boolean>;
     _llmWizardSessions?: Map<string, unknown>;
-    _handleLlmWizardInput?: (bot: unknown, uid: string, txt: string, reply: (t: string) => Promise<void>) => Promise<boolean>;
+    _handleLlmWizardInput?: (
+      bot: unknown,
+      uid: string,
+      txt: string,
+      reply: (t: string) => Promise<void>,
+    ) => Promise<boolean>;
     _termSessions?: Map<string, unknown>;
-    _handleTermInput?: (bot: unknown, uid: string, txt: string, reply: (t: string) => Promise<void>) => Promise<boolean>;
+    _handleTermInput?: (
+      bot: unknown,
+      uid: string,
+      txt: string,
+      reply: (t: string) => Promise<void>,
+    ) => Promise<boolean>;
   };
 
   const replies: string[] = [];
-  const replyFn = async (t: string): Promise<void> => { replies.push(t); };
+  const replyFn = async (t: string): Promise<void> => {
+    replies.push(t);
+  };
 
   // Check /init wizard
   if (cs._initWizardSessions?.has(userId) && cs._handleInitWizardInput) {
     const handled = await cs._handleInitWizardInput(bot, userId, text, replyFn);
-    return { status: 200, body: { ok: true, handled, replies, wizard: "init" } };
+    return {
+      status: 200,
+      body: { ok: true, handled, replies, wizard: "init" },
+    };
   }
 
   // Check /llm config wizard
@@ -379,10 +473,16 @@ async function wizardInput(ctx: RouteContext, body: Record<string, unknown>): Pr
   // Check /term interactive terminal
   if (cs._termSessions?.has(userId) && cs._handleTermInput) {
     const handled = await cs._handleTermInput(bot, userId, text, replyFn);
-    return { status: 200, body: { ok: true, handled, replies, wizard: "term" } };
+    return {
+      status: 200,
+      body: { ok: true, handled, replies, wizard: "term" },
+    };
   }
 
-  return { status: 200, body: { ok: true, handled: false, replies: [], wizard: null } };
+  return {
+    status: 200,
+    body: { ok: true, handled: false, replies: [], wizard: null },
+  };
 }
 
 /**
@@ -392,7 +492,10 @@ function wizardStatus(ctx: RouteContext): RouteResult {
   const bot = requireBot(ctx);
   const cmdSys = bot.getCommandSystem();
   if (!cmdSys) {
-    return { status: 500, body: { ok: false, error: "command system disabled" } };
+    return {
+      status: 500,
+      body: { ok: false, error: "command system disabled" },
+    };
   }
   const userId = ctx.query.userId ?? "cli";
 
@@ -422,9 +525,12 @@ function listCommands(ctx: RouteContext): RouteResult {
   const bot = ctx.bot;
   const cmdSys = bot?.getCommandSystem();
   if (!cmdSys) {
-    return { status: 500, body: { ok: false, error: "command system disabled" } };
+    return {
+      status: 500,
+      body: { ok: false, error: "command system disabled" },
+    };
   }
-  const commands = cmdSys.getVisibleCommands().map(c => ({
+  const commands = cmdSys.getVisibleCommands().map((c) => ({
     name: c.name,
     aliases: c.aliases ?? [],
     description: c.description,

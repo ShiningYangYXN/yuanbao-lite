@@ -40,9 +40,9 @@ const CATEGORY_ORDER: CommandCategory[] = [
 
 const CMD_NAME_COLOR = chalk.rgb(100, 200, 255).bold; // cyan-blue
 const ALIAS_COLOR = chalk.dim.gray;
-const DESC_COLOR = chalk.rgb(200, 210, 230);          // light gray
-const CATEGORY_COLOR = chalk.rgb(160, 140, 255);       // soft purple
-const USAGE_COLOR = chalk.rgb(120, 180, 120);          // green
+const DESC_COLOR = chalk.rgb(200, 210, 230); // light gray
+const CATEGORY_COLOR = chalk.rgb(160, 140, 255); // soft purple
+const USAGE_COLOR = chalk.rgb(120, 180, 120); // green
 const FOOTER_COLOR = chalk.dim;
 
 // ─── Main generation ───
@@ -193,7 +193,9 @@ export function generatePlainHelp(
     let max = 0;
     for (const cmd of cmds) {
       const cmdName = `${prefix}${cmd.name}`;
-      const aliasStr = cmd.aliases?.length ? ` (${cmd.aliases.join(", ")})` : "";
+      const aliasStr = cmd.aliases?.length
+        ? ` (${cmd.aliases.join(", ")})`
+        : "";
       const display = stringWidth(cmdName) + stringWidth(aliasStr) + 4;
       if (display > max) max = display;
     }
@@ -201,7 +203,9 @@ export function generatePlainHelp(
   }
 
   const lines: string[] = [];
-  const versionStr = options.version ? `Yuanbao Lite v${options.version}` : "Yuanbao Lite";
+  const versionStr = options.version
+    ? `Yuanbao Lite v${options.version}`
+    : "Yuanbao Lite";
   lines.push(versionStr);
   lines.push("");
 
@@ -214,7 +218,9 @@ export function generatePlainHelp(
 
     for (const cmd of cmds) {
       const cmdName = `${prefix}${cmd.name}`;
-      const aliasStr = cmd.aliases?.length ? ` (${cmd.aliases.join(", ")})` : "";
+      const aliasStr = cmd.aliases?.length
+        ? ` (${cmd.aliases.join(", ")})`
+        : "";
       const padded = padToDisplayWidth(cmdName + aliasStr, cmdWidth);
       lines.push(`  ${padded}— ${cmd.description}`);
       if (options.showUsage && cmd.usage) {
@@ -227,7 +233,6 @@ export function generatePlainHelp(
   lines.push(footer);
   return lines.join("\n");
 }
-
 
 /**
  * Generate colored detailed help for a single command.

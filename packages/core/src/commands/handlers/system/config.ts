@@ -17,13 +17,21 @@ import {
 
 export function register(cmdSys: CommandSystem): void {
   // Set up the /config reset confirmation tracking map
-  (cmdSys as unknown as { _configResetConfirmations: Map<string, { count: number; firstAt: number }> })._configResetConfirmations = new Map();
+  (
+    cmdSys as unknown as {
+      _configResetConfirmations: Map<
+        string,
+        { count: number; firstAt: number }
+      >;
+    }
+  )._configResetConfirmations = new Map();
 
   cmdSys.register({
     name: "config",
     aliases: ["配置"],
     description: "配置管理（查看/设置/导入/导出/档案/重置）",
-    usage: "/config [show | set <key> <value> | get <key> | profile list|switch|add|remove | export | import <json> | reset]",
+    usage:
+      "/config [show | set <key> <value> | get <key> | profile list|switch|add|remove | export | import <json> | reset]",
     category: "system" as CommandCategory,
     requireConnected: false,
     elevated: true,
@@ -31,7 +39,8 @@ export function register(cmdSys: CommandSystem): void {
       const subCmd = ctx.args[0]?.toLowerCase();
 
       // Lazy-import the shared ConfigStore
-      const { getGlobalConfigStore } = await import("../../../shared/config.js");
+      const { getGlobalConfigStore } =
+        await import("../../../shared/config.js");
       const store = getGlobalConfigStore({ autoSave: true });
 
       switch (subCmd) {
@@ -42,21 +51,32 @@ export function register(cmdSys: CommandSystem): void {
           const kv: [string, string][] = [
             ["档案", active],
             ["App Key", pr.appKey ? `***${pr.appKey.slice(-4)}` : "(未设置)"],
-            ["App Secret", pr.appSecret ? "***" + pr.appSecret.slice(-4) : "(未设置)"],
+            [
+              "App Secret",
+              pr.appSecret ? "***" + pr.appSecret.slice(-4) : "(未设置)",
+            ],
             ["Token", pr.token ? "***" + pr.token.slice(-4) : "(未设置)"],
             ["API域名", pr.apiDomain || "(默认)"],
             ["WS地址", pr.wsUrl || "(默认)"],
             ["日志级别", pr.logLevel || "(默认)"],
             ["贴纸目录", pr.stickerDir || "(未设置)"],
-            ["下载目录", pr.downloadDir || store.getGlobal("downloadDir") || "(默认)"],
+            [
+              "下载目录",
+              pr.downloadDir || store.getGlobal("downloadDir") || "(默认)",
+            ],
             ["LLM供应商", pr.llmProvider || "(未设置)"],
             ["LLM模型", pr.llmModel || "(未设置)"],
             ["配置路径", store.getConfigDir()],
           ];
           if (ctx.useTable) {
-            await ctx.reply(`📋 当前配置\n${await ctx.formatTable(["属性", "值"], kv)}`);
+            await ctx.reply(
+              `📋 当前配置\n${await ctx.formatTable(["属性", "值"], kv)}`,
+            );
           } else {
-            const lines = ["📋 当前配置:", ...kv.map(([k, v]) => `  ${k}: ${v}`)];
+            const lines = [
+              "📋 当前配置:",
+              ...kv.map(([k, v]) => `  ${k}: ${v}`),
+            ];
             await ctx.reply(lines.join("\n"));
           }
           return;
@@ -67,11 +87,18 @@ export function register(cmdSys: CommandSystem): void {
             await ctx.reply("用法: /config get <key>");
             return;
           }
-          const key = ctx.args[1] as keyof import("../../../shared/config.js").CliProfile;
+          const key = ctx
+            .args[1] as keyof import("../../../shared/config.js").CliProfile;
           const value = store.get(key);
           if (value === undefined) {
             await ctx.reply(`配置项 ${key} 未设置`);
-          } else if (typeof value === "string" && (key === "appKey" || key === "appSecret" || key === "token" || key === "llmApiKey")) {
+          } else if (
+            typeof value === "string" &&
+            (key === "appKey" ||
+              key === "appSecret" ||
+              key === "token" ||
+              key === "llmApiKey")
+          ) {
             await ctx.reply(`${key} = ***${value.slice(-4)}`);
           } else {
             await ctx.reply(`${key} = ${String(value)}`);
@@ -84,20 +111,40 @@ export function register(cmdSys: CommandSystem): void {
             await ctx.reply("用法: /config set <key> <value>");
             return;
           }
-          const key = ctx.args[1] as keyof import("../../../shared/config.js").CliProfile;
+          const key = ctx
+            .args[1] as keyof import("../../../shared/config.js").CliProfile;
           const value = ctx.args.slice(2).join(" ");
-          const validKeys: Array<keyof import("../../../shared/config.js").CliProfile> = [
-            "appKey", "appSecret", "token", "apiDomain", "wsUrl",
-            "logLevel", "stickerDir", "downloadDir", "prompt",
-            "llmProvider", "llmApiKey", "llmBaseUrl", "llmModel",
-            "llmSystemPrompt", "llmEnabled", "defaultTarget", "defaultChatMode",
+          const validKeys: Array<
+            keyof import("../../../shared/config.js").CliProfile
+          > = [
+            "appKey",
+            "appSecret",
+            "token",
+            "apiDomain",
+            "wsUrl",
+            "logLevel",
+            "stickerDir",
+            "downloadDir",
+            "prompt",
+            "llmProvider",
+            "llmApiKey",
+            "llmBaseUrl",
+            "llmModel",
+            "llmSystemPrompt",
+            "llmEnabled",
+            "defaultTarget",
+            "defaultChatMode",
           ];
           if (!validKeys.includes(key)) {
-            await ctx.reply(`无效配置键: ${key}\n可选: ${validKeys.join(", ")}`);
+            await ctx.reply(
+              `无效配置键: ${key}\n可选: ${validKeys.join(", ")}`,
+            );
             return;
           }
           store.set(key, value as never);
-          await ctx.reply(`✅ 已设置 ${key} = ${key === "appKey" || key === "appSecret" || key === "token" || key === "llmApiKey" ? "***" : value}`);
+          await ctx.reply(
+            `✅ 已设置 ${key} = ${key === "appKey" || key === "appSecret" || key === "token" || key === "llmApiKey" ? "***" : value}`,
+          );
           return;
         }
 
@@ -110,7 +157,7 @@ export function register(cmdSys: CommandSystem): void {
               await ctx.reply("暂无配置档案");
               return;
             }
-            const lines = names.map(n => {
+            const lines = names.map((n) => {
               const p = store.getProfile(n);
               const hasCreds = p && ((p.appKey && p.appSecret) || p.token);
               return `  ${n === active ? "→" : " "} ${n} ${hasCreds ? "✓" : "✗"}`;
@@ -120,7 +167,9 @@ export function register(cmdSys: CommandSystem): void {
           }
           if (profileSub === "switch" && ctx.args[2]) {
             if (store.switchProfile(ctx.args[2])) {
-              await ctx.reply(`✅ 已切换到档案: ${ctx.args[2]}\n⚠️ 需要重启 daemon 让新档案生效`);
+              await ctx.reply(
+                `✅ 已切换到档案: ${ctx.args[2]}\n⚠️ 需要重启 daemon 让新档案生效`,
+              );
             } else {
               await ctx.reply(`❌ 档案不存在: ${ctx.args[2]}`);
             }
@@ -135,17 +184,23 @@ export function register(cmdSys: CommandSystem): void {
             if (store.deleteProfile(ctx.args[2])) {
               await ctx.reply(`✅ 已删除档案: ${ctx.args[2]}`);
             } else {
-              await ctx.reply(`❌ 无法删除档案: ${ctx.args[2]} (可能不存在或为活跃档案)`);
+              await ctx.reply(
+                `❌ 无法删除档案: ${ctx.args[2]} (可能不存在或为活跃档案)`,
+              );
             }
             return;
           }
-          await ctx.reply("用法: /config profile list|switch <name>|add <name>|remove <name>");
+          await ctx.reply(
+            "用法: /config profile list|switch <name>|add <name>|remove <name>",
+          );
           return;
         }
 
         case "export": {
           const data = store.getData();
-          await ctx.reply(`📦 配置导出 (JSON):\n${JSON.stringify(data, null, 2)}`);
+          await ctx.reply(
+            `📦 配置导出 (JSON):\n${JSON.stringify(data, null, 2)}`,
+          );
           return;
         }
 
@@ -156,14 +211,19 @@ export function register(cmdSys: CommandSystem): void {
           }
           try {
             const json = ctx.args.slice(1).join(" ");
-            const parsed = JSON.parse(json) as import("../../../shared/config.js").CliConfigData;
+            const parsed = JSON.parse(
+              json,
+            ) as import("../../../shared/config.js").CliConfigData;
             // Merge into existing config
             if (parsed.profiles) {
               for (const [name, profile] of Object.entries(parsed.profiles)) {
                 store.createProfile(name, profile);
               }
             }
-            if (parsed.activeProfile && store.getProfile(parsed.activeProfile)) {
+            if (
+              parsed.activeProfile &&
+              store.getProfile(parsed.activeProfile)
+            ) {
               store.switchProfile(parsed.activeProfile);
             }
             await ctx.reply("✅ 配置已导入");
@@ -223,9 +283,13 @@ export function register(cmdSys: CommandSystem): void {
               }
             }
             if (errors.length > 0) {
-              await ctx.reply(`✅ 已清空 ${deleted} 个配置文件（${errors.length} 个失败）\n${errors.join("\n")}\n\n发送 /config init 重新初始化\n发送 /daemon restart (3次) 让更改生效`);
+              await ctx.reply(
+                `✅ 已清空 ${deleted} 个配置文件（${errors.length} 个失败）\n${errors.join("\n")}\n\n发送 /config init 重新初始化\n发送 /daemon restart (3次) 让更改生效`,
+              );
             } else {
-              await ctx.reply(`✅ 已清空 ${deleted} 个配置文件\n\n发送 /config init 重新初始化\n发送 /daemon restart (3次) 让更改生效`);
+              await ctx.reply(
+                `✅ 已清空 ${deleted} 个配置文件\n\n发送 /config init 重新初始化\n发送 /daemon restart (3次) 让更改生效`,
+              );
             }
           };
 
@@ -234,7 +298,14 @@ export function register(cmdSys: CommandSystem): void {
             await doReset();
           } else {
             // Chat — require 3x confirmation
-            const confirmations = (cmdSys as unknown as { _configResetConfirmations?: Map<string, { count: number; firstAt: number }> })._configResetConfirmations;
+            const confirmations = (
+              cmdSys as unknown as {
+                _configResetConfirmations?: Map<
+                  string,
+                  { count: number; firstAt: number }
+                >;
+              }
+            )._configResetConfirmations;
             if (!confirmations) {
               await ctx.reply("❌ 确认机制不可用");
               return;
@@ -246,12 +317,16 @@ export function register(cmdSys: CommandSystem): void {
             const REQUIRED = 3;
             if (!entry || now - entry.firstAt > WINDOW_MS) {
               confirmations.set(userId, { count: 1, firstAt: now });
-              await ctx.reply(`⚠️ 确认清空所有配置 (1/${REQUIRED})\n请在 ${WINDOW_MS / 1000}s 内再发送 ${REQUIRED - 1} 次 /config reset 以确认\n⚠️ 此操作将删除所有配置文件（config/llm/trust/block/aliases/contacts/groups/history），不可恢复`);
+              await ctx.reply(
+                `⚠️ 确认清空所有配置 (1/${REQUIRED})\n请在 ${WINDOW_MS / 1000}s 内再发送 ${REQUIRED - 1} 次 /config reset 以确认\n⚠️ 此操作将删除所有配置文件（config/llm/trust/block/aliases/contacts/groups/history），不可恢复`,
+              );
               return;
             }
             entry.count++;
             if (entry.count < REQUIRED) {
-              await ctx.reply(`⚠️ 确认清空所有配置 (${entry.count}/${REQUIRED})\n还需 ${REQUIRED - entry.count} 次确认`);
+              await ctx.reply(
+                `⚠️ 确认清空所有配置 (${entry.count}/${REQUIRED})\n还需 ${REQUIRED - entry.count} 次确认`,
+              );
               return;
             }
             // Confirmed — execute
@@ -264,17 +339,17 @@ export function register(cmdSys: CommandSystem): void {
         default:
           await ctx.reply(
             "用法:\n" +
-            "  /config                       显示当前配置\n" +
-            "  /config show                  同上\n" +
-            "  /config get <key>             查询单个配置项\n" +
-            "  /config set <key> <value>     设置配置项\n" +
-            "  /config profile list          列出所有档案\n" +
-            "  /config profile switch <name> 切换档案\n" +
-            "  /config profile add <name>    创建档案\n" +
-            "  /config profile remove <name> 删除档案\n" +
-            "  /config export                导出配置为 JSON\n" +
-            "  /config import <json>         导入配置\n" +
-            "  /config reset                 清空所有配置文件（3次确认，CLI免确认）",
+              "  /config                       显示当前配置\n" +
+              "  /config show                  同上\n" +
+              "  /config get <key>             查询单个配置项\n" +
+              "  /config set <key> <value>     设置配置项\n" +
+              "  /config profile list          列出所有档案\n" +
+              "  /config profile switch <name> 切换档案\n" +
+              "  /config profile add <name>    创建档案\n" +
+              "  /config profile remove <name> 删除档案\n" +
+              "  /config export                导出配置为 JSON\n" +
+              "  /config import <json>         导入配置\n" +
+              "  /config reset                 清空所有配置文件（3次确认，CLI免确认）",
           );
       }
     },

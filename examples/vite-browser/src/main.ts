@@ -7,12 +7,18 @@
  *   3. 连接、收发消息
  */
 
-import { YuanbaoBot, BrowserLocalStorageAdapter, setHttpProxy } from "@yuanbao-lite/core";
+import {
+  YuanbaoBot,
+  BrowserLocalStorageAdapter,
+  setHttpProxy,
+} from "@yuanbao-lite/core";
 
 // ─── DOM 元素 ───
 const logEl = document.getElementById("log")!;
 const connectBtn = document.getElementById("connect") as HTMLButtonElement;
-const disconnectBtn = document.getElementById("disconnect") as HTMLButtonElement;
+const disconnectBtn = document.getElementById(
+  "disconnect",
+) as HTMLButtonElement;
 const sendBtn = document.getElementById("send") as HTMLButtonElement;
 const msgInput = document.getElementById("msgInput") as HTMLInputElement;
 const appKeyInput = document.getElementById("appKey") as HTMLInputElement;

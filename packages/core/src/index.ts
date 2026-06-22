@@ -36,9 +36,16 @@ import { YuanbaoWsClient } from "./access/ws/client.js";
 import { decodeInboundMessage } from "./access/ws/biz-codec.js";
 import { createLog, setLogLevel, setLogPrefix } from "./logger.js";
 import type { ModuleLog, PluginLogger } from "./logger.js";
-import { getSignToken, forceRefreshSignToken, clearAllSignTokenCache } from "./access/http/request.js";
+import {
+  getSignToken,
+  forceRefreshSignToken,
+  clearAllSignTokenCache,
+} from "./access/http/request.js";
 import { resolveAccount } from "./accounts.js";
-import { toChatMessage, buildTextMsgBody } from "./business/messaging/extract.js";
+import {
+  toChatMessage,
+  buildTextMsgBody,
+} from "./business/messaging/extract.js";
 // CommandSystem is imported as a TYPE only here to keep the bundler's static
 // import graph clean — the runtime class is loaded via dynamic import() in
 // init() below. This is no longer strictly necessary (commands/registry.ts
@@ -49,7 +56,10 @@ import { toChatMessage, buildTextMsgBody } from "./business/messaging/extract.js
 //   - Use `bot.getCommandSystem()` after `await bot.init()`
 //   - Or import directly: `import { CommandSystem } from "yuanbao-lite/commands"`
 import type { CommandSystem } from "./commands/registry.js";
-import type { CommandSystemConfig, CommandDefinition } from "./commands/types.js";
+import type {
+  CommandSystemConfig,
+  CommandDefinition,
+} from "./commands/types.js";
 import type { PersistenceAdapter } from "./access/persistence/adapter.js";
 import {
   getDefaultPersistenceAdapter,
@@ -57,27 +67,72 @@ import {
   joinPath,
   nodeModulesReady,
 } from "./access/persistence/adapter.js";
-import { uploadMedia, downloadMedia, extractMediaInfo, downloadAllMedia, buildImageMsgBody, buildFileMsgBody } from "./access/http/media.js";
-import type { UploadResult, DownloadResult, MediaInfo } from "./access/http/media.js";
-import { detectSticker, prepareStickerMsgBody, buildEmojiMsgBody } from "./business/sticker.js";
+import {
+  uploadMedia,
+  downloadMedia,
+  extractMediaInfo,
+  downloadAllMedia,
+  buildImageMsgBody,
+  buildFileMsgBody,
+} from "./access/http/media.js";
+import type {
+  UploadResult,
+  DownloadResult,
+  MediaInfo,
+} from "./access/http/media.js";
+import {
+  detectSticker,
+  prepareStickerMsgBody,
+  buildEmojiMsgBody,
+} from "./business/sticker.js";
 import type { StickerInfo } from "./business/sticker.js";
 import { initBlockStore } from "./business/block.js";
 import { initTrustStore } from "./business/trust.js";
 import { initRemindersStore } from "./business/reminders.js";
 import { initStickerCacheStore } from "./business/sticker.js";
-import { LlmTakeoverEngine, createLlmTakeover } from "./business/llm-takeover.js";
+import {
+  LlmTakeoverEngine,
+  createLlmTakeover,
+} from "./business/llm-takeover.js";
 import type { LlmTakeoverConfig } from "./business/llm-takeover.js";
 import { AliasStore, getGlobalAliasStore } from "./business/alias.js";
 import { ContactStore, getGlobalContactStore } from "./business/contacts.js";
 import { GroupStore, getGlobalGroupStore } from "./business/groups.js";
-import { parseMentions, buildMentionMsgBody, buildCloudCustomDataWithMentions } from "./business/mention.js";
-import { interpolate, buildMessageContext, chatContextFromMessage } from "./business/interpolate.js";
-import { MessageHistoryStore, getGlobalHistoryStore } from "./business/history.js";
+import {
+  parseMentions,
+  buildMentionMsgBody,
+  buildCloudCustomDataWithMentions,
+} from "./business/mention.js";
+import {
+  interpolate,
+  buildMessageContext,
+  chatContextFromMessage,
+} from "./business/interpolate.js";
+import {
+  MessageHistoryStore,
+  getGlobalHistoryStore,
+} from "./business/history.js";
 import { MultiAccountManager } from "./business/multi-account.js";
 import { SearchEngine } from "./business/search.js";
-import type { YuanbaoAccountConfig, ResolvedYuanbaoAccount, YuanbaoInboundMessage, YuanbaoMsgBodyElement, ChatMessage, SendTextMessageParams, BotStatus, BotState } from "./types.js";
-import type { WsPushEvent, WsAuthBindResult, WsClientState } from "./access/ws/types.js";
-import { sessionKeyFromMessage, BLOCKING_SESSION_TIMEOUT_MS } from "./commands/session-utils.js";
+import type {
+  YuanbaoAccountConfig,
+  ResolvedYuanbaoAccount,
+  YuanbaoInboundMessage,
+  YuanbaoMsgBodyElement,
+  ChatMessage,
+  SendTextMessageParams,
+  BotStatus,
+  BotState,
+} from "./types.js";
+import type {
+  WsPushEvent,
+  WsAuthBindResult,
+  WsClientState,
+} from "./access/ws/types.js";
+import {
+  sessionKeyFromMessage,
+  BLOCKING_SESSION_TIMEOUT_MS,
+} from "./commands/session-utils.js";
 
 // ─── Event types ───
 
@@ -92,7 +147,11 @@ export type BotEventType =
   | "kickout"
   | "outboundMessage";
 
-export type OutboundMessageData = { text: string; to: string; isGroup: boolean };
+export type OutboundMessageData = {
+  text: string;
+  to: string;
+  isGroup: boolean;
+};
 
 export type BotEventHandler<T extends BotEventType> = T extends "message"
   ? (msg: ChatMessage) => void
@@ -100,18 +159,18 @@ export type BotEventHandler<T extends BotEventType> = T extends "message"
     ? (msg: ChatMessage) => void
     : T extends "groupMessage"
       ? (msg: ChatMessage) => void
-      : T extends "stateChange"
-        ? (state: BotState) => void
-        : T extends "error"
-          ? (error: Error) => void
-          : T extends "ready"
-            ? (data: { connectId: string }) => void
-            : T extends "close"
-              ? () => void
-              : T extends "kickout"
-                ? (data: { status: number; reason: string }) => void
-                : T extends "outboundMessage"
-                  ? (data: OutboundMessageData) => void
+      : T extends "outboundMessage"
+        ? (data: OutboundMessageData) => void
+        : T extends "stateChange"
+          ? (state: BotState) => void
+          : T extends "error"
+            ? (error: Error) => void
+            : T extends "ready"
+              ? (data: { connectId: string }) => void
+              : T extends "close"
+                ? () => void
+                : T extends "kickout"
+                  ? (data: { status: number; reason: string }) => void
                   : never;
 
 // ─── Bot config ───
@@ -185,7 +244,10 @@ export class YuanbaoBot {
    * which needs `await nodeModulesReady`). `init()` consumes this and calls
    * `initStores()` once the Node modules are loaded.
    */
-  private pendingPersistenceConfig?: { adapter?: PersistenceAdapter; dir?: string };
+  private pendingPersistenceConfig?: {
+    adapter?: PersistenceAdapter;
+    dir?: string;
+  };
   /**
    * In-flight init promise — ensures `init()` is idempotent even when called
    * concurrently from `start()` and external code.
@@ -275,7 +337,8 @@ export class YuanbaoBot {
     // `config.commands === false` is honored: we set the `commandsDisabled`
     // flag and init() will short-circuit without touching the registry.
     if (config.commands !== false) {
-      this.pendingCommandConfig = typeof config.commands === "object" ? config.commands : undefined;
+      this.pendingCommandConfig =
+        typeof config.commands === "object" ? config.commands : undefined;
       this.pendingCustomCommands = config.customCommands;
     } else {
       this.commandsDisabled = true;
@@ -386,12 +449,18 @@ export class YuanbaoBot {
     // may not be working (no provider configured, disabled, etc.)
     const _llmCfg = this.llmEngine.getConfig();
     const _providerNames = Object.keys(_llmCfg.customProviders ?? {});
-    this.log.info(`LLM engine: enabled=${_llmCfg.enabled} autoReply=${this.llmAutoReply} isReady=${this.llmEngine.isReady} activeProvider="${_llmCfg.provider}" providers=[${_providerNames.join(",")}] persistencePath=${llmPersistencePath ?? "(in-memory)"}`);
+    this.log.info(
+      `LLM engine: enabled=${_llmCfg.enabled} autoReply=${this.llmAutoReply} isReady=${this.llmEngine.isReady} activeProvider="${_llmCfg.provider}" providers=[${_providerNames.join(",")}] persistencePath=${llmPersistencePath ?? "(in-memory)"}`,
+    );
     if (this.llmEngine.isReady) {
       const _ap = _llmCfg.customProviders?.[_llmCfg.provider];
-      this.log.info(`LLM active provider: ${_llmCfg.provider} format=${_ap?.apiFormat} model=${_ap?.model} baseUrl=${_ap?.baseUrl} keys=${(_ap?.apiKeys?.length ?? 0) || (_ap?.apiKey ? 1 : 0)}`);
+      this.log.info(
+        `LLM active provider: ${_llmCfg.provider} format=${_ap?.apiFormat} model=${_ap?.model} baseUrl=${_ap?.baseUrl} keys=${(_ap?.apiKeys?.length ?? 0) || (_ap?.apiKey ? 1 : 0)}`,
+      );
     } else {
-      this.log.warn(`LLM not ready — configure a provider via /llm customprovider add <name> openai-chat-completions <model> <baseUrl> <apiKey>, then /llm provider <name>`);
+      this.log.warn(
+        `LLM not ready — configure a provider via /llm customprovider add <name> openai-chat-completions <model> <baseUrl> <apiKey>, then /llm provider <name>`,
+      );
     }
   }
 
@@ -405,17 +474,24 @@ export class YuanbaoBot {
   }
 
   off<T extends BotEventType>(event: T, handler: BotEventHandler<T>): void {
-    this.eventHandlers.get(event)?.delete(handler as (...args: unknown[]) => void);
+    this.eventHandlers
+      .get(event)
+      ?.delete(handler as (...args: unknown[]) => void);
   }
 
-  private emit<T extends BotEventType>(event: T, ...args: Parameters<BotEventHandler<T>>): void {
+  private emit<T extends BotEventType>(
+    event: T,
+    ...args: Parameters<BotEventHandler<T>>
+  ): void {
     const handlers = this.eventHandlers.get(event);
     if (handlers) {
       for (const handler of handlers) {
         try {
           handler(...args);
         } catch (err) {
-          this.log.error(`event handler error for "${event}": ${(err as Error).message}`);
+          this.log.error(
+            `event handler error for "${event}": ${(err as Error).message}`,
+          );
         }
       }
     }
@@ -496,7 +572,8 @@ export class YuanbaoBot {
     // The single dynamic import() that keeps `./commands/registry.js`
     // (and the 53 handler files it transitively imports) out of any
     // bundler's static graph for `src/index.ts`.
-    const { CommandSystem: CommandSystemCtor } = await import("./commands/registry.js");
+    const { CommandSystem: CommandSystemCtor } =
+      await import("./commands/registry.js");
     this.commandSystem = new CommandSystemCtor(this.pendingCommandConfig);
     if (this.pendingCustomCommands) {
       for (const cmd of this.pendingCustomCommands) {
@@ -544,14 +621,18 @@ export class YuanbaoBot {
         auth,
       },
       config: {
-        maxReconnectAttempts: this.config.maxReconnectAttempts ?? this.account.wsMaxReconnectAttempts,
+        maxReconnectAttempts:
+          this.config.maxReconnectAttempts ??
+          this.account.wsMaxReconnectAttempts,
       },
       callbacks: {
         onReady: (data: WsAuthBindResult) => this.handleReady(data),
-        onDispatch: (pushEvent: WsPushEvent) => void this.handleDispatch(pushEvent),
+        onDispatch: (pushEvent: WsPushEvent) =>
+          void this.handleDispatch(pushEvent),
         onStateChange: (state: WsClientState) => this.handleStateChange(state),
         onError: (error: Error) => this.handleError(error),
-        onClose: (code, reason) => this.log.info(`WebSocket closed: code=${code}, reason=${reason}`),
+        onClose: (code, reason) =>
+          this.log.info(`WebSocket closed: code=${code}, reason=${reason}`),
         onKickout: (data) => this.handleKickout(data),
         onAuthFailed: async (code: number) => {
           this.log.warn(`auth failed (code=${code}), refreshing token`);
@@ -596,7 +677,9 @@ export class YuanbaoBot {
         resolve();
       };
 
-      this.abortController!.signal.addEventListener("abort", onAbort, { once: true });
+      this.abortController!.signal.addEventListener("abort", onAbort, {
+        once: true,
+      });
     });
   }
 
@@ -622,12 +705,22 @@ export class YuanbaoBot {
    *
    * @param params - Send parameters including optional contextMsg for interpolation context
    */
-  async sendText(params: SendTextMessageParams & { contextMsg?: ChatMessage }): Promise<void> {
+  async sendText(
+    params: SendTextMessageParams & { contextMsg?: ChatMessage },
+  ): Promise<void> {
     if (!this.client) {
       throw new Error("Bot not connected");
     }
 
-    const { to, text, isGroup, quoteMsgId, quoteMsgSeq, contextMsg, skipInterpolation } = params;
+    const {
+      to,
+      text,
+      isGroup,
+      quoteMsgId,
+      quoteMsgSeq,
+      contextMsg,
+      skipInterpolation,
+    } = params;
 
     // Step 1: Build interpolation context (with chat context if provided)
     // Skip interpolation if caller has already resolved ${...} expressions (e.g. batch)
@@ -643,60 +736,88 @@ export class YuanbaoBot {
       : interpolate(
           text,
           buildMessageContext(
-            contextMsg ? chatContextFromMessage(contextMsg, this.account.botId) : undefined,
+            contextMsg
+              ? chatContextFromMessage(contextMsg, this.account.botId)
+              : undefined,
           ),
           { sanitize: shouldSanitize },
         );
 
     // Step 2: Build @mention msg_body with interleaved TIMCustomElem elements
     // Build nickname resolver for @[昵称]() auto-matching in groups
-    const nicknameResolver = (isGroup && to)
-      ? async (nickname: string) => {
-          try {
-            const searchEngine = new SearchEngine(this);
-            const results = await searchEngine.searchGroupMembers(String(to), nickname);
-            // Only return exact or very close matches
-            const exactMatches = results.filter(r => r.score >= 0.8);
-            return exactMatches.map(r => ({ userId: r.userId, nickname: r.nickName }));
-          } catch {
-            return [];
+    const nicknameResolver =
+      isGroup && to
+        ? async (nickname: string) => {
+            try {
+              const searchEngine = new SearchEngine(this);
+              const results = await searchEngine.searchGroupMembers(
+                String(to),
+                nickname,
+              );
+              // Only return exact or very close matches
+              const exactMatches = results.filter((r) => r.score >= 0.8);
+              return exactMatches.map((r) => ({
+                userId: r.userId,
+                nickname: r.nickName,
+              }));
+            } catch {
+              return [];
+            }
           }
-        }
-      : undefined;
+        : undefined;
 
     // Build all-members resolver for @[所有人]() / @[](all) @all syntax
-    const allMembersResolver = (isGroup && to)
-      ? async () => {
-          try {
-            const resp = await this.getGroupMemberList(String(to));
-            const members = resp?.member_list ?? [];
-            return members.map(m => ({ userId: m.user_id, nickname: m.nick_name, userType: m.user_type }));
-          } catch {
-            return [];
+    const allMembersResolver =
+      isGroup && to
+        ? async () => {
+            try {
+              const resp = await this.getGroupMemberList(String(to));
+              const members = resp?.member_list ?? [];
+              return members.map((m) => ({
+                userId: m.user_id,
+                nickname: m.nick_name,
+                userType: m.user_type,
+              }));
+            } catch {
+              return [];
+            }
           }
-        }
-      : undefined;
+        : undefined;
 
     // Build userId resolver for @[](id) auto-nickname fetch
     // When @[](id) is used without a nickname, this fetches the member's
     // display name from the group member list.
-    const userIdResolver = (isGroup && to)
-      ? async (userId: string): Promise<string | null> => {
-          try {
-            const resp = await this.getGroupMemberList(String(to));
-            const members = resp?.member_list ?? [];
-            const member = members.find(m => String(m.user_id) === String(userId));
-            return member?.nick_name ?? null;
-          } catch {
-            return null;
+    const userIdResolver =
+      isGroup && to
+        ? async (userId: string): Promise<string | null> => {
+            try {
+              const resp = await this.getGroupMemberList(String(to));
+              const members = resp?.member_list ?? [];
+              const member = members.find(
+                (m) => String(m.user_id) === String(userId),
+              );
+              return member?.nick_name ?? null;
+            } catch {
+              return null;
+            }
           }
-        }
-      : undefined;
+        : undefined;
 
     // Use buildMentionMsgBody which interleaves TIMCustomElem at correct positions
     // (matching the original project's resolveAtMentions approach)
-    const { msgBody: mentionMsgBody, cloudCustomData, mentions: parsedMentions, atAll: _atAll } =
-      await buildMentionMsgBody(interpolatedText, this.aliasStore!, nicknameResolver, allMembersResolver, userIdResolver, new Set(this.getSelfUserIds()));
+    const {
+      msgBody: mentionMsgBody,
+      cloudCustomData,
+      mentions: parsedMentions,
+      atAll: _atAll,
+    } = await buildMentionMsgBody(
+      interpolatedText,
+      this.aliasStore!,
+      nicknameResolver,
+      allMembersResolver,
+      userIdResolver,
+      new Set(this.getSelfUserIds()),
+    );
     // _atAll flag is already encoded in cloudCustomData via buildCloudCustomDataWithMentions
     void _atAll;
 
@@ -704,13 +825,17 @@ export class YuanbaoBot {
     // syntax is present — helps diagnose "@-not-working" reports by showing
     // the exact text received, parsed mentions, and resulting msgBody structure.
     if (parsedMentions.length > 0 || /@\[/.test(interpolatedText)) {
-      this.log.debug(`sendText mention: text="${interpolatedText.substring(0, 100)}" isGroup=${isGroup} to=${to} mentions=${parsedMentions.length} msgBodyTypes=${mentionMsgBody.map(el => el.msg_type).join(",")}`);
+      this.log.debug(
+        `sendText mention: text="${interpolatedText.substring(0, 100)}" isGroup=${isGroup} to=${to} mentions=${parsedMentions.length} msgBodyTypes=${mentionMsgBody.map((el) => el.msg_type).join(",")}`,
+      );
     }
 
     // Send message (no chunking — Yuanbao platform removed bot message limits)
     if (mentionMsgBody.length <= 2 && !parsedMentions.length) {
       // Simple case: just text
-      const textContent = mentionMsgBody.find(el => el.msg_type === "TIMTextElem")?.msg_content?.text || "";
+      const textContent =
+        mentionMsgBody.find((el) => el.msg_type === "TIMTextElem")?.msg_content
+          ?.text || "";
       const msgBody = buildTextMsgBody(textContent);
       if (isGroup) {
         await this.client.sendGroupMessage({
@@ -809,7 +934,11 @@ export class YuanbaoBot {
   /**
    * Send reply-status heartbeat (RUNNING) to indicate the bot is processing.
    */
-  async sendHeartbeatRunning(to: string, isGroup = false, groupCode?: string): Promise<void> {
+  async sendHeartbeatRunning(
+    to: string,
+    isGroup = false,
+    groupCode?: string,
+  ): Promise<void> {
     if (!this.client || !this.account.botId) return;
 
     if (isGroup && groupCode) {
@@ -832,7 +961,11 @@ export class YuanbaoBot {
   /**
    * Send reply-status heartbeat (FINISH) to indicate the bot is done.
    */
-  async sendHeartbeatFinish(to: string, isGroup = false, groupCode?: string): Promise<void> {
+  async sendHeartbeatFinish(
+    to: string,
+    isGroup = false,
+    groupCode?: string,
+  ): Promise<void> {
     if (!this.client || !this.account.botId) return;
 
     if (isGroup && groupCode) {
@@ -875,21 +1008,31 @@ export class YuanbaoBot {
   /**
    * Upload a media file to Yuanbao's media server.
    */
-  async uploadMedia(filePath: string, mediaType?: import("./access/http/media.js").MediaType): Promise<UploadResult> {
+  async uploadMedia(
+    filePath: string,
+    mediaType?: import("./access/http/media.js").MediaType,
+  ): Promise<UploadResult> {
     return uploadMedia(this.account, filePath, { mediaType });
   }
 
   /**
    * Download a media file from a URL.
    */
-  async downloadMedia(url: string, saveDir?: string, fileName?: string): Promise<DownloadResult> {
+  async downloadMedia(
+    url: string,
+    saveDir?: string,
+    fileName?: string,
+  ): Promise<DownloadResult> {
     return downloadMedia(url, saveDir, fileName);
   }
 
   /**
    * Download all media attachments from a message.
    */
-  async downloadAllMedia(msgBody: YuanbaoMsgBodyElement[], saveDir?: string): Promise<DownloadResult[]> {
+  async downloadAllMedia(
+    msgBody: YuanbaoMsgBodyElement[],
+    saveDir?: string,
+  ): Promise<DownloadResult[]> {
     return downloadAllMedia(msgBody, saveDir);
   }
 
@@ -917,7 +1060,9 @@ export class YuanbaoBot {
   }): Promise<void> {
     if (!this.client) throw new Error("Bot not connected");
 
-    const uploadResult = await uploadMedia(this.account, params.filePath, { mediaType: "image" });
+    const uploadResult = await uploadMedia(this.account, params.filePath, {
+      mediaType: "image",
+    });
 
     const msgBody = buildImageMsgBody({
       uuid: uploadResult.uuid,
@@ -931,10 +1076,19 @@ export class YuanbaoBot {
       const chatCtx = params.contextMsg
         ? chatContextFromMessage(params.contextMsg, this.account.botId)
         : undefined;
-      const interpolatedMentions = interpolate(params.mentions, buildMessageContext(chatCtx));
-      const mentionResult = await parseMentions(interpolatedMentions, this.aliasStore!);
+      const interpolatedMentions = interpolate(
+        params.mentions,
+        buildMessageContext(chatCtx),
+      );
+      const mentionResult = await parseMentions(
+        interpolatedMentions,
+        this.aliasStore!,
+      );
       if (mentionResult.mentionedUserIds.length > 0) {
-        cloudCustomData = buildCloudCustomDataWithMentions(undefined, mentionResult);
+        cloudCustomData = buildCloudCustomDataWithMentions(
+          undefined,
+          mentionResult,
+        );
       }
     }
 
@@ -970,7 +1124,9 @@ export class YuanbaoBot {
   }): Promise<void> {
     if (!this.client) throw new Error("Bot not connected");
 
-    const uploadResult = await uploadMedia(this.account, params.filePath, { mediaType: "file" });
+    const uploadResult = await uploadMedia(this.account, params.filePath, {
+      mediaType: "file",
+    });
 
     const msgBody = buildFileMsgBody({
       uuid: uploadResult.uuid,
@@ -985,10 +1141,19 @@ export class YuanbaoBot {
       const chatCtx = params.contextMsg
         ? chatContextFromMessage(params.contextMsg, this.account.botId)
         : undefined;
-      const interpolatedMentions = interpolate(params.mentions, buildMessageContext(chatCtx));
-      const mentionResult = await parseMentions(interpolatedMentions, this.aliasStore!);
+      const interpolatedMentions = interpolate(
+        params.mentions,
+        buildMessageContext(chatCtx),
+      );
+      const mentionResult = await parseMentions(
+        interpolatedMentions,
+        this.aliasStore!,
+      );
       if (mentionResult.mentionedUserIds.length > 0) {
-        cloudCustomData = buildCloudCustomDataWithMentions(undefined, mentionResult);
+        cloudCustomData = buildCloudCustomDataWithMentions(
+          undefined,
+          mentionResult,
+        );
       }
     }
 
@@ -1017,7 +1182,14 @@ export class YuanbaoBot {
    * Supports @mention and $ interpolation in text overlay.
    * Chat context variables available in interpolation when contextMsg provided.
    */
-  async sendSticker(params: { to: string; stickerId: string; isGroup?: boolean; text?: string; mentions?: string; contextMsg?: ChatMessage }): Promise<void> {
+  async sendSticker(params: {
+    to: string;
+    stickerId: string;
+    isGroup?: boolean;
+    text?: string;
+    mentions?: string;
+    contextMsg?: ChatMessage;
+  }): Promise<void> {
     if (!this.client) throw new Error("Bot not connected");
 
     // Build interpolation context
@@ -1026,25 +1198,43 @@ export class YuanbaoBot {
       : undefined;
 
     // Process $ interpolation in stickerId
-    const resolvedStickerId = interpolate(params.stickerId, buildMessageContext(chatCtx));
+    const resolvedStickerId = interpolate(
+      params.stickerId,
+      buildMessageContext(chatCtx),
+    );
 
-    const msgBody = await prepareStickerMsgBody(this.account, resolvedStickerId);
+    const msgBody = await prepareStickerMsgBody(
+      this.account,
+      resolvedStickerId,
+    );
 
     // Handle mentions via cloud_custom_data
     let cloudCustomData: string | undefined;
     if (params.mentions) {
-      const mentionResult = await parseMentions(params.mentions, this.aliasStore!);
+      const mentionResult = await parseMentions(
+        params.mentions,
+        this.aliasStore!,
+      );
       if (mentionResult.mentionedUserIds.length > 0) {
-        cloudCustomData = buildCloudCustomDataWithMentions(undefined, mentionResult);
+        cloudCustomData = buildCloudCustomDataWithMentions(
+          undefined,
+          mentionResult,
+        );
       }
     }
 
     // Handle text overlay with interpolation + mentions
     if (params.text) {
       const interpolatedText = interpolate(params.text, buildMessageContext());
-      const mentionResult = await parseMentions(interpolatedText, this.aliasStore!);
+      const mentionResult = await parseMentions(
+        interpolatedText,
+        this.aliasStore!,
+      );
       if (mentionResult.mentionedUserIds.length > 0) {
-        cloudCustomData = buildCloudCustomDataWithMentions(cloudCustomData, mentionResult);
+        cloudCustomData = buildCloudCustomDataWithMentions(
+          cloudCustomData,
+          mentionResult,
+        );
       }
     }
 
@@ -1070,7 +1260,12 @@ export class YuanbaoBot {
    *
    * Supports @mention via cloud_custom_data.
    */
-  async sendEmoji(params: { to: string; emojiIndex: number; isGroup?: boolean; mentions?: string }): Promise<void> {
+  async sendEmoji(params: {
+    to: string;
+    emojiIndex: number;
+    isGroup?: boolean;
+    mentions?: string;
+  }): Promise<void> {
     if (!this.client) throw new Error("Bot not connected");
 
     const msgBody = buildEmojiMsgBody(params.emojiIndex);
@@ -1078,9 +1273,15 @@ export class YuanbaoBot {
     // Handle mentions
     let cloudCustomData: string | undefined;
     if (params.mentions) {
-      const mentionResult = await parseMentions(params.mentions, this.aliasStore!);
+      const mentionResult = await parseMentions(
+        params.mentions,
+        this.aliasStore!,
+      );
       if (mentionResult.mentionedUserIds.length > 0) {
-        cloudCustomData = buildCloudCustomDataWithMentions(undefined, mentionResult);
+        cloudCustomData = buildCloudCustomDataWithMentions(
+          undefined,
+          mentionResult,
+        );
       }
     }
 
@@ -1319,11 +1520,15 @@ export class YuanbaoBot {
     if (!this.multiAccountManager) {
       this.multiAccountManager = new MultiAccountManager();
       // Add the current bot as the default account
-      this.multiAccountManager.addAccount("default", {
-        appKey: this.config.appKey,
-        appSecret: this.config.appSecret,
-        token: this.config.token,
-      }, "默认账号");
+      this.multiAccountManager.addAccount(
+        "default",
+        {
+          appKey: this.config.appKey,
+          appSecret: this.config.appSecret,
+          token: this.config.token,
+        },
+        "默认账号",
+      );
     }
     return this.multiAccountManager;
   }
@@ -1378,7 +1583,8 @@ export class YuanbaoBot {
 
     try {
       const dir = this.config.persistence?.dir ?? getDefaultPersistenceDir();
-      const adapter = this.config.persistence?.adapter ?? getDefaultPersistenceAdapter();
+      const adapter =
+        this.config.persistence?.adapter ?? getDefaultPersistenceAdapter();
       const prefsPath = joinPath(dir, "runtime-prefs.json");
       if (!adapter.exists(prefsPath)) return;
       const raw = adapter.read(prefsPath);
@@ -1410,36 +1616,43 @@ export class YuanbaoBot {
     // This is the "public" bot ID that users see and @mention in groups —
     // it may differ from account.botId (the sign-token ID used for sending).
     if (this.account.botId && this.client) {
-      this.client.queryBotInfo(this.account.botId).then(async (rsp) => {
-        if (rsp.code === 0) {
-          // Cache the platform-provided bot ID for @mention detection.
-          // The QueryBotInfoRsp.botInfo.botId is the authoritative public ID
-          // that group members see when they @mention the bot. Using it
-          // directly (instead of auto-learning from mentions) is more
-          // reliable and avoids false positives.
-          if (rsp.botId && rsp.botId !== this.account.botId) {
-            this.botPublicIds.add(rsp.botId);
-            this.log.info(`platform-provided public bot ID: ${rsp.botId} (sign-token botId=${this.account.botId})`);
-          } else if (rsp.botId) {
-            // Same as sign-token ID — still add to the set for uniform checking
-            this.botPublicIds.add(rsp.botId);
-            this.log.info(`platform-provided bot ID matches sign-token ID: ${rsp.botId}`);
-          }
-          if (rsp.ownerId) {
-            this.account.botOwnerId = rsp.ownerId;
-            this.log.info(`bot owner cached: ownerId=${rsp.ownerId}`);
-            // Auto-trust the master (bot owner) — they can always use /unsafe
-            try {
-              const { setMasterUserId } = await import("./business/trust.js");
-              setMasterUserId(rsp.ownerId, "主人");
-            } catch {
-              // trust module optional
+      this.client
+        .queryBotInfo(this.account.botId)
+        .then(async (rsp) => {
+          if (rsp.code === 0) {
+            // Cache the platform-provided bot ID for @mention detection.
+            // The QueryBotInfoRsp.botInfo.botId is the authoritative public ID
+            // that group members see when they @mention the bot. Using it
+            // directly (instead of auto-learning from mentions) is more
+            // reliable and avoids false positives.
+            if (rsp.botId && rsp.botId !== this.account.botId) {
+              this.botPublicIds.add(rsp.botId);
+              this.log.info(
+                `platform-provided public bot ID: ${rsp.botId} (sign-token botId=${this.account.botId})`,
+              );
+            } else if (rsp.botId) {
+              // Same as sign-token ID — still add to the set for uniform checking
+              this.botPublicIds.add(rsp.botId);
+              this.log.info(
+                `platform-provided bot ID matches sign-token ID: ${rsp.botId}`,
+              );
+            }
+            if (rsp.ownerId) {
+              this.account.botOwnerId = rsp.ownerId;
+              this.log.info(`bot owner cached: ownerId=${rsp.ownerId}`);
+              // Auto-trust the master (bot owner) — they can always use /unsafe
+              try {
+                const { setMasterUserId } = await import("./business/trust.js");
+                setMasterUserId(rsp.ownerId, "主人");
+              } catch {
+                // trust module optional
+              }
             }
           }
-        }
-      }).catch((err) => {
-        this.log.warn(`failed to query bot owner: ${(err as Error).message}`);
-      });
+        })
+        .catch((err) => {
+          this.log.warn(`failed to query bot owner: ${(err as Error).message}`);
+        });
     }
 
     this.emit("ready", { connectId: data.connectId });
@@ -1452,7 +1665,11 @@ export class YuanbaoBot {
     setImmediate(() => {
       try {
         void import("./business/reminders.js").then(({ startAllJobs }) => {
-          const sendFn = async (targetId: string, message: string, isGroup: boolean): Promise<void> => {
+          const sendFn = async (
+            targetId: string,
+            message: string,
+            isGroup: boolean,
+          ): Promise<void> => {
             if (isGroup) {
               await this.sendGroupMessage(targetId, message);
             } else {
@@ -1462,7 +1679,9 @@ export class YuanbaoBot {
           startAllJobs(sendFn);
         });
       } catch (err) {
-        this.log.warn(`failed to restart reminder jobs: ${(err as Error).message}`);
+        this.log.warn(
+          `failed to restart reminder jobs: ${(err as Error).message}`,
+        );
       }
     });
   }
@@ -1483,23 +1702,33 @@ export class YuanbaoBot {
     // A message was recalled. Inject a system event into LLM context so the
     // LLM knows not to reference the recalled message.
     const callbackCmd = msg.callback_command || "";
-    if (callbackCmd.includes("CallbackAfterRecallMsg") || callbackCmd.includes("CallbackAfterMsgWithDraw")) {
-      const recalledMsgId = String(msg.recall_msg_seq_list?.[0]?.msg_id ?? msg.msg_id ?? "");
+    if (
+      callbackCmd.includes("CallbackAfterRecallMsg") ||
+      callbackCmd.includes("CallbackAfterMsgWithDraw")
+    ) {
+      const recalledMsgId = String(
+        msg.recall_msg_seq_list?.[0]?.msg_id ?? msg.msg_id ?? "",
+      );
       const recalledSeq = msg.recall_msg_seq_list?.[0]?.msg_seq;
-      this.log.info(`recall callback: cmd=${callbackCmd} msgId=${recalledMsgId} seq=${recalledSeq}`);
+      this.log.info(
+        `recall callback: cmd=${callbackCmd} msgId=${recalledMsgId} seq=${recalledSeq}`,
+      );
       // Remove from local history if present
       if (recalledMsgId) {
         const removed = this.historyStore!.removeById(recalledMsgId);
         if (removed) {
-          this.log.debug(`removed recalled message ${recalledMsgId} from history`);
+          this.log.debug(
+            `removed recalled message ${recalledMsgId} from history`,
+          );
         }
       }
       // Inject system event into LLM context
       const engine = this.getLlmEngine();
       if (engine) {
-        const convKey = chatType === "group" && msg.group_code
-          ? `group:${msg.group_code}`
-          : `dm:${msg.from_account}`;
+        const convKey =
+          chatType === "group" && msg.group_code
+            ? `group:${msg.group_code}`
+            : `dm:${msg.from_account}`;
         const tail = recalledMsgId ? recalledMsgId.slice(-8) : "?";
         const systemEvent = `[系统] 消息 #${tail} 已被撤回，不要引用或基于该消息内容回复。忽略该消息ID的过时记录，保留过去的助手回复，无需工具回滚。`;
         try {
@@ -1530,14 +1759,19 @@ export class YuanbaoBot {
     // For CallbackAfterSendMsg, we check if the callback is for OUR bot
     // by verifying from_account matches a known self ID.
     if (this.isSelfUserId(chatMessage.fromUserId)) {
-      this.log.debug(`self-message detected (fromUserId=${chatMessage.fromUserId}), storing in history but skipping dispatch`);
+      this.log.debug(
+        `self-message detected (fromUserId=${chatMessage.fromUserId}), storing in history but skipping dispatch`,
+      );
 
       // Store in history (so /inspect can find bot's own messages)
       this.historyStore!.add(chatMessage);
 
       // Track group activity for group name resolution
       if (chatMessage.chatType === "group" && chatMessage.groupCode) {
-        this.groupStore!.trackActivity(chatMessage.groupCode, chatMessage.groupName);
+        this.groupStore!.trackActivity(
+          chatMessage.groupCode,
+          chatMessage.groupName,
+        );
       }
 
       // Skip command dispatch + LLM auto-reply + context injection
@@ -1550,8 +1784,13 @@ export class YuanbaoBot {
     // Treat it like any other user message — store in history, inject into
     // LLM context, dispatch commands, and allow LLM auto-reply. The bot's
     // messages are visible to our LLM and can trigger responses.
-    if (chatMessage.fromUserId.startsWith("bot_") && this.isCallbackAfterSendMsg(msg)) {
-      this.log.debug(`other bot's message detected (fromUserId=${chatMessage.fromUserId}), processing as normal inbound message`);
+    if (
+      chatMessage.fromUserId.startsWith("bot_") &&
+      this.isCallbackAfterSendMsg(msg)
+    ) {
+      this.log.debug(
+        `other bot's message detected (fromUserId=${chatMessage.fromUserId}), processing as normal inbound message`,
+      );
       // Fall through to normal processing — do NOT return here.
       // The message will be stored in history, context-injected, and
       // dispatched (commands + LLM auto-reply) like any user message.
@@ -1568,7 +1807,16 @@ export class YuanbaoBot {
     const sessionKey = sessionKeyFromMessage(chatMessage);
     if (this.commandSystem) {
       const cs = this.commandSystem as unknown as {
-        _switchSessions?: Map<string, Array<{ chatType: "group" | "direct"; target: string; label: string; groupName?: string; lastActivity: number }>>;
+        _switchSessions?: Map<
+          string,
+          Array<{
+            chatType: "group" | "direct";
+            target: string;
+            label: string;
+            groupName?: string;
+            lastActivity: number;
+          }>
+        >;
       };
       const stack = cs._switchSessions?.get(sessionKey);
       if (stack && stack.length > 0) {
@@ -1581,7 +1829,9 @@ export class YuanbaoBot {
           } else {
             cs._switchSessions!.set(sessionKey, stack);
           }
-          this.log.info(`/switch session expired (5min inactivity) for user ${chatMessage.fromUserId}`);
+          this.log.info(
+            `/switch session expired (5min inactivity) for user ${chatMessage.fromUserId}`,
+          );
           // Don't apply the override — fall through to normal processing
         } else {
           // Update lastActivity
@@ -1600,14 +1850,17 @@ export class YuanbaoBot {
           (chatMessage as { groupCode?: string }).groupCode = current.target;
           // Update groupName to the switched group's name (fixes cross-group
           // name pollution where original group's name leaked into switched context)
-          (chatMessage as { groupName?: string }).groupName = current.groupName || current.target;
+          (chatMessage as { groupName?: string }).groupName =
+            current.groupName || current.target;
           // isMentioned is forced true so commands work in the switched group context
           (chatMessage as { isMentioned?: boolean }).isMentioned = true;
         } else {
           (chatMessage as { chatType: "group" | "direct" }).chatType = "direct";
           (chatMessage as { groupCode?: string }).groupCode = undefined;
         }
-        this.log.debug(`switch context active: user ${originalFromUserId} → ${current.label}`);
+        this.log.debug(
+          `switch context active: user ${originalFromUserId} → ${current.label}`,
+        );
       }
     }
 
@@ -1641,11 +1894,17 @@ export class YuanbaoBot {
     // them as ourselves.
     if (chatMessage.chatType === "group") {
       // Debug: log raw message structure for mention analysis
-      this.log.debug(`mention check: account.botId=${this.account.botId ?? "(none)"} botPublicIds=[${Array.from(this.botPublicIds).join(",")}] mentions=${JSON.stringify(chatMessage.mentions?.map(m => ({userId: m.userId, name: m.displayName})))} cloud_custom_data=${msg.cloud_custom_data?.substring(0, 300)}`);
-      this.log.debug(`mention check: from_account=${msg.from_account} to_account=${msg.to_account} group_code=${msg.group_code} bot_owner_id=${msg.bot_owner_id} msg_body=${JSON.stringify(msg.msg_body?.map(e => ({ type: e.msg_type, content: e.msg_content })))?.substring(0, 500)} raw text="${chatMessage.text?.substring(0, 200)}"`);
+      this.log.debug(
+        `mention check: account.botId=${this.account.botId ?? "(none)"} botPublicIds=[${Array.from(this.botPublicIds).join(",")}] mentions=${JSON.stringify(chatMessage.mentions?.map((m) => ({ userId: m.userId, name: m.displayName })))} cloud_custom_data=${msg.cloud_custom_data?.substring(0, 300)}`,
+      );
+      this.log.debug(
+        `mention check: from_account=${msg.from_account} to_account=${msg.to_account} group_code=${msg.group_code} bot_owner_id=${msg.bot_owner_id} msg_body=${JSON.stringify(msg.msg_body?.map((e) => ({ type: e.msg_type, content: e.msg_content })))?.substring(0, 500)} raw text="${chatMessage.text?.substring(0, 200)}"`,
+      );
 
       // Check if any mention matches our internal botId OR any platform-provided public ID
-      const mentioned = chatMessage.mentions?.some(m => this.isSelfUserId(String(m.userId)));
+      const mentioned = chatMessage.mentions?.some((m) =>
+        this.isSelfUserId(String(m.userId)),
+      );
       if (mentioned) {
         chatMessage.isMentioned = true;
         this.log.debug(`isMentioned=true: a self-ID was found in mentions`);
@@ -1655,12 +1914,18 @@ export class YuanbaoBot {
         try {
           const rawCloudData = msg.cloud_custom_data;
           if (rawCloudData) {
-            const customData = JSON.parse(rawCloudData) as Record<string, unknown>;
+            const customData = JSON.parse(rawCloudData) as Record<
+              string,
+              unknown
+            >;
             const groupAtInfo = customData.groupAtInfo;
             if (groupAtInfo && typeof groupAtInfo === "object") {
               const gai = groupAtInfo as Record<string, unknown>;
               const userIds = gai.groupAtUserIds;
-              if (Array.isArray(userIds) && userIds.some(uid => this.isSelfUserId(String(uid)))) {
+              if (
+                Array.isArray(userIds) &&
+                userIds.some((uid) => this.isSelfUserId(String(uid)))
+              ) {
                 foundInCloudData = true;
               }
             }
@@ -1671,12 +1936,16 @@ export class YuanbaoBot {
 
         if (foundInCloudData) {
           chatMessage.isMentioned = true;
-          this.log.debug(`isMentioned=true: a self-ID was found in cloud_custom_data groupAtInfo`);
+          this.log.debug(
+            `isMentioned=true: a self-ID was found in cloud_custom_data groupAtInfo`,
+          );
         } else {
           // Bot is NOT specifically mentioned — override any false positive from isBotMentioned()
           // which checks if ANY mention exists, not specifically the bot
           chatMessage.isMentioned = false;
-          this.log.debug(`isMentioned=false: no self-ID found in mentions (raw mention userIds: ${JSON.stringify(chatMessage.mentions?.map(m => m.userId))})`);
+          this.log.debug(
+            `isMentioned=false: no self-ID found in mentions (raw mention userIds: ${JSON.stringify(chatMessage.mentions?.map((m) => m.userId))})`,
+          );
         }
       }
     }
@@ -1691,23 +1960,40 @@ export class YuanbaoBot {
         // Try group store first (may have been resolved by /groups, /join, etc.)
         const existing = this.groupStore!.get(chatMessage.groupCode);
         if (existing?.groupName) {
-          (chatMessage as { groupName?: string }).groupName = existing.groupName;
+          (chatMessage as { groupName?: string }).groupName =
+            existing.groupName;
         } else if (existing?.name) {
           (chatMessage as { groupName?: string }).groupName = existing.name;
         }
         // If still no name, fire-and-forget queryGroupInfo to populate the store
         // for future messages (throttled — only if store doesn't have it)
         if (!chatMessage.groupName && !existing?.groupName) {
-          this.client?.queryGroupInfo({ group_code: chatMessage.groupCode }).then((rsp) => {
-            if (rsp.code === 0 && rsp.group_info?.group_name) {
-              this.groupStore!.setGroupName(chatMessage.groupCode!, rsp.group_info.group_name);
-              this.groupStore!.trackActivity(chatMessage.groupCode!, rsp.group_info.group_name);
-              this.log.debug(`lazy-resolved group name: ${chatMessage.groupCode} → ${rsp.group_info.group_name}`);
-            }
-          }).catch(() => { /* ignore — non-critical */ });
+          this.client
+            ?.queryGroupInfo({ group_code: chatMessage.groupCode })
+            .then((rsp) => {
+              if (rsp.code === 0 && rsp.group_info?.group_name) {
+                this.groupStore!.setGroupName(
+                  chatMessage.groupCode!,
+                  rsp.group_info.group_name,
+                );
+                this.groupStore!.trackActivity(
+                  chatMessage.groupCode!,
+                  rsp.group_info.group_name,
+                );
+                this.log.debug(
+                  `lazy-resolved group name: ${chatMessage.groupCode} → ${rsp.group_info.group_name}`,
+                );
+              }
+            })
+            .catch(() => {
+              /* ignore — non-critical */
+            });
         }
       }
-      this.groupStore!.trackActivity(chatMessage.groupCode, chatMessage.groupName);
+      this.groupStore!.trackActivity(
+        chatMessage.groupCode,
+        chatMessage.groupName,
+      );
     }
 
     // ─── Step 1: Store ALL messages in LLM conversation context ───
@@ -1721,23 +2007,46 @@ export class YuanbaoBot {
     // All blocking sessions auto-expire after BLOCKING_SESSION_TIMEOUT_MS (imported from session-utils).
     if (this.commandSystem && !chatMessage.text.trim().startsWith("/")) {
       const cs = this.commandSystem as unknown as {
-        _initWizardSessions?: Map<string, { startedAt: number; lastActivity?: number }>;
-        _handleInitWizardInput?: (bot: unknown, sessionKey: string, text: string, reply: (t: string) => Promise<void>) => Promise<boolean>;
-        _llmWizardSessions?: Map<string, { startedAt: number; lastActivity?: number }>;
-        _handleLlmWizardInput?: (bot: unknown, sessionKey: string, text: string, reply: (t: string) => Promise<void>) => Promise<boolean>;
+        _initWizardSessions?: Map<
+          string,
+          { startedAt: number; lastActivity?: number }
+        >;
+        _handleInitWizardInput?: (
+          bot: unknown,
+          sessionKey: string,
+          text: string,
+          reply: (t: string) => Promise<void>,
+        ) => Promise<boolean>;
+        _llmWizardSessions?: Map<
+          string,
+          { startedAt: number; lastActivity?: number }
+        >;
+        _handleLlmWizardInput?: (
+          bot: unknown,
+          sessionKey: string,
+          text: string,
+          reply: (t: string) => Promise<void>,
+        ) => Promise<boolean>;
       };
       // Session key already computed above (line 1151) — reuse it.
       // sessionKey = sessionKeyFromMessage(chatMessage) was set in the /switch block.
 
       // Helper: check and clean up expired sessions
-      const checkExpiry = (sessions: Map<string, { startedAt: number; lastActivity?: number }> | undefined, name: string): boolean => {
+      const checkExpiry = (
+        sessions:
+          | Map<string, { startedAt: number; lastActivity?: number }>
+          | undefined,
+        name: string,
+      ): boolean => {
         if (!sessions) return false;
         const session = sessions.get(sessionKey);
         if (!session) return false;
         const lastActivity = session.lastActivity ?? session.startedAt;
         if (Date.now() - lastActivity > BLOCKING_SESSION_TIMEOUT_MS) {
           sessions.delete(sessionKey);
-          this.log.info(`${name} session expired (5min inactivity): ${sessionKey}`);
+          this.log.info(
+            `${name} session expired (5min inactivity): ${sessionKey}`,
+          );
           return true; // expired
         }
         // Update lastActivity
@@ -1762,7 +2071,12 @@ export class YuanbaoBot {
         if (checkExpiry(cs._initWizardSessions, "/init")) {
           await replyFn("⏰ 配置向导已超时（5分钟无操作），自动退出");
         } else if (cs._handleInitWizardInput) {
-          void cs._handleInitWizardInput(this, sessionKey, chatMessage.text, replyFn);
+          void cs._handleInitWizardInput(
+            this,
+            sessionKey,
+            chatMessage.text,
+            replyFn,
+          );
           return;
         }
       }
@@ -1772,20 +2086,41 @@ export class YuanbaoBot {
         if (checkExpiry(cs._llmWizardSessions, "/llm config")) {
           await replyFn("⏰ LLM 配置向导已超时（5分钟无操作），自动退出");
         } else if (cs._handleLlmWizardInput) {
-          void cs._handleLlmWizardInput(this, sessionKey, chatMessage.text, replyFn);
+          void cs._handleLlmWizardInput(
+            this,
+            sessionKey,
+            chatMessage.text,
+            replyFn,
+          );
           return;
         }
       }
 
       // Check /term interactive terminal session (with expiry)
       const cs2 = this.commandSystem as unknown as {
-        _termSessions?: Map<string, { lastActivity: number; idleTimer: ReturnType<typeof setInterval> | null }>;
-        _handleTermInput?: (bot: unknown, sessionKey: string, text: string, reply: (t: string) => Promise<void>) => Promise<boolean>;
+        _termSessions?: Map<
+          string,
+          {
+            lastActivity: number;
+            idleTimer: ReturnType<typeof setInterval> | null;
+          }
+        >;
+        _handleTermInput?: (
+          bot: unknown,
+          sessionKey: string,
+          text: string,
+          reply: (t: string) => Promise<void>,
+        ) => Promise<boolean>;
       };
       if (cs2._termSessions?.has(sessionKey)) {
         // /term has its own 5-min idle timer in the session, but check here too
-        const termSession = cs2._termSessions.get(sessionKey) as { lastActivity: number } | undefined;
-        if (termSession && Date.now() - termSession.lastActivity > BLOCKING_SESSION_TIMEOUT_MS) {
+        const termSession = cs2._termSessions.get(sessionKey) as
+          | { lastActivity: number }
+          | undefined;
+        if (
+          termSession &&
+          Date.now() - termSession.lastActivity > BLOCKING_SESSION_TIMEOUT_MS
+        ) {
           cs2._termSessions.delete(sessionKey);
           await replyFn("⏰ 终端已超时（5分钟无操作），自动退出");
         } else {
@@ -1795,7 +2130,12 @@ export class YuanbaoBot {
             // Let the command system handle it
           } else {
             if (termSession) termSession.lastActivity = Date.now();
-            void cs2._handleTermInput?.(this, sessionKey, chatMessage.text, replyFn);
+            void cs2._handleTermInput?.(
+              this,
+              sessionKey,
+              chatMessage.text,
+              replyFn,
+            );
             return;
           }
         }
@@ -1842,7 +2182,8 @@ export class YuanbaoBot {
       //   - "@bot 你好" → NO stripping → "@bot 你好" (no slash)
       // This prevents user-typed @mention syntax from being stripped when
       // the message is not a slash command.
-      const leadingJunkRe = /^(?:@(?:\[[^\]]*\]\([^)]*\)|\S+)|\[custom:[^\]]*\]|\[link card\]|\[forwarded records\])[\s\u3000]*/;
+      const leadingJunkRe =
+        /^(?:@(?:\[[^\]]*\]\([^)]*\)|\S+)|\[custom:[^\]]*\]|\[link card\]|\[forwarded records\])[\s\u3000]*/;
       // First, check if the message would become a slash command after
       // stripping leading @-components. If not, skip stripping entirely.
       const wouldBeSlashCommand = (() => {
@@ -1860,7 +2201,11 @@ export class YuanbaoBot {
         // Message is a slash command with @-prefix(es) — strip them
         let prev = "";
         let stripCount = 0;
-        while (dispatchText !== prev && !dispatchText.startsWith("/") && leadingJunkRe.test(dispatchText)) {
+        while (
+          dispatchText !== prev &&
+          !dispatchText.startsWith("/") &&
+          leadingJunkRe.test(dispatchText)
+        ) {
           prev = dispatchText;
           dispatchText = dispatchText.replace(leadingJunkRe, "");
           stripCount++;
@@ -1869,7 +2214,9 @@ export class YuanbaoBot {
         // Final trim (handles full-width spaces too)
         dispatchText = dispatchText.replace(/^[\s\u3000]+/, "");
         if (stripCount > 0) {
-          this.log.debug(`stripped ${stripCount} leading @-component(s) from group message; dispatchText="${dispatchText.substring(0, 100)}"`);
+          this.log.debug(
+            `stripped ${stripCount} leading @-component(s) from group message; dispatchText="${dispatchText.substring(0, 100)}"`,
+          );
         }
       }
       // else: not a slash command — preserve all @mentions as-is
@@ -1880,12 +2227,17 @@ export class YuanbaoBot {
     // single lines. Each \n-separated line is dispatched independently.
     // (Bot-side IM messages rarely use \-continuation, but if a user pastes
     // multi-line content, each line should be processed on its own.)
-    const lines = dispatchText.split(/\n/).map(l => l.trim()).filter(l => l.length > 0);
+    const lines = dispatchText
+      .split(/\n/)
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0);
     // Find lines that start with / (standalone slash commands)
-    const commandLines = lines.filter(l => l.startsWith("/"));
+    const commandLines = lines.filter((l) => l.startsWith("/"));
     const isSlashCommand = commandLines.length > 0;
 
-    this.log.debug(`dispatch check: rawText="${chatMessage.text.substring(0, 100)}" dispatchText="${dispatchText.substring(0, 100)}" lines=${lines.length} cmdLines=${commandLines.length} chatType=${chatMessage.chatType} isMentioned=${chatMessage.isMentioned}`);
+    this.log.debug(
+      `dispatch check: rawText="${chatMessage.text.substring(0, 100)}" dispatchText="${dispatchText.substring(0, 100)}" lines=${lines.length} cmdLines=${commandLines.length} chatType=${chatMessage.chatType} isMentioned=${chatMessage.isMentioned}`,
+    );
 
     if (isSlashCommand && this.commandSystem) {
       // Execute each slash command line sequentially.
@@ -1896,22 +2248,31 @@ export class YuanbaoBot {
         for (const cmdLine of commandLines) {
           const dispatchMsg = { ...chatMessage, text: cmdLine };
           try {
-            const result = await this.commandSystem!.dispatch(this, dispatchMsg);
+            const result = await this.commandSystem!.dispatch(
+              this,
+              dispatchMsg,
+            );
             if (result.handled) {
               this.log.debug(`command handled: ${cmdLine.substring(0, 80)}`);
             } else {
               // Not a recognized slash command — skip silently
-              this.log.debug(`skipped unrecognized line: ${cmdLine.substring(0, 80)}`);
+              this.log.debug(
+                `skipped unrecognized line: ${cmdLine.substring(0, 80)}`,
+              );
             }
           } catch (err) {
-            this.log.error(`command dispatch error for "${cmdLine.substring(0, 80)}": ${(err as Error).message}`);
+            this.log.error(
+              `command dispatch error for "${cmdLine.substring(0, 80)}": ${(err as Error).message}`,
+            );
           }
         }
         // Trigger data persistence after all commands
         this.persistData();
       };
       executeCommands().catch((err) => {
-        this.log.error(`multi-command execution error: ${(err as Error).message}`);
+        this.log.error(
+          `multi-command execution error: ${(err as Error).message}`,
+        );
       });
       return; // Don't fall through to LLM for slash commands
     }
@@ -1946,7 +2307,8 @@ export class YuanbaoBot {
     // Use the shared formatter so feedLlmContext and the engine's fallback
     // produce identical output. The formatted text includes timestamp,
     // sender nickname+ID, scope (group/DM), and quote suffix.
-    const { formatChatMessageForContext } = await import("./business/llm-takeover.js");
+    const { formatChatMessageForContext } =
+      await import("./business/llm-takeover.js");
     const formatted = formatChatMessageForContext(chatMessage);
     this.llmEngine.addContextMessage(chatMessage, formatted);
   }
@@ -1958,13 +2320,19 @@ export class YuanbaoBot {
   private persistData(): void {
     try {
       this.aliasStore!.save();
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
     try {
       this.contactStore!.save();
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
     try {
       this.groupStore!.save();
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   }
 
   /**
@@ -1982,9 +2350,15 @@ export class YuanbaoBot {
 
     // Check if the user is blocked from LLM auto-reply (block > trust > unsafe)
     try {
-      const { isBlockedFromLlm, isBlockedFrom } = await import("./business/block.js");
-      if (isBlockedFromLlm(chatMessage.fromUserId) || isBlockedFrom(chatMessage.fromUserId, "all")) {
-        this.log.info(`tryLlmAutoReply: user ${chatMessage.fromUserId} is blocked from LLM, skipping`);
+      const { isBlockedFromLlm, isBlockedFrom } =
+        await import("./business/block.js");
+      if (
+        isBlockedFromLlm(chatMessage.fromUserId) ||
+        isBlockedFrom(chatMessage.fromUserId, "all")
+      ) {
+        this.log.info(
+          `tryLlmAutoReply: user ${chatMessage.fromUserId} is blocked from LLM, skipping`,
+        );
         return;
       }
       // Also check wildcard "*" blocks
@@ -2006,14 +2380,18 @@ export class YuanbaoBot {
       if (!this.llmHintSent && this.config.llmConfig) {
         // LLM config was provided but engine couldn't initialize
         this.llmHintSent = true;
-        this.log.warn("LLM config was provided but engine is null — check llmConfig initialization");
+        this.log.warn(
+          "LLM config was provided but engine is null — check llmConfig initialization",
+        );
       }
       this.log.debug("tryLlmAutoReply: llmEngine is null, skipping");
       return;
     }
 
     if (!this.llmEngine.isReady) {
-      this.log.debug("tryLlmAutoReply: llmEngine exists but isReady=false (enabled=false or provider not configured)");
+      this.log.debug(
+        "tryLlmAutoReply: llmEngine exists but isReady=false (enabled=false or provider not configured)",
+      );
       // Send configuration hint to the user (once per session)
       if (!this.llmHintSent) {
         this.llmHintSent = true;
@@ -2051,23 +2429,34 @@ export class YuanbaoBot {
     try {
       const result = await this.llmEngine.handleMessage(this, chatMessage);
       if (result.handled && result.response) {
-        this.log.info(`LLM auto-replied to ${chatMessage.fromUserId}: ${result.response.processedText.substring(0, 50)}...`);
+        this.log.info(
+          `LLM auto-replied to ${chatMessage.fromUserId}: ${result.response.processedText.substring(0, 50)}...`,
+        );
       } else if (result.handled) {
-        this.log.debug(`tryLlmAutoReply: message buffered for merge (handled=true, no response yet)`);
+        this.log.debug(
+          `tryLlmAutoReply: message buffered for merge (handled=true, no response yet)`,
+        );
       } else {
-        this.log.debug(`tryLlmAutoReply: handleMessage returned handled=${result.handled} for ${chatMessage.fromUserId}`);
+        this.log.debug(
+          `tryLlmAutoReply: handleMessage returned handled=${result.handled} for ${chatMessage.fromUserId}`,
+        );
       }
     } catch (err) {
       this.log.error(`LLM auto-reply error: ${(err as Error).message}`);
     }
   }
 
-  private emitMessageEvents(chatMessage: ChatMessage, chatType: "c2c" | "group"): void {
+  private emitMessageEvents(
+    chatMessage: ChatMessage,
+    chatType: "c2c" | "group",
+  ): void {
     // Log inbound message with user type
     const uid = chatMessage.fromUserId;
     const userType = uid.startsWith("bot_") ? "BOT" : "USER";
     const scope = chatType === "group" ? `群${chatMessage.groupCode}` : "私聊";
-    this.log.info(`[入站] [${userType}] ${chatMessage.fromNickname || uid} @${scope}: ${chatMessage.text?.substring(0, 100) ?? "(非文本)"}`);
+    this.log.info(
+      `[入站] [${userType}] ${chatMessage.fromNickname || uid} @${scope}: ${chatMessage.text?.substring(0, 100) ?? "(非文本)"}`,
+    );
 
     // Emit generic message event
     this.emit("message", chatMessage);
@@ -2177,32 +2566,43 @@ export class YuanbaoBot {
     return null;
   }
 
-  private decodeFromContent(pushEvent: WsPushEvent): { msg: YuanbaoInboundMessage; chatType: "c2c" | "group" } | null {
+  private decodeFromContent(
+    pushEvent: WsPushEvent,
+  ): { msg: YuanbaoInboundMessage; chatType: "c2c" | "group" } | null {
     const msgBody = this.parsePushContentToMsgBody(pushEvent.content);
     if (!msgBody) return null;
 
     let parsedContent: Record<string, unknown> = {};
     try {
       parsedContent = JSON.parse(pushEvent.content as string);
-    } catch { /* not JSON */ }
+    } catch {
+      /* not JSON */
+    }
 
     const chatType = parsedContent.group_code ? "group" : "c2c";
     return {
       msg: {
-        callback_command: chatType === "group" ? "Group.CallbackAfterSendMsg" : "C2C.CallbackAfterSendMsg",
+        callback_command:
+          chatType === "group"
+            ? "Group.CallbackAfterSendMsg"
+            : "C2C.CallbackAfterSendMsg",
         from_account: parsedContent.from_account as string | undefined,
         group_code: parsedContent.group_code as string | undefined,
         msg_body: msgBody,
         msg_key: parsedContent.msg_key as string | undefined,
         msg_seq: parsedContent.msg_seq as number | undefined,
         msg_time: parsedContent.msg_time as number | undefined,
-        trace_id: (parsedContent.log_ext as { trace_id?: string } | undefined)?.trace_id ?? (parsedContent.trace_id as string | undefined),
+        trace_id:
+          (parsedContent.log_ext as { trace_id?: string } | undefined)
+            ?.trace_id ?? (parsedContent.trace_id as string | undefined),
       },
       chatType,
     };
   }
 
-  private parsePushContentToMsgBody(content: unknown): YuanbaoMsgBodyElement[] | undefined {
+  private parsePushContentToMsgBody(
+    content: unknown,
+  ): YuanbaoMsgBodyElement[] | undefined {
     if (typeof content === "string" && content.trim()) {
       try {
         const parsed = JSON.parse(content);
@@ -2210,7 +2610,9 @@ export class YuanbaoBot {
           return parsed.msg_body;
         }
         if (parsed?.text) {
-          return [{ msg_type: "TIMTextElem", msg_content: { text: parsed.text } }];
+          return [
+            { msg_type: "TIMTextElem", msg_content: { text: parsed.text } },
+          ];
         }
       } catch {
         // Plain text
@@ -2223,7 +2625,11 @@ export class YuanbaoBot {
   private inferChatType(msg: YuanbaoInboundMessage): "c2c" | "group" {
     if (msg.group_code) return "group";
     const cmd = msg.callback_command;
-    if (cmd === "Group.CallbackAfterRecallMsg" || cmd === "Group.CallbackAfterSendMsg") return "group";
+    if (
+      cmd === "Group.CallbackAfterRecallMsg" ||
+      cmd === "Group.CallbackAfterSendMsg"
+    )
+      return "group";
     return "c2c";
   }
 
@@ -2235,11 +2641,35 @@ export class YuanbaoBot {
 // ─── Re-exports for advanced usage ───
 
 export { resolveAccount } from "./accounts.js";
-export { toChatMessage, extractTextFromMsgBody, buildTextMsgBody, splitTextChunks } from "./business/messaging/extract.js";
+export {
+  toChatMessage,
+  extractTextFromMsgBody,
+  buildTextMsgBody,
+  splitTextChunks,
+} from "./business/messaging/extract.js";
 export { YuanbaoWsClient } from "./access/ws/client.js";
-export { getSignToken, forceRefreshSignToken, clearAllSignTokenCache, setHttpProxy, getHttpProxy } from "./access/http/request.js";
-export { uploadMedia, uploadMediaToCos, downloadMedia, extractMediaInfo, downloadAllMedia, buildImageMsgBody, buildFileMsgBody } from "./access/http/media.js";
-export type { UploadResult, DownloadResult, MediaInfo, MediaType } from "./access/http/media.js";
+export {
+  getSignToken,
+  forceRefreshSignToken,
+  clearAllSignTokenCache,
+  setHttpProxy,
+  getHttpProxy,
+} from "./access/http/request.js";
+export {
+  uploadMedia,
+  uploadMediaToCos,
+  downloadMedia,
+  extractMediaInfo,
+  downloadAllMedia,
+  buildImageMsgBody,
+  buildFileMsgBody,
+} from "./access/http/media.js";
+export type {
+  UploadResult,
+  DownloadResult,
+  MediaInfo,
+  MediaType,
+} from "./access/http/media.js";
 export { uploadToGoFile, uploadAndFormatLink } from "./access/http/gofile.js";
 export type { GoFileUploadResult } from "./access/http/gofile.js";
 // CommandSystem is re-exported as TYPE ONLY from the main entry to keep the
@@ -2251,29 +2681,135 @@ export type { GoFileUploadResult } from "./access/http/gofile.js";
 //
 // or use `bot.getCommandSystem()` after `await bot.init()`.
 export type { CommandSystem } from "./commands/registry.js";
-export type { CommandContext, CommandDefinition, CommandResult, CommandSystemConfig } from "./commands/types.js";
-export { detectSticker, prepareStickerMsgBody, buildEmojiMsgBody, buildCustomStickerMsgBody, buildStickerImageMsgBody, buildStickerMsgBody, buildStickerMsgBodyFromParts, registerStickerPack, unregisterStickerPack, getSticker, getStickerPacks, searchStickers, loadStickerPacksFromDir, getBuiltinEmojis, getBuiltinStickersData, cacheReceivedSticker } from "./business/sticker.js";
-export type { StickerInfo, StickerType, StickerPack } from "./business/sticker.js";
-export { LlmTakeoverEngine, ConversationManager, markdownToImText, createLlmTakeover, API_FORMATS } from "./business/llm-takeover.js";
-export type { LlmTakeoverConfig, TakeoverResult, LlmResponse, ConversationHistory, ConversationState, ApiFormat, ProviderConfig } from "./business/llm-takeover.js";
-export { AliasStore, getGlobalAliasStore, resetGlobalAliasStore } from "./business/alias.js";
+export type {
+  CommandContext,
+  CommandDefinition,
+  CommandResult,
+  CommandSystemConfig,
+} from "./commands/types.js";
+export {
+  detectSticker,
+  prepareStickerMsgBody,
+  buildEmojiMsgBody,
+  buildCustomStickerMsgBody,
+  buildStickerImageMsgBody,
+  buildStickerMsgBody,
+  buildStickerMsgBodyFromParts,
+  registerStickerPack,
+  unregisterStickerPack,
+  getSticker,
+  getStickerPacks,
+  searchStickers,
+  loadStickerPacksFromDir,
+  getBuiltinEmojis,
+  getBuiltinStickersData,
+  cacheReceivedSticker,
+} from "./business/sticker.js";
+export type {
+  StickerInfo,
+  StickerType,
+  StickerPack,
+} from "./business/sticker.js";
+export {
+  LlmTakeoverEngine,
+  ConversationManager,
+  markdownToImText,
+  createLlmTakeover,
+  API_FORMATS,
+} from "./business/llm-takeover.js";
+export type {
+  LlmTakeoverConfig,
+  TakeoverResult,
+  LlmResponse,
+  ConversationHistory,
+  ConversationState,
+  ApiFormat,
+  ProviderConfig,
+} from "./business/llm-takeover.js";
+export {
+  AliasStore,
+  getGlobalAliasStore,
+  resetGlobalAliasStore,
+} from "./business/alias.js";
 export type { AliasEntry, AliasStoreConfig } from "./business/alias.js";
-export { ContactStore, getGlobalContactStore, resetGlobalContactStore } from "./business/contacts.js";
+export {
+  ContactStore,
+  getGlobalContactStore,
+  resetGlobalContactStore,
+} from "./business/contacts.js";
 export type { ContactEntry, ContactStoreConfig } from "./business/contacts.js";
-export { GroupStore, getGlobalGroupStore, resetGlobalGroupStore } from "./business/groups.js";
+export {
+  GroupStore,
+  getGlobalGroupStore,
+  resetGlobalGroupStore,
+} from "./business/groups.js";
 export type { GroupEntry, GroupStoreConfig } from "./business/groups.js";
-export { parseMentions, buildMentionMsgBody, extractMentionsFromMsgBody, isUserMentioned, buildCloudCustomDataWithMentions, buildMentionMsgBodyElements, buildAtUserMsgBodyItem } from "./business/mention.js";
-export type { MentionInfo as MentionInfoBusiness, ParsedMentions, GroupAtInfo, NicknameResolver, NicknameMatch } from "./business/mention.js";
-export { MessageHistoryStore, getGlobalHistoryStore, resetGlobalHistoryStore, formatHistoryMessage, formatHistoryList } from "./business/history.js";
-export type { HistoryFilter, HistoryPage, HistoryStats, HistoryStoreConfig, HistoryFormatOptions } from "./business/history.js";
-export { BatchRunner, startBatch, cancelBatch, cleanupBatch, getActiveBatch, getActiveBatchIds, interpolateTemplate, buildBatchContext } from "./business/batch.js";
-export type { BatchConfig, BatchMessageType, BatchProgress, BatchResult } from "./business/batch.js";
-export { interpolate, buildMessageContext, hasInterpolation, chatContextFromMessage, buildBatchContext as buildInterpolationBatchContext } from "./business/interpolate.js";
+export {
+  parseMentions,
+  buildMentionMsgBody,
+  extractMentionsFromMsgBody,
+  isUserMentioned,
+  buildCloudCustomDataWithMentions,
+  buildMentionMsgBodyElements,
+  buildAtUserMsgBodyItem,
+} from "./business/mention.js";
+export type {
+  MentionInfo as MentionInfoBusiness,
+  ParsedMentions,
+  GroupAtInfo,
+  NicknameResolver,
+  NicknameMatch,
+} from "./business/mention.js";
+export {
+  MessageHistoryStore,
+  getGlobalHistoryStore,
+  resetGlobalHistoryStore,
+  formatHistoryMessage,
+  formatHistoryList,
+} from "./business/history.js";
+export type {
+  HistoryFilter,
+  HistoryPage,
+  HistoryStats,
+  HistoryStoreConfig,
+  HistoryFormatOptions,
+} from "./business/history.js";
+export {
+  BatchRunner,
+  startBatch,
+  cancelBatch,
+  cleanupBatch,
+  getActiveBatch,
+  getActiveBatchIds,
+  interpolateTemplate,
+  buildBatchContext,
+} from "./business/batch.js";
+export type {
+  BatchConfig,
+  BatchMessageType,
+  BatchProgress,
+  BatchResult,
+} from "./business/batch.js";
+export {
+  interpolate,
+  buildMessageContext,
+  hasInterpolation,
+  chatContextFromMessage,
+  buildBatchContext as buildInterpolationBatchContext,
+} from "./business/interpolate.js";
 export type { ChatContext } from "./business/interpolate.js";
 export { MultiAccountManager } from "./business/multi-account.js";
-export type { AccountEntry, MultiAccountConfig, MultiAccountEvent } from "./business/multi-account.js";
+export type {
+  AccountEntry,
+  MultiAccountConfig,
+  MultiAccountEvent,
+} from "./business/multi-account.js";
 export { SearchEngine } from "./business/search.js";
-export type { GroupSearchResult, MemberSearchResult, SearchConfig } from "./business/search.js";
+export type {
+  GroupSearchResult,
+  MemberSearchResult,
+  SearchConfig,
+} from "./business/search.js";
 export { createLog, setLogLevel } from "./logger.js";
 export { getVersion, getVersionString } from "./version.js";
 export { versionReady } from "./version.js";

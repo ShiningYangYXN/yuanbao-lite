@@ -15,7 +15,11 @@
 /**
  * Compute the session key for a given user + conversation context.
  */
-export function sessionKey(userId: string, chatType: "group" | "direct", groupCode?: string): string {
+export function sessionKey(
+  userId: string,
+  chatType: "group" | "direct",
+  groupCode?: string,
+): string {
   return chatType === "group" && groupCode
     ? `${userId}:group:${groupCode}`
     : `${userId}:dm`;
@@ -24,7 +28,11 @@ export function sessionKey(userId: string, chatType: "group" | "direct", groupCo
 /**
  * Compute the session key from a ChatMessage.
  */
-export function sessionKeyFromMessage(msg: { fromUserId: string; chatType: "group" | "direct"; groupCode?: string }): string {
+export function sessionKeyFromMessage(msg: {
+  fromUserId: string;
+  chatType: "group" | "direct";
+  groupCode?: string;
+}): string {
   return sessionKey(msg.fromUserId, msg.chatType, msg.groupCode);
 }
 

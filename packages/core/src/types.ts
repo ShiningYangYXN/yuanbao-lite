@@ -209,7 +209,12 @@ export type SendTextMessageParams = {
 
 // ─── Bot Status ───
 
-export type BotStatus = "disconnected" | "connecting" | "authenticating" | "connected" | "reconnecting";
+export type BotStatus =
+  | "disconnected"
+  | "connecting"
+  | "authenticating"
+  | "connected"
+  | "reconnecting";
 
 export type BotState = {
   status: BotStatus;

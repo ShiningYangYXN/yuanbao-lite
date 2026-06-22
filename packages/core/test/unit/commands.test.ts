@@ -36,8 +36,14 @@ describe("CommandSystem", () => {
 
   beforeEach(() => {
     const adapter = new MemoryAdapter();
-    initTrustStore({ persistencePath: "trust.json", persistenceAdapter: adapter });
-    initBlockStore({ persistencePath: "block.json", persistenceAdapter: adapter });
+    initTrustStore({
+      persistencePath: "trust.json",
+      persistenceAdapter: adapter,
+    });
+    initBlockStore({
+      persistencePath: "block.json",
+      persistenceAdapter: adapter,
+    });
     setMasterUserId("", undefined);
     cs = new CommandSystem();
   });
@@ -166,15 +172,25 @@ describe("Command permissions", () => {
   const adapter = new MemoryAdapter();
 
   beforeEach(() => {
-    initTrustStore({ persistencePath: "trust.json", persistenceAdapter: adapter });
-    initBlockStore({ persistencePath: "block.json", persistenceAdapter: adapter });
+    initTrustStore({
+      persistencePath: "trust.json",
+      persistenceAdapter: adapter,
+    });
+    initBlockStore({
+      persistencePath: "block.json",
+      persistenceAdapter: adapter,
+    });
     setMasterUserId("", undefined);
     cs = new CommandSystem();
   });
 
   it("elevated commands require trust in group chat", async () => {
     // /shell is elevated — should be blocked for non-trusted user in group
-    const msg = { ...makeMsg("/shell echo hi"), chatType: "group", groupCode: "g1" } as ChatMessage;
+    const msg = {
+      ...makeMsg("/shell echo hi"),
+      chatType: "group",
+      groupCode: "g1",
+    } as ChatMessage;
     const result = await cs.dispatch(
       { makeReply: async () => {} } as never,
       msg,

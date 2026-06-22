@@ -14,12 +14,27 @@
 import { describe, it, before } from "node:test";
 import assert from "node:assert/strict";
 import { CommandSystem } from "../../src/commands/registry.js";
-import { initTrustStore, initBlockStore, setMasterUserId } from "../../src/business/trust.js";
+import {
+  initTrustStore,
+  initBlockStore,
+  setMasterUserId,
+} from "../../src/business/trust.js";
 import { MemoryAdapter } from "../../src/access/persistence/adapter.js";
 import type { ChatMessage } from "../../src/types.js";
 
 // Commands that require a connected bot (will skip dispatch, just test registration)
-const REQUIRE_CONNECTED = new Set(["dm", "group", "reply", "sticker", "upload", "download", "file", "img", "atall", "mention"]);
+const REQUIRE_CONNECTED = new Set([
+  "dm",
+  "group",
+  "reply",
+  "sticker",
+  "upload",
+  "download",
+  "file",
+  "img",
+  "atall",
+  "mention",
+]);
 
 // Commands that are Node-only (may fail in browser, but should work in Node test)
 const NODE_ONLY = new Set(["shell", "term", "tempfile"]);
@@ -44,11 +59,21 @@ function makeMockBot() {
       replies.push(text);
     },
     getAccount: () => ({ botId: "bot_test", botOwnerId: "owner_test" }),
-    getAliasStore: () => ({ add: () => {}, remove: () => {}, resolve: (s: string) => s }),
+    getAliasStore: () => ({
+      add: () => {},
+      remove: () => {},
+      resolve: (s: string) => s,
+    }),
     getContactStore: () => ({ add: () => {}, remove: () => {} }),
     getGroupStore: () => ({ add: () => {}, remove: () => {} }),
-    getHistoryStore: () => ({ add: () => {}, search: () => ({ messages: [] }) }),
-    getLlmEngine: () => ({ isReady: false, getConfig: () => ({ enabled: false }) }),
+    getHistoryStore: () => ({
+      add: () => {},
+      search: () => ({ messages: [] }),
+    }),
+    getLlmEngine: () => ({
+      isReady: false,
+      getConfig: () => ({ enabled: false }),
+    }),
     sendText: async () => {},
     sendDirectMessage: async () => {},
     sendGroupMessage: async () => {},
@@ -61,8 +86,14 @@ describe("All commands dispatch test", () => {
 
   before(() => {
     const adapter = new MemoryAdapter();
-    initTrustStore({ persistencePath: "trust.json", persistenceAdapter: adapter });
-    initBlockStore({ persistencePath: "block.json", persistenceAdapter: adapter });
+    initTrustStore({
+      persistencePath: "trust.json",
+      persistenceAdapter: adapter,
+    });
+    initBlockStore({
+      persistencePath: "block.json",
+      persistenceAdapter: adapter,
+    });
     setMasterUserId("master-user", "Master");
     cs = new CommandSystem();
     // Enable unsafe mode so elevated commands work
@@ -71,7 +102,10 @@ describe("All commands dispatch test", () => {
 
   it("registers 50+ commands", () => {
     const commands = cs.getVisibleCommands();
-    assert.ok(commands.length >= 50, `expected 50+ commands, got ${commands.length}`);
+    assert.ok(
+      commands.length >= 50,
+      `expected 50+ commands, got ${commands.length}`,
+    );
   });
 
   // Test each command by name
@@ -107,7 +141,10 @@ describe("All commands dispatch test", () => {
     it(`dispatches /${name}${args ? " " + args : ""} without crashing`, async () => {
       const { bot } = makeMockBot();
       const text = `/${name}${args ? " " + args : ""}`;
-      const result = await cs.dispatch(bot as never, makeMsg(text, "master-user"));
+      const result = await cs.dispatch(
+        bot as never,
+        makeMsg(text, "master-user"),
+      );
       // Should be handled (true) — we just verify no crash
       assert.ok(result, `/${name} should return a result`);
     });
@@ -118,20 +155,29 @@ describe("All commands dispatch test", () => {
     const { bot } = makeMockBot();
     // Test help for first 10 commands
     for (const cmd of commands.slice(0, 10)) {
-      const result = await cs.dispatch(bot as never, makeMsg(`/help ${cmd.name}`, "master-user"));
+      const result = await cs.dispatch(
+        bot as never,
+        makeMsg(`/help ${cmd.name}`, "master-user"),
+      );
       assert.ok(result);
     }
   });
 
   it("unknown command returns handled=false", async () => {
     const { bot } = makeMockBot();
-    const result = await cs.dispatch(bot as never, makeMsg("/nonexistent-command-xyz"));
+    const result = await cs.dispatch(
+      bot as never,
+      makeMsg("/nonexistent-command-xyz"),
+    );
     assert.equal(result.handled, false);
   });
 
   it("plain text (no /) returns handled=false", async () => {
     const { bot } = makeMockBot();
-    const result = await cs.dispatch(bot as never, makeMsg("just a regular message"));
+    const result = await cs.dispatch(
+      bot as never,
+      makeMsg("just a regular message"),
+    );
     assert.equal(result.handled, false);
   });
 

@@ -48,7 +48,7 @@ describe("Sticker system", () => {
       ],
     });
     const packs = getStickerPacks();
-    assert.ok(packs.some(p => p.name === "test-pack"));
+    assert.ok(packs.some((p) => p.name === "test-pack"));
   });
 
   it("getSticker returns sticker by id", () => {
@@ -92,7 +92,7 @@ describe("Sticker system", () => {
     });
     unregisterStickerPack("temp-pack");
     const packs = getStickerPacks();
-    assert.ok(!packs.some(p => p.name === "temp-pack"));
+    assert.ok(!packs.some((p) => p.name === "temp-pack"));
   });
 
   it("searchStickers finds by keyword", () => {
@@ -100,14 +100,35 @@ describe("Sticker system", () => {
       name: "emojis",
       description: "Emoji stickers",
       stickers: [
-        { id: "e:smile", name: "smile", type: "custom", source: "", description: "happy smile", pack: "emojis" },
-        { id: "e:cry", name: "cry", type: "custom", source: "", description: "sad cry", pack: "emojis" },
-        { id: "e:laugh", name: "laugh", type: "custom", source: "", description: "funny laugh", pack: "emojis" },
+        {
+          id: "e:smile",
+          name: "smile",
+          type: "custom",
+          source: "",
+          description: "happy smile",
+          pack: "emojis",
+        },
+        {
+          id: "e:cry",
+          name: "cry",
+          type: "custom",
+          source: "",
+          description: "sad cry",
+          pack: "emojis",
+        },
+        {
+          id: "e:laugh",
+          name: "laugh",
+          type: "custom",
+          source: "",
+          description: "funny laugh",
+          pack: "emojis",
+        },
       ],
     });
     const results = searchStickers("smile");
     assert.ok(results.length >= 1);
-    assert.ok(results.some(s => s.name === "smile"));
+    assert.ok(results.some((s) => s.name === "smile"));
   });
 
   it("searchStickers returns empty for no match", () => {

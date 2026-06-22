@@ -27,12 +27,18 @@ export function register(cmdSys: CommandSystem): void {
       ];
       if (state.connectId) kv.push(["连接ID", state.connectId]);
       if (state.botId) kv.push(["Bot ID", state.botId]);
-      if (state.lastConnectedAt) kv.push(["上次连接", new Date(state.lastConnectedAt).toLocaleString("zh-CN")]);
+      if (state.lastConnectedAt)
+        kv.push([
+          "上次连接",
+          new Date(state.lastConnectedAt).toLocaleString("zh-CN"),
+        ]);
       if (state.lastError) kv.push(["最近错误", state.lastError]);
       if (account.name) kv.push(["名称", account.name]);
 
       if (ctx.useTable) {
-        await ctx.reply(`📊 机器人状态\n${await ctx.formatTable(["属性", "值"], kv)}`);
+        await ctx.reply(
+          `📊 机器人状态\n${await ctx.formatTable(["属性", "值"], kv)}`,
+        );
       } else {
         const lines = ["📊 机器人状态", ...kv.map(([k, v]) => `  ${k}: ${v}`)];
         await ctx.reply(lines.join("\n"));

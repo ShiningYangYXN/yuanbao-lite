@@ -99,7 +99,11 @@ export function printHint(message: string): void {
   console.log(`  ${MARK.arrow}  ${COLORS.hint(message)}`);
 }
 
-export function printPair(key: string, value: string, valueColor: (s: string) => string = COLORS.value): void {
+export function printPair(
+  key: string,
+  value: string,
+  valueColor: (s: string) => string = COLORS.value,
+): void {
   console.log(`    ${COLORS.key(padToWidth(key, 12))}  ${valueColor(value)}`);
 }
 
@@ -138,18 +142,25 @@ export function renderTable(columns: TableColumn[], rows: string[][]): string {
   });
 
   const formatRow = (cells: string[], isHeader: boolean): string => {
-    return cells.map((cell, i) => {
-      const txt = String(cell ?? "");
-      const w = widths[i];
-      const padded = padToWidth(txt, w);
-      if (isHeader) return COLORS.label(padded);
-      const colorFn = columns[i]?.color;
-      return colorFn ? colorFn(padded) : COLORS.value(padded);
-    }).join("  ");
+    return cells
+      .map((cell, i) => {
+        const txt = String(cell ?? "");
+        const w = widths[i];
+        const padded = padToWidth(txt, w);
+        if (isHeader) return COLORS.label(padded);
+        const colorFn = columns[i]?.color;
+        return colorFn ? colorFn(padded) : COLORS.value(padded);
+      })
+      .join("  ");
   };
 
   const lines: string[] = [];
-  lines.push(formatRow(columns.map((c) => c.header), true));
+  lines.push(
+    formatRow(
+      columns.map((c) => c.header),
+      true,
+    ),
+  );
   for (const row of rows) {
     lines.push(formatRow(row, false));
   }

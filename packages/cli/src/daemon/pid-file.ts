@@ -9,7 +9,13 @@
  * The PID file lives at `~/.yuanbao-lite/daemon.pid`.
  */
 
-import { existsSync, readFileSync, writeFileSync, unlinkSync, mkdirSync } from "node:fs";
+import {
+  existsSync,
+  readFileSync,
+  writeFileSync,
+  unlinkSync,
+  mkdirSync,
+} from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 
@@ -61,7 +67,10 @@ export function readPidFile(): number | null {
  *
  * Throws if the existing daemon refuses to exit.
  */
-export async function acquirePidFile(): Promise<{ killedStale: boolean; stalePid?: number }> {
+export async function acquirePidFile(): Promise<{
+  killedStale: boolean;
+  stalePid?: number;
+}> {
   const stalePid = readPidFile();
   let killedStale = false;
 
@@ -90,7 +99,10 @@ export async function acquirePidFile(): Promise<{ killedStale: boolean; stalePid
   const dir = PID_FILE.substring(0, PID_FILE.lastIndexOf("/"));
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
   writeFileSync(PID_FILE, String(process.pid), "utf-8");
-  return { killedStale, stalePid: killedStale ? (stalePid ?? undefined) : undefined };
+  return {
+    killedStale,
+    stalePid: killedStale ? (stalePid ?? undefined) : undefined,
+  };
 }
 
 /** Release the PID file — only if it still records our own PID. */

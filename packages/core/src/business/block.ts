@@ -124,14 +124,20 @@ function load(): BlockData {
       const raw = adapter.read(filePath);
       const parsed = JSON.parse(raw) as BlockData;
       // Validate structure — if malformed, treat as file-not-found
-      if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.entries)) {
+      if (
+        !parsed ||
+        typeof parsed !== "object" ||
+        !Array.isArray(parsed.entries)
+      ) {
         throw new Error("malformed block.json");
       }
       cache = parsed;
       return cache;
     }
   } catch (err) {
-    log.warn(`failed to load block file: ${(err as Error).message} — creating empty shell`);
+    log.warn(
+      `failed to load block file: ${(err as Error).message} — creating empty shell`,
+    );
   }
   // File missing or unreadable/corrupt — create empty shell and persist
   cache = { version: 1, entries: [] };
@@ -174,7 +180,8 @@ function normalizeScope(scope: string): string {
   if (lower === "llm") return "[llm]";
   if (lower === "command") return "[command]";
   // Already has brackets — keep as-is (lowercased)
-  if (lower === "[all]" || lower === "[llm]" || lower === "[command]") return lower;
+  if (lower === "[all]" || lower === "[llm]" || lower === "[command]")
+    return lower;
   // Otherwise it's a command name
   return lower;
 }
@@ -185,7 +192,7 @@ function normalizeScope(scope: string): string {
  */
 export function isBlocked(userId: string): boolean {
   const data = load();
-  return data.entries.some(e => e.userId === userId || e.userId === "*");
+  return data.entries.some((e) => e.userId === userId || e.userId === "*");
 }
 
 /**
@@ -234,7 +241,10 @@ export function isBlockedFromLlm(userId: string): boolean {
  * Check if a user is blocked from a specific command.
  */
 export function isBlockedFromCommand(userId: string, cmdName: string): boolean {
-  return isBlockedFrom(userId, `command:${cmdName.toLowerCase().replace(/^\//, "")}`);
+  return isBlockedFrom(
+    userId,
+    `command:${cmdName.toLowerCase().replace(/^\//, "")}`,
+  );
 }
 
 /**
@@ -244,7 +254,11 @@ export function isBlockedFromCommand(userId: string, cmdName: string): boolean {
  * @param scope - "all", "llm", "command", or a command name
  * @param nickname - Optional nickname for readability
  */
-export async function addBlock(userId: string, scope: string, nickname?: string): Promise<{ ok: boolean; reason?: string }> {
+export async function addBlock(
+  userId: string,
+  scope: string,
+  nickname?: string,
+): Promise<{ ok: boolean; reason?: string }> {
   // Refuse to block the master
   try {
     const { getMasterUserId } = await import("./trust.js");
@@ -262,7 +276,7 @@ export async function addBlock(userId: string, scope: string, nickname?: string)
   }
 
   const data = load();
-  let entry = data.entries.find(e => e.userId === userId);
+  let entry = data.entries.find((e) => e.userId === userId);
   if (!entry) {
     entry = {
       userId,
@@ -299,16 +313,19 @@ export async function addBlock(userId: string, scope: string, nickname?: string)
  * @param userId - User ID, or "*" for all users
  * @param scope - Optional scope to remove. If omitted, removes all scopes.
  */
-export function removeBlock(userId: string, scope?: string): { ok: boolean; reason?: string } {
+export function removeBlock(
+  userId: string,
+  scope?: string,
+): { ok: boolean; reason?: string } {
   const data = load();
-  const entry = data.entries.find(e => e.userId === userId);
+  const entry = data.entries.find((e) => e.userId === userId);
   if (!entry) {
     return { ok: false, reason: "用户不在封禁列表中" };
   }
 
   if (!scope) {
     // Remove all scopes (delete the entry entirely)
-    data.entries = data.entries.filter(e => e.userId !== userId);
+    data.entries = data.entries.filter((e) => e.userId !== userId);
     save();
     log.info(`block removed entirely: ${userId}`);
     return { ok: true };
@@ -321,7 +338,7 @@ export function removeBlock(userId: string, scope?: string): { ok: boolean; reas
   }
   entry.scopes.splice(idx, 1);
   if (entry.scopes.length === 0) {
-    data.entries = data.entries.filter(e => e.userId !== userId);
+    data.entries = data.entries.filter((e) => e.userId !== userId);
   }
   save();
   log.info(`block scope removed: ${userId} ← ${normalizedScope}`);
@@ -339,5 +356,5 @@ export function listBlocks(): BlockEntry[] {
  * Get the block entry for a specific user (or null).
  */
 export function getBlockEntry(userId: string): BlockEntry | null {
-  return load().entries.find(e => e.userId === userId) ?? null;
+  return load().entries.find((e) => e.userId === userId) ?? null;
 }

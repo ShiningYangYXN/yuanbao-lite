@@ -36,7 +36,14 @@ import {
 } from "@yuanbao-lite/core/access/daemon/client";
 import { runInitWizard } from "./wizard.js";
 import { getGlobalConfigStore } from "../config.js";
-import { COLORS, printH1, printKV, printResult, printError, printWarn } from "../theme.js";
+import {
+  COLORS,
+  printH1,
+  printKV,
+  printResult,
+  printError,
+  printWarn,
+} from "../theme.js";
 
 // ─── Top-level program ───
 
@@ -63,15 +70,23 @@ export function buildProgram(): Command {
         .argument("<userId>", "目标用户 ID")
         .argument("<message>", "消息内容 (支持 ${} 插值)")
         .option("--mention <text>", "附带 @提及 (仅 cloud_custom_data)")
-        .action(async (userId: string, message: string, opts: Record<string, unknown>) => {
-          const client = await ensureClient(program);
-          const processed = interpolate(message);
-          await client.sendDm(userId, processed);
-          printResult(`已发送私聊给 ${chalk.bold(userId)} (${processed.length} 字)`);
-          if (opts.mention) {
-            printWarn(`提及文本: ${opts.mention} (由 CommandSystem 处理)`);
-          }
-        }),
+        .action(
+          async (
+            userId: string,
+            message: string,
+            opts: Record<string, unknown>,
+          ) => {
+            const client = await ensureClient(program);
+            const processed = interpolate(message);
+            await client.sendDm(userId, processed);
+            printResult(
+              `已发送私聊给 ${chalk.bold(userId)} (${processed.length} 字)`,
+            );
+            if (opts.mention) {
+              printWarn(`提及文本: ${opts.mention} (由 CommandSystem 处理)`);
+            }
+          },
+        ),
     )
     .addCommand(
       new Command("group")
@@ -79,15 +94,23 @@ export function buildProgram(): Command {
         .argument("<groupCode>", "目标群号")
         .argument("<message>", "消息内容 (支持 ${} 插值)")
         .option("--mention <text>", "附带 @提及 (仅 cloud_custom_data)")
-        .action(async (groupCode: string, message: string, opts: Record<string, unknown>) => {
-          const client = await ensureClient(program);
-          const processed = interpolate(message);
-          await client.sendGroup(groupCode, processed);
-          printResult(`已发送群聊到 ${chalk.bold(groupCode)} (${processed.length} 字)`);
-          if (opts.mention) {
-            printWarn(`提及文本: ${opts.mention} (由 CommandSystem 处理)`);
-          }
-        }),
+        .action(
+          async (
+            groupCode: string,
+            message: string,
+            opts: Record<string, unknown>,
+          ) => {
+            const client = await ensureClient(program);
+            const processed = interpolate(message);
+            await client.sendGroup(groupCode, processed);
+            printResult(
+              `已发送群聊到 ${chalk.bold(groupCode)} (${processed.length} 字)`,
+            );
+            if (opts.mention) {
+              printWarn(`提及文本: ${opts.mention} (由 CommandSystem 处理)`);
+            }
+          },
+        ),
     );
 
   // ─── daemon ───
@@ -109,26 +132,25 @@ export function buildProgram(): Command {
         }),
     )
     .addCommand(
-      new Command("stop")
-        .description("停止 daemon")
-        .action(async () => {
-          const client = await ensureClient(program);
-          await client.shutdown();
-          printResult("已发送关闭指令");
-        }),
+      new Command("stop").description("停止 daemon").action(async () => {
+        const client = await ensureClient(program);
+        await client.shutdown();
+        printResult("已发送关闭指令");
+      }),
     )
     .addCommand(
-      new Command("status")
-        .description("查看 daemon 状态")
-        .action(async () => {
-          const client = getDefaultClient(getProgramPort(program), getProgramHost(program));
-          const info = await client.ping();
-          if (!info) {
-            printError("daemon 未运行");
-            process.exit(1);
-          }
-          printDaemonInfo(info);
-        }),
+      new Command("status").description("查看 daemon 状态").action(async () => {
+        const client = getDefaultClient(
+          getProgramPort(program),
+          getProgramHost(program),
+        );
+        const info = await client.ping();
+        if (!info) {
+          printError("daemon 未运行");
+          process.exit(1);
+        }
+        printDaemonInfo(info);
+      }),
     );
 
   // ─── config (static — must work without daemon) ───
@@ -147,29 +169,27 @@ export function buildProgram(): Command {
         }),
     )
     .addCommand(
-      new Command("show")
-        .description("显示当前配置")
-        .action(async () => {
-          const store = getGlobalConfigStore({ autoSave: true });
-          const active = store.getActiveProfileName();
-          const pr = store.getActiveProfile();
-          const lines = [
-            "📋 当前配置:",
-            `  档案: ${active}`,
-            `  App Key: ${pr.appKey ? `***${pr.appKey.slice(-4)}` : "(未设置)"}`,
-            `  App Secret: ${pr.appSecret ? "***" + pr.appSecret.slice(-4) : "(未设置)"}`,
-            `  Token: ${pr.token ? "***" + pr.token.slice(-4) : "(未设置)"}`,
-            `  API域名: ${pr.apiDomain || "(默认)"}`,
-            `  WS地址: ${pr.wsUrl || "(默认)"}`,
-            `  日志级别: ${pr.logLevel || "(默认)"}`,
-            `  贴纸目录: ${pr.stickerDir || "(未设置)"}`,
-            `  下载目录: ${pr.downloadDir || store.getGlobal("downloadDir") || "(默认)"}`,
-            `  LLM供应商: ${pr.llmProvider || "(未设置)"}`,
-            `  LLM模型: ${pr.llmModel || "(未设置)"}`,
-            `  配置路径: ${store.getConfigDir()}`,
-          ];
-          console.log(lines.join("\n"));
-        }),
+      new Command("show").description("显示当前配置").action(async () => {
+        const store = getGlobalConfigStore({ autoSave: true });
+        const active = store.getActiveProfileName();
+        const pr = store.getActiveProfile();
+        const lines = [
+          "📋 当前配置:",
+          `  档案: ${active}`,
+          `  App Key: ${pr.appKey ? `***${pr.appKey.slice(-4)}` : "(未设置)"}`,
+          `  App Secret: ${pr.appSecret ? "***" + pr.appSecret.slice(-4) : "(未设置)"}`,
+          `  Token: ${pr.token ? "***" + pr.token.slice(-4) : "(未设置)"}`,
+          `  API域名: ${pr.apiDomain || "(默认)"}`,
+          `  WS地址: ${pr.wsUrl || "(默认)"}`,
+          `  日志级别: ${pr.logLevel || "(默认)"}`,
+          `  贴纸目录: ${pr.stickerDir || "(未设置)"}`,
+          `  下载目录: ${pr.downloadDir || store.getGlobal("downloadDir") || "(默认)"}`,
+          `  LLM供应商: ${pr.llmProvider || "(未设置)"}`,
+          `  LLM模型: ${pr.llmModel || "(未设置)"}`,
+          `  配置路径: ${store.getConfigDir()}`,
+        ];
+        console.log(lines.join("\n"));
+      }),
     )
     .addCommand(
       new Command("get")
@@ -177,12 +197,20 @@ export function buildProgram(): Command {
         .argument("<key>", "配置键名")
         .action(async (key: string) => {
           const store = getGlobalConfigStore({ autoSave: true });
-          const value = store.get(key as keyof import("@yuanbao-lite/core/shared/config").CliProfile);
+          const value = store.get(
+            key as keyof import("@yuanbao-lite/core/shared/config").CliProfile,
+          );
           if (value === undefined) {
             printWarn(`配置项 ${key} 未设置`);
             return;
           }
-          if (typeof value === "string" && (key === "appKey" || key === "appSecret" || key === "token" || key === "llmApiKey")) {
+          if (
+            typeof value === "string" &&
+            (key === "appKey" ||
+              key === "appSecret" ||
+              key === "token" ||
+              key === "llmApiKey")
+          ) {
             console.log(`${key} = ***${value.slice(-4)}`);
           } else {
             console.log(`${key} = ${String(value)}`);
@@ -197,38 +225,61 @@ export function buildProgram(): Command {
         .action(async (key: string, value: string) => {
           const store = getGlobalConfigStore({ autoSave: true });
           const validKeys = [
-            "appKey", "appSecret", "token", "apiDomain", "wsUrl",
-            "logLevel", "stickerDir", "downloadDir", "prompt",
-            "llmProvider", "llmApiKey", "llmBaseUrl", "llmModel",
-            "llmSystemPrompt", "llmEnabled", "defaultTarget", "defaultChatMode",
+            "appKey",
+            "appSecret",
+            "token",
+            "apiDomain",
+            "wsUrl",
+            "logLevel",
+            "stickerDir",
+            "downloadDir",
+            "prompt",
+            "llmProvider",
+            "llmApiKey",
+            "llmBaseUrl",
+            "llmModel",
+            "llmSystemPrompt",
+            "llmEnabled",
+            "defaultTarget",
+            "defaultChatMode",
           ];
           if (!validKeys.includes(key)) {
             printError(`无效配置键: ${key}\n可选: ${validKeys.join(", ")}`);
             process.exit(1);
           }
           store.set(key as never, value as never);
-          const masked = (key === "appKey" || key === "appSecret" || key === "token" || key === "llmApiKey") ? "***" : value;
+          const masked =
+            key === "appKey" ||
+            key === "appSecret" ||
+            key === "token" ||
+            key === "llmApiKey"
+              ? "***"
+              : value;
           printResult(`已设置 ${key} = ${masked}`);
-          printWarn("提示: 如需让新配置生效，请重启 daemon (yb-cli daemon restart)");
+          printWarn(
+            "提示: 如需让新配置生效，请重启 daemon (yb-cli daemon restart)",
+          );
         }),
     )
     .addCommand(
       new Command("profile")
         .description("配置档案管理")
         .addCommand(
-          new Command("list")
-            .description("列出所有档案")
-            .action(async () => {
-              const store = getGlobalConfigStore({ autoSave: true });
-              const active = store.getActiveProfileName();
-              const names = store.getProfileNames();
-              if (names.length === 0) {
-                printWarn("无配置档案。运行 yb-cli config init 创建。");
-                return;
-              }
-              const lines = names.map(n => `  ${n === active ? "▶" : " "} ${n}`);
-              console.log(`📋 配置档案 (共 ${names.length} 个):\n${lines.join("\n")}`);
-            }),
+          new Command("list").description("列出所有档案").action(async () => {
+            const store = getGlobalConfigStore({ autoSave: true });
+            const active = store.getActiveProfileName();
+            const names = store.getProfileNames();
+            if (names.length === 0) {
+              printWarn("无配置档案。运行 yb-cli config init 创建。");
+              return;
+            }
+            const lines = names.map(
+              (n) => `  ${n === active ? "▶" : " "} ${n}`,
+            );
+            console.log(
+              `📋 配置档案 (共 ${names.length} 个):\n${lines.join("\n")}`,
+            );
+          }),
         )
         .addCommand(
           new Command("switch")
@@ -242,7 +293,9 @@ export function buildProgram(): Command {
               }
               store.switchProfile(name);
               printResult(`已切换到档案: ${name}`);
-              printWarn("提示: 请重启 daemon 让新档案生效 (yb-cli daemon restart)");
+              printWarn(
+                "提示: 请重启 daemon 让新档案生效 (yb-cli daemon restart)",
+              );
             }),
         )
         .addCommand(
@@ -256,7 +309,9 @@ export function buildProgram(): Command {
                 process.exit(1);
               }
               store.createProfile(name, { name });
-              printResult(`已创建档案: ${name} (空配置，请用 yb-cli config set 设置 appKey/appSecret)`);
+              printResult(
+                `已创建档案: ${name} (空配置，请用 yb-cli config set 设置 appKey/appSecret)`,
+              );
             }),
         )
         .addCommand(
@@ -270,7 +325,9 @@ export function buildProgram(): Command {
                 process.exit(1);
               }
               if (name === store.getActiveProfileName()) {
-                printError(`不能删除当前激活的档案: ${name} (先 switch 到其他档案)`);
+                printError(
+                  `不能删除当前激活的档案: ${name} (先 switch 到其他档案)`,
+                );
                 process.exit(1);
               }
               store.deleteProfile(name);
@@ -348,7 +405,7 @@ export async function registerDynamicCommands(program: Command): Promise<void> {
 
   // Commands that are already statically registered (avoid duplicates)
   const existingNames = new Set<string>();
-  program.commands.forEach(c => existingNames.add(c.name()));
+  program.commands.forEach((c) => existingNames.add(c.name()));
 
   for (const cmd of commands) {
     if (cmd.hidden) continue;
@@ -364,8 +421,11 @@ export async function registerDynamicCommands(program: Command): Promise<void> {
           getProgramPort(program),
           getProgramHost(program),
         );
-        const fullCmd = args && args.length > 0 ? `${cmd.name} ${args.join(" ")}` : cmd.name;
-        const result = await client.runCommand(`/${fullCmd}`, { source: "cli" });
+        const fullCmd =
+          args && args.length > 0 ? `${cmd.name} ${args.join(" ")}` : cmd.name;
+        const result = await client.runCommand(`/${fullCmd}`, {
+          source: "cli",
+        });
         if (!result.ok) {
           printError(`命令执行失败: ${result.error ?? "unknown"}`);
           return;

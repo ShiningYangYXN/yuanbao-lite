@@ -33,7 +33,8 @@ export function register(cmdSys: CommandSystem): void {
         to = resolved.targetId;
         isGroup = resolved.isGroup;
       } else {
-        to = ctx.isGroup && ctx.groupCode ? ctx.groupCode : ctx.message.fromUserId;
+        to =
+          ctx.isGroup && ctx.groupCode ? ctx.groupCode : ctx.message.fromUserId;
         isGroup = ctx.isGroup;
       }
       try {

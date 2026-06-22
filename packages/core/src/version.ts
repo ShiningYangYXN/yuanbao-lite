@@ -19,7 +19,7 @@
 
 // Hardcoded fallback — keep in sync with package.json `version` on release.
 // This is the value browser/edge callers will see.
-const FALLBACK_VERSION = "12.0.0";
+const FALLBACK_VERSION = "12.0.2";
 
 // Cache the version after first read
 let cachedVersion: string | null = null;
@@ -53,8 +53,8 @@ async function readVersionFromPackageJson(): Promise<string | null> {
 
     // Try several possible locations for package.json
     const candidates = [
-      path.join(__dirname, "..", "package.json"),     // dist/version.js -> package.json (project root)
-      path.join(__dirname, "package.json"),           // same dir
+      path.join(__dirname, "..", "package.json"), // dist/version.js -> package.json (project root)
+      path.join(__dirname, "package.json"), // same dir
       path.join(__dirname, "..", "..", "package.json"), // deeper nesting
     ];
 

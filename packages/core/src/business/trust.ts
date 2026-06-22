@@ -104,14 +104,20 @@ function load(): TrustData {
       const raw = adapter.read(filePath);
       const parsed = JSON.parse(raw) as TrustData;
       // Validate structure — if malformed, treat as file-not-found
-      if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.entries)) {
+      if (
+        !parsed ||
+        typeof parsed !== "object" ||
+        !Array.isArray(parsed.entries)
+      ) {
         throw new Error("malformed trust.json");
       }
       cache = parsed;
       return cache;
     }
   } catch (err) {
-    log.warn(`failed to load trust file: ${(err as Error).message} — creating empty shell`);
+    log.warn(
+      `failed to load trust file: ${(err as Error).message} — creating empty shell`,
+    );
   }
   // File missing or unreadable/corrupt — create empty shell and persist
   cache = { version: 1, masterUserId: null, entries: [] };
@@ -146,7 +152,7 @@ function grantTimerKey(userId: string, cmdName: string): string {
 export function setMasterUserId(userId: string, nickname?: string): void {
   const data = load();
   data.masterUserId = userId;
-  const existing = data.entries.find(e => e.userId === userId);
+  const existing = data.entries.find((e) => e.userId === userId);
   if (!existing) {
     data.entries.push({
       userId,
@@ -168,7 +174,7 @@ export function setMasterUserId(userId: string, nickname?: string): void {
 export function isTrusted(userId: string): boolean {
   const data = load();
   if (data.masterUserId === userId) return true;
-  return data.entries.some(e => e.userId === userId);
+  return data.entries.some((e) => e.userId === userId);
 }
 
 /**
@@ -176,18 +182,25 @@ export function isTrusted(userId: string): boolean {
  * Returns { ok, reason? }. Refuses if the user is blocked.
  * Returns ok=false (reason="already") if already trusted.
  */
-export async function addTrust(userId: string, nickname?: string): Promise<{ ok: boolean; reason?: string }> {
+export async function addTrust(
+  userId: string,
+  nickname?: string,
+): Promise<{ ok: boolean; reason?: string }> {
   // Check block list first — blocked users cannot be trusted
   try {
     const { isBlocked } = await import("./block.js");
     if (isBlocked(userId)) {
-      return { ok: false, reason: "用户已被封禁，不能添加到信任列表。请先解封：/block remove <ID>" };
+      return {
+        ok: false,
+        reason:
+          "用户已被封禁，不能添加到信任列表。请先解封：/block remove <ID>",
+      };
     }
   } catch {
     // block module optional — proceed if not available
   }
   const data = load();
-  const existing = data.entries.find(e => e.userId === userId);
+  const existing = data.entries.find((e) => e.userId === userId);
   if (existing) {
     if (nickname) {
       existing.nickname = nickname;
@@ -213,7 +226,7 @@ export async function addTrust(userId: string, nickname?: string): Promise<{ ok:
  */
 export function removeTrust(userId: string): { ok: boolean; reason?: string } {
   const data = load();
-  const entry = data.entries.find(e => e.userId === userId);
+  const entry = data.entries.find((e) => e.userId === userId);
   if (!entry) {
     return { ok: false, reason: "用户不在信任列表中" };
   }
@@ -228,7 +241,7 @@ export function removeTrust(userId: string): { ok: boolean; reason?: string } {
       grantTimers.delete(grantTimerKey(userId, cmdName));
     }
   }
-  data.entries = data.entries.filter(e => e.userId !== userId);
+  data.entries = data.entries.filter((e) => e.userId !== userId);
   save();
   log.info(`user ${userId} removed from trust list`);
   return { ok: true };
@@ -241,7 +254,7 @@ export function removeTrust(userId: string): { ok: boolean; reason?: string } {
  */
 export function removeTrustOnBlock(userId: string): void {
   const data = load();
-  const entry = data.entries.find(e => e.userId === userId);
+  const entry = data.entries.find((e) => e.userId === userId);
   if (!entry) return;
   if (entry.isMaster || data.masterUserId === userId) {
     // Master cannot be blocked — block.ts should have refused, but defend
@@ -256,7 +269,7 @@ export function removeTrustOnBlock(userId: string): void {
       grantTimers.delete(grantTimerKey(userId, cmdName));
     }
   }
-  data.entries = data.entries.filter(e => e.userId !== userId);
+  data.entries = data.entries.filter((e) => e.userId !== userId);
   save();
   log.info(`user ${userId} removed from trust list (blocked)`);
 }
@@ -268,7 +281,11 @@ export function removeTrustOnBlock(userId: string): void {
  * @param cmdName - The command name (lowercase, no prefix)
  * @param durationMs - Duration in ms (Infinity = forever)
  */
-export async function grantCommand(userId: string, cmdName: string, durationMs: number): Promise<{ ok: boolean; reason?: string }> {
+export async function grantCommand(
+  userId: string,
+  cmdName: string,
+  durationMs: number,
+): Promise<{ ok: boolean; reason?: string }> {
   // Blocked users cannot receive grants
   try {
     const { isBlocked } = await import("./block.js");
@@ -280,7 +297,7 @@ export async function grantCommand(userId: string, cmdName: string, durationMs: 
   }
   const normalized = cmdName.toLowerCase().replace(/^\//, "");
   const data = load();
-  let entry = data.entries.find(e => e.userId === userId);
+  let entry = data.entries.find((e) => e.userId === userId);
   if (!entry) {
     // Auto-add to trust list with a note that this is a grant-only entry
     entry = {
@@ -303,7 +320,7 @@ export async function grantCommand(userId: string, cmdName: string, durationMs: 
   if (durationMs != Infinity) {
     const timer = setTimeout(() => {
       const d = load();
-      const e = d.entries.find(x => x.userId === userId);
+      const e = d.entries.find((x) => x.userId === userId);
       if (e?.commandGrants) {
         delete e.commandGrants[normalized];
         save();
@@ -315,17 +332,22 @@ export async function grantCommand(userId: string, cmdName: string, durationMs: 
   }
 
   save();
-  log.info(`granted /${normalized} to ${userId}${durationMs != Infinity ? ` for ${durationMs}ms` : " (forever)"}`);
+  log.info(
+    `granted /${normalized} to ${userId}${durationMs != Infinity ? ` for ${durationMs}ms` : " (forever)"}`,
+  );
   return { ok: true };
 }
 
 /**
  * Revoke a specific command grant from a user.
  */
-export function revokeCommand(userId: string, cmdName: string): { ok: boolean; reason?: string } {
+export function revokeCommand(
+  userId: string,
+  cmdName: string,
+): { ok: boolean; reason?: string } {
   const normalized = cmdName.toLowerCase().replace(/^\//, "");
   const data = load();
-  const entry = data.entries.find(e => e.userId === userId);
+  const entry = data.entries.find((e) => e.userId === userId);
   if (!entry || !entry.commandGrants || !(normalized in entry.commandGrants)) {
     return { ok: false, reason: `用户没有 /${normalized} 的授权` };
   }
@@ -345,7 +367,7 @@ export function revokeCommand(userId: string, cmdName: string): { ok: boolean; r
 export function hasCommandGrant(userId: string, cmdName: string): boolean {
   const normalized = cmdName.toLowerCase().replace(/^\//, "");
   const data = load();
-  const entry = data.entries.find(e => e.userId === userId);
+  const entry = data.entries.find((e) => e.userId === userId);
   if (!entry?.commandGrants) return false;
   const grant = entry.commandGrants[normalized];
   if (!grant) return false;
@@ -362,15 +384,25 @@ export function hasCommandGrant(userId: string, cmdName: string): boolean {
 /**
  * List all command grants for a user.
  */
-export function listCommandGrants(userId: string): Array<{ command: string; expiresAt: number; forever: boolean }> {
+export function listCommandGrants(
+  userId: string,
+): Array<{ command: string; expiresAt: number; forever: boolean }> {
   const data = load();
-  const entry = data.entries.find(e => e.userId === userId);
+  const entry = data.entries.find((e) => e.userId === userId);
   if (!entry?.commandGrants) return [];
   const now = Date.now();
-  const result: Array<{ command: string; expiresAt: number; forever: boolean }> = [];
+  const result: Array<{
+    command: string;
+    expiresAt: number;
+    forever: boolean;
+  }> = [];
   for (const [cmd, g] of Object.entries(entry.commandGrants)) {
     if (g.expiresAt === 0 || g.expiresAt > now) {
-      result.push({ command: cmd, expiresAt: g.expiresAt, forever: g.expiresAt === 0 });
+      result.push({
+        command: cmd,
+        expiresAt: g.expiresAt,
+        forever: g.expiresAt === 0,
+      });
     }
   }
   return result;
@@ -394,5 +426,5 @@ export function getMasterUserId(): string | null {
  * Get a single trust entry by user ID (or null).
  */
 export function getTrustEntry(userId: string): TrustEntry | null {
-  return load().entries.find(e => e.userId === userId) ?? null;
+  return load().entries.find((e) => e.userId === userId) ?? null;
 }

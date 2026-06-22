@@ -32,7 +32,9 @@ export function register(cmdSys: CommandSystem): void {
           const name = ctx.args[2];
           const tag = ctx.args.slice(3).join(" ") || undefined;
           store.add(id, name, tag);
-          await ctx.reply(`✅ 联系人已添加: ${name} -> ${id.substring(0, 20)}...${tag ? ` [${tag}]` : ""}`);
+          await ctx.reply(
+            `✅ 联系人已添加: ${name} -> ${id.substring(0, 20)}...${tag ? ` [${tag}]` : ""}`,
+          );
           break;
         }
         case "remove":
@@ -43,7 +45,9 @@ export function register(cmdSys: CommandSystem): void {
             return;
           }
           const removed = store.remove(ctx.args[1]);
-          await ctx.reply(removed ? "✅ 联系人已删除" : `未找到联系人: ${ctx.args[1]}`);
+          await ctx.reply(
+            removed ? "✅ 联系人已删除" : `未找到联系人: ${ctx.args[1]}`,
+          );
           break;
         }
         case "rename": {
@@ -52,7 +56,11 @@ export function register(cmdSys: CommandSystem): void {
             return;
           }
           const ok = store.rename(ctx.args[1], ctx.args[2]);
-          await ctx.reply(ok ? `✅ 联系人已重命名为: ${ctx.args[2]}` : `未找到联系人: ${ctx.args[1]}`);
+          await ctx.reply(
+            ok
+              ? `✅ 联系人已重命名为: ${ctx.args[2]}`
+              : `未找到联系人: ${ctx.args[1]}`,
+          );
           break;
         }
         case "note":
@@ -65,7 +73,9 @@ export function register(cmdSys: CommandSystem): void {
             store.add(ctx.args[1], ctx.args[1]);
           }
           const ok = store.setNotes(ctx.args[1], ctx.args.slice(2).join(" "));
-          await ctx.reply(ok ? "✅ 联系人备注已更新" : `❌ 设置备注失败: ${ctx.args[1]}`);
+          await ctx.reply(
+            ok ? "✅ 联系人备注已更新" : `❌ 设置备注失败: ${ctx.args[1]}`,
+          );
           break;
         }
         case "tag": {
@@ -74,7 +84,9 @@ export function register(cmdSys: CommandSystem): void {
             return;
           }
           const ok = store.setTag(ctx.args[1], ctx.args.slice(2).join(" "));
-          await ctx.reply(ok ? "✅ 标签已更新" : `未找到联系人: ${ctx.args[1]}`);
+          await ctx.reply(
+            ok ? "✅ 标签已更新" : `未找到联系人: ${ctx.args[1]}`,
+          );
           break;
         }
         case "fav":
@@ -89,7 +101,11 @@ export function register(cmdSys: CommandSystem): void {
           }
           const ok = store.toggleFavorite(ctx.args[1]);
           const entry = store.get(ctx.args[1]);
-          await ctx.reply(ok ? `✅ ${entry?.favorite ? "已收藏" : "已取消收藏"}` : `未找到联系人: ${ctx.args[1]}`);
+          await ctx.reply(
+            ok
+              ? `✅ ${entry?.favorite ? "已收藏" : "已取消收藏"}`
+              : `未找到联系人: ${ctx.args[1]}`,
+          );
           break;
         }
         case "dm": {
@@ -112,7 +128,7 @@ export function register(cmdSys: CommandSystem): void {
           if (results.length === 0) {
             await ctx.reply("未找到匹配的联系人");
           } else {
-            const lines = results.map(c => {
+            const lines = results.map((c) => {
               const fav = c.favorite ? "⭐" : " ";
               return `  ${fav} ${c.name} -> ${c.id.substring(0, 30)}${c.tag ? ` [${c.tag}]` : ""}`;
             });
@@ -134,14 +150,23 @@ export function register(cmdSys: CommandSystem): void {
             return;
           }
           if (ctx.useTable) {
-            const rows = all.map(c => [c.favorite ? "⭐" : "", c.name, c.id, c.tag || ""]);
-            await ctx.reply(`📇 联系人列表 (${all.length} 个):\n${await ctx.formatTable(["收藏", "名称", "ID", "标签"], rows)}`);
+            const rows = all.map((c) => [
+              c.favorite ? "⭐" : "",
+              c.name,
+              c.id,
+              c.tag || "",
+            ]);
+            await ctx.reply(
+              `📇 联系人列表 (${all.length} 个):\n${await ctx.formatTable(["收藏", "名称", "ID", "标签"], rows)}`,
+            );
           } else {
-            const lines = all.map(c => {
+            const lines = all.map((c) => {
               const fav = c.favorite ? "⭐" : " ";
               return `  ${fav} ${c.name} -> ${c.id.substring(0, 30)}${c.tag ? ` [${c.tag}]` : ""}`;
             });
-            await ctx.reply(`📇 联系人列表:\n${lines.join("\n")}\n共 ${all.length} 个联系人`);
+            await ctx.reply(
+              `📇 联系人列表:\n${lines.join("\n")}\n共 ${all.length} 个联系人`,
+            );
           }
           break;
         }

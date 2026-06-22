@@ -18,7 +18,10 @@ function getRoot(): protobuf.Root {
   return root;
 }
 
-export function encodePB(key: string, value: Record<string, unknown>): Uint8Array | null {
+export function encodePB(
+  key: string,
+  value: Record<string, unknown>,
+): Uint8Array | null {
   try {
     const type = getRoot().lookupType(key);
     const message = type.create(value);
@@ -33,7 +36,9 @@ export function encodePB(key: string, value: Record<string, unknown>): Uint8Arra
 export function decodePB(key: string, data: Uint8Array | ArrayBuffer): unknown {
   try {
     const type = getRoot().lookupType(key);
-    return type.decode(data instanceof Uint8Array ? data : new Uint8Array(data));
+    return type.decode(
+      data instanceof Uint8Array ? data : new Uint8Array(data),
+    );
   } catch {
     return null;
   }
@@ -104,7 +109,10 @@ export function createHead(cmd: string, module: string, msgId: string): PBHead {
   };
 }
 
-export function encodeConnMsg(head: PBHead, innerData: Uint8Array | null): Uint8Array | null {
+export function encodeConnMsg(
+  head: PBHead,
+  innerData: Uint8Array | null,
+): Uint8Array | null {
   return encodePB(PB_MSG_TYPES.ConnMsg, {
     head,
     data: innerData ?? new Uint8Array(0),

@@ -85,8 +85,8 @@ describe("MemoryAdapter", () => {
     adapter.write("/other/c.json", "c");
     const entries = adapter.listDir("/dir/");
     assert.equal(entries.length, 2);
-    assert.ok(entries.some(e => e.name === "a.json"));
-    assert.ok(entries.some(e => e.name === "b.json"));
+    assert.ok(entries.some((e) => e.name === "a.json"));
+    assert.ok(entries.some((e) => e.name === "b.json"));
   });
 
   it("ensureParentDir is a no-op", () => {
@@ -152,7 +152,7 @@ describe("NodeFsAdapter", () => {
     adapter.write(join(tempDir, "b.json"), "b");
     const entries = adapter.listDir(tempDir);
     assert.ok(entries.length >= 2);
-    assert.ok(entries.some(e => e.name === "a.json"));
+    assert.ok(entries.some((e) => e.name === "a.json"));
   });
 });
 

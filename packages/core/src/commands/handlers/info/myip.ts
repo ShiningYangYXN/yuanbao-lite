@@ -23,8 +23,12 @@ export function register(cmdSys: CommandSystem): void {
       try {
         // Fetch both IPv4 and IPv6 concurrently
         const [ipv4Result, ipv6Result] = await Promise.allSettled([
-          fetch("https://api.ipify.org?format=json").then(r => r.json() as Promise<{ ip: string }>),
-          fetch("https://api64.ipify.org?format=json").then(r => r.json() as Promise<{ ip: string }>),
+          fetch("https://api.ipify.org?format=json").then(
+            (r) => r.json() as Promise<{ ip: string }>,
+          ),
+          fetch("https://api64.ipify.org?format=json").then(
+            (r) => r.json() as Promise<{ ip: string }>,
+          ),
         ]);
 
         const lines = ["🖥️ 服务器 IP 信息:"];
@@ -34,15 +38,22 @@ export function register(cmdSys: CommandSystem): void {
           lines.push(`  IPv4: ${ip4}`);
           // Try to get geo info
           try {
-            const geoResp = await fetch(`http://ip-api.com/json/${ip4}?lang=zh-CN&fields=country,regionName,city,isp,as,timezone`, { signal: AbortSignal.timeout(5000) });
+            const geoResp = await fetch(
+              `http://ip-api.com/json/${ip4}?lang=zh-CN&fields=country,regionName,city,isp,as,timezone`,
+              { signal: AbortSignal.timeout(5000) },
+            );
             if (geoResp.ok) {
-              const geo = await geoResp.json() as Record<string, string>;
-              lines.push(`    地区: ${geo.country ?? "?"} ${geo.regionName ?? ""} ${geo.city ?? ""}`.trim());
+              const geo = (await geoResp.json()) as Record<string, string>;
+              lines.push(
+                `    地区: ${geo.country ?? "?"} ${geo.regionName ?? ""} ${geo.city ?? ""}`.trim(),
+              );
               lines.push(`    ISP: ${geo.isp || "(未知)"}`);
               lines.push(`    AS: ${geo.as || "(未知)"}`);
               lines.push(`    时区: ${geo.timezone || "(未知)"}`);
             }
-          } catch { /* geo lookup optional */ }
+          } catch {
+            /* geo lookup optional */
+          }
         } else {
           lines.push("  IPv4: (获取失败)");
         }
@@ -70,17 +81,23 @@ export function register(cmdSys: CommandSystem): void {
             for (const [, addrs] of Object.entries(nets)) {
               if (!addrs) continue;
               for (const addr of addrs) {
-                if (addr.family === "IPv4" && !addr.internal) localV4.push(addr.address);
-                else if (addr.family === "IPv6" && !addr.internal) localV6.push(addr.address);
+                if (addr.family === "IPv4" && !addr.internal)
+                  localV4.push(addr.address);
+                else if (addr.family === "IPv6" && !addr.internal)
+                  localV6.push(addr.address);
               }
             }
             if (localV4.length > 0 || localV6.length > 0) {
               lines.push("", "本地接口:");
-              if (localV4.length > 0) lines.push(`  本地 IPv4: ${localV4.join(", ")}`);
-              if (localV6.length > 0) lines.push(`  本地 IPv6: ${localV6.join(", ")}`);
+              if (localV4.length > 0)
+                lines.push(`  本地 IPv4: ${localV4.join(", ")}`);
+              if (localV6.length > 0)
+                lines.push(`  本地 IPv6: ${localV6.join(", ")}`);
             }
           }
-        } catch { /* ignore */ }
+        } catch {
+          /* ignore */
+        }
 
         await ctx.reply(lines.join("\n"));
       } catch (err) {

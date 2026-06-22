@@ -22,7 +22,10 @@ import type {
 } from "../../types.js";
 import { extractMentionsFromMsgBody } from "../mention.js";
 import { storeContent } from "../content-store.js";
-import { parseForwardMsgData, buildForwardRecordsText } from "./forward-records.js";
+import {
+  parseForwardMsgData,
+  buildForwardRecordsText,
+} from "./forward-records.js";
 
 // ─── Structured extraction result ───
 
@@ -72,9 +75,7 @@ export type ExtractResult = {
  * pollute other mentions or the text stream.
  */
 function sanitizeNickname(s: string): string {
-  return s
-    .replace(/]/g, "】")
-    .replace(/\[/g, "【");
+  return s.replace(/]/g, "】").replace(/\[/g, "【");
 }
 
 export function extractContentFromMsgBody(
@@ -103,21 +104,31 @@ export function extractContentFromMsgBody(
         // elem_type=1002 (@mention), and others. We must check `data` here
         // and process it the same way as a TIMCustomElem, otherwise @mention
         // information is silently lost.
-        const embeddedData = typeof content.data === "string" ? content.data : undefined;
+        const embeddedData =
+          typeof content.data === "string" ? content.data : undefined;
         if (embeddedData) {
           try {
             const parsed = JSON.parse(embeddedData) as Record<string, unknown>;
-            const elemType = typeof parsed.elem_type === "number"
-              ? parsed.elem_type
-              : (typeof parsed.elemType === "number" ? parsed.elemType : undefined);
+            const elemType =
+              typeof parsed.elem_type === "number"
+                ? parsed.elem_type
+                : typeof parsed.elemType === "number"
+                  ? parsed.elemType
+                  : undefined;
             if (elemType === 1002) {
               // Embedded @mention — inject @[nick](id) syntax in-place
               hasAnyMention = true;
-              const userId = parsed.user_id != null ? String(parsed.user_id) : undefined;
-              const mentionText = typeof parsed.text === "string" ? parsed.text : undefined;
-              const displayName = mentionText ? mentionText.replace(/^@/, "") : (userId ?? "");
+              const userId =
+                parsed.user_id != null ? String(parsed.user_id) : undefined;
+              const mentionText =
+                typeof parsed.text === "string" ? parsed.text : undefined;
+              const displayName = mentionText
+                ? mentionText.replace(/^@/, "")
+                : (userId ?? "");
               if (userId && displayName) {
-                textParts.push(`@[${sanitizeNickname(displayName)}](${userId}) `);
+                textParts.push(
+                  `@[${sanitizeNickname(displayName)}](${userId}) `,
+                );
               }
             }
           } catch {
@@ -132,28 +143,45 @@ export function extractContentFromMsgBody(
         // Original project logic: prefer index 1 (medium/thumbnail) over
         // index 0 (original) to save bandwidth. Fall back to index 0.
         // type field: 1=original, 2=thumbnail, 3=large (IM convention)
-        const infoArray = content.image_info_array as Array<Record<string, unknown>> | undefined;
+        const infoArray = content.image_info_array as
+          | Array<Record<string, unknown>>
+          | undefined;
         const selected = infoArray?.[1] ?? infoArray?.[0];
-        const uuid = typeof content.uuid === "string" ? content.uuid : undefined;
-        const url = typeof selected?.url === "string" ? selected.url : undefined;
-        const width = typeof selected?.width === "number" ? selected.width : undefined;
-        const height = typeof selected?.height === "number" ? selected.height : undefined;
+        const uuid =
+          typeof content.uuid === "string" ? content.uuid : undefined;
+        const url =
+          typeof selected?.url === "string" ? selected.url : undefined;
+        const width =
+          typeof selected?.width === "number" ? selected.width : undefined;
+        const height =
+          typeof selected?.height === "number" ? selected.height : undefined;
         if (uuid || url) {
           medias.push({ type: "image", uuid, url, width, height });
           // Build media name: {uuid}_{w}_{h} if dimensions available
-          const uuidStem = uuid ? uuid.replace(/\.[^.]+$/, "") : `image${medias.filter(m => m.type === "image").length}`;
-          const ext = uuid ? (uuid.match(/\.(jpg|jpeg|png|gif|webp|bmp)$/i)?.[0] ?? "") : "";
-          const name = width && height ? `${uuidStem}_${width}_${height}${ext}` : (uuid ?? `image${medias.filter(m => m.type === "image").length}`);
+          const uuidStem = uuid
+            ? uuid.replace(/\.[^.]+$/, "")
+            : `image${medias.filter((m) => m.type === "image").length}`;
+          const ext = uuid
+            ? (uuid.match(/\.(jpg|jpeg|png|gif|webp|bmp)$/i)?.[0] ?? "")
+            : "";
+          const name =
+            width && height
+              ? `${uuidStem}_${width}_${height}${ext}`
+              : (uuid ??
+                `image${medias.filter((m) => m.type === "image").length}`);
           textParts.push(`[image:${name}]`);
         }
         break;
       }
 
       case "TIMFileElem": {
-        const uuid = typeof content.uuid === "string" ? content.uuid : undefined;
+        const uuid =
+          typeof content.uuid === "string" ? content.uuid : undefined;
         const url = typeof content.url === "string" ? content.url : undefined;
-        const fileName = typeof content.file_name === "string" ? content.file_name : undefined;
-        const fileSize = typeof content.file_size === "number" ? content.file_size : undefined;
+        const fileName =
+          typeof content.file_name === "string" ? content.file_name : undefined;
+        const fileSize =
+          typeof content.file_size === "number" ? content.file_size : undefined;
         if (uuid || url) {
           medias.push({ type: "file", uuid, url, fileName, fileSize });
           textParts.push(`[file:${fileName ?? uuid ?? "unknown"}]`);
@@ -162,15 +190,18 @@ export function extractContentFromMsgBody(
       }
 
       case "TIMVideoFileElem": {
-        const uuid = typeof content.uuid === "string" ? content.uuid : undefined;
-        const url = typeof content.video_url === "string" ? content.video_url : undefined;
+        const uuid =
+          typeof content.uuid === "string" ? content.uuid : undefined;
+        const url =
+          typeof content.video_url === "string" ? content.video_url : undefined;
         medias.push({ type: "video", uuid, url });
         textParts.push("[video]");
         break;
       }
 
       case "TIMSoundElem": {
-        const uuid = typeof content.uuid === "string" ? content.uuid : undefined;
+        const uuid =
+          typeof content.uuid === "string" ? content.uuid : undefined;
         const url = typeof content.url === "string" ? content.url : undefined;
         medias.push({ type: "voice", uuid, url });
         textParts.push("[voice]");
@@ -179,14 +210,19 @@ export function extractContentFromMsgBody(
 
       case "TIMFaceElem": {
         // Face element: emoji_index + possible sticker data
-        const emojiIndex = typeof content.emoji_index === "number" ? content.emoji_index : undefined;
-        const data = typeof content.data === "string" ? content.data : undefined;
+        const emojiIndex =
+          typeof content.emoji_index === "number"
+            ? content.emoji_index
+            : undefined;
+        const data =
+          typeof content.data === "string" ? content.data : undefined;
         let emojiName = `emoji:${emojiIndex ?? "?"}`;
         if (data) {
           try {
             const parsed = JSON.parse(data) as Record<string, unknown>;
             if (typeof parsed.name === "string") emojiName = parsed.name;
-            else if (typeof parsed.emoji_name === "string") emojiName = parsed.emoji_name;
+            else if (typeof parsed.emoji_name === "string")
+              emojiName = parsed.emoji_name;
           } catch {
             // Not JSON — use raw data as name if short
             if (data.length < 50) emojiName = data;
@@ -202,8 +238,11 @@ export function extractContentFromMsgBody(
         // on content. Reading content.elem_type returns undefined and causes @mentions
         // to be misclassified as "[custom:unknown]" — which then breaks slash-command
         // dispatch (text becomes "[custom:unknown]/status" instead of "/status").
-        const customData = typeof content.data === "string" ? content.data : undefined;
-        let elemType: number | undefined = content.elem_type as number | undefined;
+        const customData =
+          typeof content.data === "string" ? content.data : undefined;
+        let elemType: number | undefined = content.elem_type as
+          | number
+          | undefined;
         // If elem_type not directly on content, parse it from data JSON
         if (elemType === undefined && customData) {
           try {
@@ -230,15 +269,21 @@ export function extractContentFromMsgBody(
           if (customData) {
             try {
               const parsed = JSON.parse(customData) as Record<string, unknown>;
-              const userId = parsed.user_id != null ? String(parsed.user_id) : undefined;
-              const mentionText: string | undefined = typeof parsed.text === "string" ? parsed.text : undefined;
+              const userId =
+                parsed.user_id != null ? String(parsed.user_id) : undefined;
+              const mentionText: string | undefined =
+                typeof parsed.text === "string" ? parsed.text : undefined;
               // displayName: strip leading @ from text, or fallback to userId
-              const displayName = mentionText ? mentionText.replace(/^@/, "") : (userId ?? "");
+              const displayName = mentionText
+                ? mentionText.replace(/^@/, "")
+                : (userId ?? "");
               if (userId && displayName) {
                 // Inject @[displayName](userId) syntax in-place
                 // Sanitize ] and ) in displayName/userId to prevent breaking
                 // the @[]() syntax (user nicknames can contain these chars)
-                textParts.push(`@[${sanitizeNickname(displayName)}](${userId}) `);
+                textParts.push(
+                  `@[${sanitizeNickname(displayName)}](${userId}) `,
+                );
               }
             } catch {
               // data is not JSON — can't extract mention info, skip
@@ -269,11 +314,14 @@ export function extractContentFromMsgBody(
           let extractedText: string | undefined;
           if (customData) {
             // Try XML format first (Tencent often uses XML for link cards)
-            const urlMatch = customData.match(/<url[^>]*>([^<]+)<\/url>/i)
-              ?? customData.match(/<link[^>]*>([^<]+)<\/link>/i);
+            const urlMatch =
+              customData.match(/<url[^>]*>([^<]+)<\/url>/i) ??
+              customData.match(/<link[^>]*>([^<]+)<\/link>/i);
             if (urlMatch) extractedUrl = urlMatch[1];
             // Try to extract title/text/desc from XML
-            const titleMatch = customData.match(/<title[^>]*>([^<]+)<\/title>/i);
+            const titleMatch = customData.match(
+              /<title[^>]*>([^<]+)<\/title>/i,
+            );
             if (titleMatch) extractedText = titleMatch[1];
             if (!extractedText) {
               const descMatch = customData.match(/<desc[^>]*>([^<]+)<\/desc>/i);
@@ -286,24 +334,35 @@ export function extractContentFromMsgBody(
             // Also try JSON format
             try {
               const parsed = JSON.parse(customData) as Record<string, unknown>;
-              if (!extractedUrl && typeof parsed.url === "string") extractedUrl = parsed.url;
-              if (!extractedUrl && typeof parsed.link === "string") extractedUrl = parsed.link;
-              if (!extractedText && typeof parsed.text === "string") extractedText = parsed.text;
-              if (!extractedText && typeof parsed.title === "string") extractedText = parsed.title;
-              if (!extractedText && typeof parsed.desc === "string") extractedText = parsed.desc;
-              if (!extractedText && typeof parsed.description === "string") extractedText = parsed.description;
-              if (!extractedText && typeof parsed.name === "string") extractedText = parsed.name;
+              if (!extractedUrl && typeof parsed.url === "string")
+                extractedUrl = parsed.url;
+              if (!extractedUrl && typeof parsed.link === "string")
+                extractedUrl = parsed.link;
+              if (!extractedText && typeof parsed.text === "string")
+                extractedText = parsed.text;
+              if (!extractedText && typeof parsed.title === "string")
+                extractedText = parsed.title;
+              if (!extractedText && typeof parsed.desc === "string")
+                extractedText = parsed.desc;
+              if (!extractedText && typeof parsed.description === "string")
+                extractedText = parsed.description;
+              if (!extractedText && typeof parsed.name === "string")
+                extractedText = parsed.name;
             } catch {
               // Not JSON — XML already handled above
             }
           }
           // Check if extractedUrl is a real URL (http/https scheme or domain-like)
-          const isRealUrl = extractedUrl && /^(https?:\/\/|[\w-]+\.[\w-]+)/i.test(extractedUrl);
+          const isRealUrl =
+            extractedUrl && /^(https?:\/\/|[\w-]+\.[\w-]+)/i.test(extractedUrl);
           if (isRealUrl) {
             linkUrls.push(extractedUrl!);
             // Keep the original URL in text (don't use contentId for web pages).
             // The LLM can use /visit <URL> to fetch and inject cleaned content.
-            const alreadyPresent = textParts.some(tp => tp.includes(extractedUrl!) || extractedUrl!.includes(tp.trim()));
+            const alreadyPresent = textParts.some(
+              (tp) =>
+                tp.includes(extractedUrl!) || extractedUrl!.includes(tp.trim()),
+            );
             if (!alreadyPresent) {
               textParts.push(extractedUrl!);
             }
@@ -316,7 +375,9 @@ export function extractContentFromMsgBody(
             hasAnyMention = true;
           } else if (extractedText) {
             // No URL but has title — only push if not a duplicate
-            const alreadyPresent = textParts.some(tp => tp.includes(extractedText!));
+            const alreadyPresent = textParts.some((tp) =>
+              tp.includes(extractedText!),
+            );
             if (!alreadyPresent) {
               textParts.push(extractedText);
             }
@@ -345,7 +406,10 @@ export function extractContentFromMsgBody(
             try {
               const forwardData = parseForwardMsgData(extMap);
               if (forwardData) {
-                const built = buildForwardRecordsText(forwardData, forwardData.nick_name);
+                const built = buildForwardRecordsText(
+                  forwardData,
+                  forwardData.nick_name,
+                );
                 if (built) {
                   fullContent = built.text;
                   // Collect media URLs from forwarded records
@@ -362,7 +426,11 @@ export function extractContentFromMsgBody(
             }
           }
 
-          const contentId = storeContent("forwarded_records", fullContent, `forwarded_${Date.now()}`);
+          const contentId = storeContent(
+            "forwarded_records",
+            fullContent,
+            `forwarded_${Date.now()}`,
+          );
           textParts.push(`[content:${contentId} 转发聊天记录]`);
         } else if (customData) {
           // Unknown custom element — try to extract any text content from data
@@ -379,23 +447,31 @@ export function extractContentFromMsgBody(
             const parsed = JSON.parse(customData) as Record<string, unknown>;
             if (typeof parsed.text === "string") extractedText = parsed.text;
             if (typeof parsed.url === "string") extractedUrl = parsed.url;
-            else if (typeof parsed.link === "string") extractedUrl = parsed.link;
-            if (!extractedText && typeof parsed.title === "string") extractedText = parsed.title;
-            if (!extractedText && typeof parsed.content === "string") extractedText = parsed.content;
-            if (!extractedText && typeof parsed.desc === "string") extractedText = parsed.desc;
-            if (!extractedText && typeof parsed.name === "string") extractedText = parsed.name;
+            else if (typeof parsed.link === "string")
+              extractedUrl = parsed.link;
+            if (!extractedText && typeof parsed.title === "string")
+              extractedText = parsed.title;
+            if (!extractedText && typeof parsed.content === "string")
+              extractedText = parsed.content;
+            if (!extractedText && typeof parsed.desc === "string")
+              extractedText = parsed.desc;
+            if (!extractedText && typeof parsed.name === "string")
+              extractedText = parsed.name;
           } catch {
             // Not JSON — try XML extraction
-            const xmlUrlMatch = customData.match(/<url[^>]*>([^<]+)<\/url>/i)
-              ?? customData.match(/<link[^>]*>([^<]+)<\/link>/i);
+            const xmlUrlMatch =
+              customData.match(/<url[^>]*>([^<]+)<\/url>/i) ??
+              customData.match(/<link[^>]*>([^<]+)<\/link>/i);
             if (xmlUrlMatch) extractedUrl = xmlUrlMatch[1];
-            const xmlTextMatch = customData.match(/<title[^>]*>([^<]+)<\/title>/i)
-              ?? customData.match(/<text[^>]*>([^<]+)<\/text>/i)
-              ?? customData.match(/<desc[^>]*>([^<]+)<\/desc>/i);
+            const xmlTextMatch =
+              customData.match(/<title[^>]*>([^<]+)<\/title>/i) ??
+              customData.match(/<text[^>]*>([^<]+)<\/text>/i) ??
+              customData.match(/<desc[^>]*>([^<]+)<\/desc>/i);
             if (xmlTextMatch) extractedText = xmlTextMatch[1];
           }
           // Check if this is a misparsed @[nick](id) mention
-          const isRealUrl = extractedUrl && /^(https?:\/\/|[\w-]+\.[\w-]+)/i.test(extractedUrl);
+          const isRealUrl =
+            extractedUrl && /^(https?:\/\/|[\w-]+\.[\w-]+)/i.test(extractedUrl);
           if (extractedText && extractedUrl && !isRealUrl) {
             // Reconstruct mention syntax
             const nick = extractedText.replace(/^@/, "");
@@ -403,7 +479,9 @@ export function extractContentFromMsgBody(
             hasAnyMention = true;
           } else if (extractedText && extractedText.trim()) {
             // Only push if we extracted real text; skip if empty or just placeholder
-            const alreadyPresent = textParts.some(tp => tp.includes(extractedText!));
+            const alreadyPresent = textParts.some((tp) =>
+              tp.includes(extractedText!),
+            );
             if (!alreadyPresent) {
               textParts.push(extractedText);
             }
@@ -415,7 +493,8 @@ export function extractContentFromMsgBody(
 
       default: {
         // Unknown element type — try desc fallback
-        const desc = typeof content.desc === "string" ? content.desc : undefined;
+        const desc =
+          typeof content.desc === "string" ? content.desc : undefined;
         if (desc) textParts.push(desc);
         break;
       }
@@ -446,7 +525,9 @@ export function extractContentFromMsgBody(
  * @deprecated Use extractContentFromMsgBody() for structured access to media/links.
  * This function returns only the text portion (with placeholders for non-text elements).
  */
-export function extractTextFromMsgBody(msgBody: YuanbaoMsgBodyElement[] | undefined): string {
+export function extractTextFromMsgBody(
+  msgBody: YuanbaoMsgBodyElement[] | undefined,
+): string {
   return extractContentFromMsgBody(msgBody).text;
 }
 
@@ -461,7 +542,10 @@ export function extractTextFromMsgBody(msgBody: YuanbaoMsgBodyElement[] | undefi
  *             chatMessage.mentions directly with the bot's ID.
  */
 export function isBotMentioned(msg: YuanbaoInboundMessage): boolean {
-  const mentions = extractMentionsFromMsgBody(msg.msg_body, msg.cloud_custom_data);
+  const mentions = extractMentionsFromMsgBody(
+    msg.msg_body,
+    msg.cloud_custom_data,
+  );
   return mentions.length > 0;
 }
 
@@ -477,11 +561,17 @@ export function isBotMentioned(msg: YuanbaoInboundMessage): boolean {
  *
  * @returns Quote info if present, undefined otherwise
  */
-function extractQuoteInfo(msg: YuanbaoInboundMessage): { quoteMsgId?: string; quoteMsgSeq?: number } {
+function extractQuoteInfo(msg: YuanbaoInboundMessage): {
+  quoteMsgId?: string;
+  quoteMsgSeq?: number;
+} {
   // Try cloud_custom_data first
   if (msg.cloud_custom_data) {
     try {
-      const customData = JSON.parse(msg.cloud_custom_data) as Record<string, unknown>;
+      const customData = JSON.parse(msg.cloud_custom_data) as Record<
+        string,
+        unknown
+      >;
 
       // PRIMARY format: { quote: { id, seq, type, desc, sender_id, sender_nickname } }
       // This is the standard Tencent Yuanbao IM quote format.
@@ -498,9 +588,11 @@ function extractQuoteInfo(msg: YuanbaoInboundMessage): { quoteMsgId?: string; qu
       }
 
       // Alternative patterns: replyMsgId, ref_msg_id, msgId at top level
-      const id = customData.replyMsgId ?? customData.ref_msg_id ?? customData.msgId;
+      const id =
+        customData.replyMsgId ?? customData.ref_msg_id ?? customData.msgId;
       if (id !== undefined) {
-        const seq = customData.replyMsgSeq ?? customData.ref_msg_seq ?? customData.msgSeq;
+        const seq =
+          customData.replyMsgSeq ?? customData.ref_msg_seq ?? customData.msgSeq;
         return {
           quoteMsgId: String(id),
           quoteMsgSeq: typeof seq === "number" ? seq : undefined,
@@ -510,7 +602,8 @@ function extractQuoteInfo(msg: YuanbaoInboundMessage): { quoteMsgId?: string; qu
       // Alternative: nested under "reply" key
       const reply = customData.reply as Record<string, unknown> | undefined;
       if (reply) {
-        const replyId = reply.id ?? reply.msgId ?? reply.ref_msg_id ?? reply.uuid;
+        const replyId =
+          reply.id ?? reply.msgId ?? reply.ref_msg_id ?? reply.uuid;
         const replySeq = reply.seq ?? reply.msgSeq ?? reply.ref_msg_seq;
         if (replyId !== undefined) {
           return {
@@ -553,7 +646,8 @@ function extractQuoteInfo(msg: YuanbaoInboundMessage): { quoteMsgId?: string; qu
  * easy-to-use message structure without dealing with the raw IM protocol.
  */
 export function toChatMessage(msg: YuanbaoInboundMessage): ChatMessage {
-  const isGroup = Boolean(msg.group_code) ||
+  const isGroup =
+    Boolean(msg.group_code) ||
     Boolean(msg.callback_command?.startsWith("Group.")) ||
     msg.claw_msg_type === 1;
 
@@ -561,10 +655,18 @@ export function toChatMessage(msg: YuanbaoInboundMessage): ChatMessage {
   const quoteInfo = extractQuoteInfo(msg);
 
   // Extract mention info from cloud_custom_data and msg_body
-  const rawMentions = extractMentionsFromMsgBody(msg.msg_body, msg.cloud_custom_data);
-  const mentions: MentionInfo[] | undefined = rawMentions.length > 0
-    ? rawMentions.map(m => ({ userId: m.userId, displayName: m.displayName, explicitNickname: m.explicitNickname }))
-    : undefined;
+  const rawMentions = extractMentionsFromMsgBody(
+    msg.msg_body,
+    msg.cloud_custom_data,
+  );
+  const mentions: MentionInfo[] | undefined =
+    rawMentions.length > 0
+      ? rawMentions.map((m) => ({
+          userId: m.userId,
+          displayName: m.displayName,
+          explicitNickname: m.explicitNickname,
+        }))
+      : undefined;
 
   return {
     id: msg.msg_id || msg.msg_key || "",

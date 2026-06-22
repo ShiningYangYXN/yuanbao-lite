@@ -73,7 +73,10 @@ export class DaemonClient {
     try {
       const init: RequestInit = {
         method,
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
         signal: controller.signal,
       };
       if (body && method === "POST") {
@@ -99,7 +102,9 @@ export class DaemonClient {
 
   async ping(timeoutMs = 1500): Promise<DaemonInfo | null> {
     try {
-      const { status, data } = await this.request<DaemonInfo & { ok?: boolean }>("GET", "/health", undefined, timeoutMs);
+      const { status, data } = await this.request<
+        DaemonInfo & { ok?: boolean }
+      >("GET", "/health", undefined, timeoutMs);
       if (status === 200 && (data as { ok?: boolean }).ok !== false) {
         return data;
       }
@@ -140,7 +145,9 @@ export class DaemonClient {
     // SIGTERM the old one, release the port, and start listening)
     const ready = await this.waitForReady(DAEMON_READY_TIMEOUT_MS);
     if (!ready) {
-      throw new DaemonNotRunningError(new Error("daemon did not become ready within 30s after restart"));
+      throw new DaemonNotRunningError(
+        new Error("daemon did not become ready within 30s after restart"),
+      );
     }
     return ready;
   }
@@ -151,18 +158,25 @@ export class DaemonClient {
    *
    * Throws if the daemon fails to come up within 30s.
    */
-  async ensureDaemon(opts?: { port?: number; spawnIfMissing?: boolean }): Promise<DaemonInfo> {
+  async ensureDaemon(opts?: {
+    port?: number;
+    spawnIfMissing?: boolean;
+  }): Promise<DaemonInfo> {
     const existing = await this.ping();
     if (existing) return existing;
 
     if (opts?.spawnIfMissing === false) {
-      throw new DaemonNotRunningError(new Error("daemon not running and spawnIfMissing=false"));
+      throw new DaemonNotRunningError(
+        new Error("daemon not running and spawnIfMissing=false"),
+      );
     }
 
     await this.spawnDaemon(opts?.port ?? this.port);
     const ready = await this.waitForReady(DAEMON_READY_TIMEOUT_MS);
     if (!ready) {
-      throw new DaemonNotRunningError(new Error("daemon did not become ready within 30s"));
+      throw new DaemonNotRunningError(
+        new Error("daemon did not become ready within 30s"),
+      );
     }
     return ready;
   }
@@ -170,10 +184,14 @@ export class DaemonClient {
   private async spawnDaemon(port: number): Promise<void> {
     // Node-only — uses node:child_process.spawn. Under browser, this
     // throws a clear error (no way to spawn a daemon process).
-    const childProcess = getNodeModules().fs ? await import("node:child_process") : null;
+    const childProcess = getNodeModules().fs
+      ? await import("node:child_process")
+      : null;
     if (!childProcess) {
       throw new DaemonNotRunningError(
-        new Error("spawnDaemon requires Node.js runtime (node:child_process) to start a daemon process"),
+        new Error(
+          "spawnDaemon requires Node.js runtime (node:child_process) to start a daemon process",
+        ),
       );
     }
     const entry = getDaemonEntryPath();
@@ -202,28 +220,44 @@ export class DaemonClient {
   // ─── Bot operations ───
 
   async sendDm(userId: string, message: string): Promise<void> {
-    const { status, data } = await this.request<{ ok: boolean; error?: string }>("POST", "/send/dm", { userId, message });
+    const { status, data } = await this.request<{
+      ok: boolean;
+      error?: string;
+    }>("POST", "/send/dm", { userId, message });
     if (status !== 200 || !data.ok) {
       throw new Error(data.error ?? `send/dm failed: HTTP ${status}`);
     }
   }
 
   async sendGroup(groupCode: string, message: string): Promise<void> {
-    const { status, data } = await this.request<{ ok: boolean; error?: string }>("POST", "/send/group", { groupCode, message });
+    const { status, data } = await this.request<{
+      ok: boolean;
+      error?: string;
+    }>("POST", "/send/group", { groupCode, message });
     if (status !== 200 || !data.ok) {
       throw new Error(data.error ?? `send/group failed: HTTP ${status}`);
     }
   }
 
-  async upload(filePath: string, type?: string): Promise<{
-    uuid: string; url?: string; fileSize: number; mediaType: string; fileName: string;
+  async upload(
+    filePath: string,
+    type?: string,
+  ): Promise<{
+    uuid: string;
+    url?: string;
+    fileSize: number;
+    mediaType: string;
+    fileName: string;
   }> {
-    const { status, data } = await this.request<{ ok: boolean; error?: string; uuid?: string; url?: string; fileSize?: number; mediaType?: string; fileName?: string }>(
-      "POST",
-      "/upload",
-      { filePath, type },
-      60_000,
-    );
+    const { status, data } = await this.request<{
+      ok: boolean;
+      error?: string;
+      uuid?: string;
+      url?: string;
+      fileSize?: number;
+      mediaType?: string;
+      fileName?: string;
+    }>("POST", "/upload", { filePath, type }, 60_000);
     if (status !== 200 || !data.ok || !data.uuid) {
       throw new Error(data.error ?? `upload failed: HTTP ${status}`);
     }
@@ -236,15 +270,24 @@ export class DaemonClient {
     };
   }
 
-  async download(url: string, dir?: string, fileName?: string): Promise<{
-    filePath: string; fileSize: number; mediaType: string; fileName: string;
+  async download(
+    url: string,
+    dir?: string,
+    fileName?: string,
+  ): Promise<{
+    filePath: string;
+    fileSize: number;
+    mediaType: string;
+    fileName: string;
   }> {
-    const { status, data } = await this.request<{ ok: boolean; error?: string; filePath?: string; fileSize?: number; mediaType?: string; fileName?: string }>(
-      "POST",
-      "/download",
-      { url, dir, fileName },
-      60_000,
-    );
+    const { status, data } = await this.request<{
+      ok: boolean;
+      error?: string;
+      filePath?: string;
+      fileSize?: number;
+      mediaType?: string;
+      fileName?: string;
+    }>("POST", "/download", { url, dir, fileName }, 60_000);
     if (status !== 200 || !data.ok || !data.filePath) {
       throw new Error(data.error ?? `download failed: HTTP ${status}`);
     }
@@ -263,13 +306,24 @@ export class DaemonClient {
    * `source` defaults to "cli" — tells the CommandSystem to apply CLI-appropriate
    * coloring and bypass dmOnly restrictions.
    */
-  async runCommand(text: string, opts?: { chatMode?: "direct" | "group"; chatTarget?: string; source?: "cli" | "chat" }): Promise<CommandResult> {
-    const { status, data } = await this.request<CommandResult>("POST", "/command", {
-      text,
-      chatMode: opts?.chatMode ?? "direct",
-      chatTarget: opts?.chatTarget ?? "cli",
-      source: opts?.source ?? "cli",
-    });
+  async runCommand(
+    text: string,
+    opts?: {
+      chatMode?: "direct" | "group";
+      chatTarget?: string;
+      source?: "cli" | "chat";
+    },
+  ): Promise<CommandResult> {
+    const { status, data } = await this.request<CommandResult>(
+      "POST",
+      "/command",
+      {
+        text,
+        chatMode: opts?.chatMode ?? "direct",
+        chatTarget: opts?.chatTarget ?? "cli",
+        source: opts?.source ?? "cli",
+      },
+    );
     if (status !== 200) {
       throw new Error(`command failed: HTTP ${status}`);
     }
@@ -357,11 +411,14 @@ export class DaemonClient {
   /**
    * Check if a wizard session is active for a user.
    */
-  async wizardStatus(userId: string = "cli"): Promise<{ active: boolean; wizard: string | null }> {
-    const { status, data } = await this.request<{ ok: boolean; active?: boolean; wizard?: string | null }>(
-      "GET",
-      `/wizard-status?userId=${encodeURIComponent(userId)}`,
-    );
+  async wizardStatus(
+    userId: string = "cli",
+  ): Promise<{ active: boolean; wizard: string | null }> {
+    const { status, data } = await this.request<{
+      ok: boolean;
+      active?: boolean;
+      wizard?: string | null;
+    }>("GET", `/wizard-status?userId=${encodeURIComponent(userId)}`);
     if (status !== 200) return { active: false, wizard: null };
     return { active: data.active ?? false, wizard: data.wizard ?? null };
   }
@@ -370,16 +427,20 @@ export class DaemonClient {
    * Send input to an active wizard session.
    * Returns the wizard's reply text and whether it was handled.
    */
-  async wizardInput(text: string, userId: string = "cli"): Promise<{
+  async wizardInput(
+    text: string,
+    userId: string = "cli",
+  ): Promise<{
     handled: boolean;
     replies: string[];
     wizard: string | null;
   }> {
-    const { status, data } = await this.request<{ ok: boolean; handled?: boolean; replies?: string[]; wizard?: string | null }>(
-      "POST",
-      "/wizard-input",
-      { text, userId },
-    );
+    const { status, data } = await this.request<{
+      ok: boolean;
+      handled?: boolean;
+      replies?: string[];
+      wizard?: string | null;
+    }>("POST", "/wizard-input", { text, userId });
     if (status !== 200) return { handled: false, replies: [], wizard: null };
     return {
       handled: data.handled ?? false,
@@ -390,16 +451,18 @@ export class DaemonClient {
 
   // ─── Completion data ───
 
-  async fetchCommands(): Promise<Array<{
-    name: string;
-    aliases: string[];
-    description: string;
-    usage: string;
-    category: string;
-    dmOnly: boolean;
-    requireConnected: boolean;
-    hidden: boolean;
-  }>> {
+  async fetchCommands(): Promise<
+    Array<{
+      name: string;
+      aliases: string[];
+      description: string;
+      usage: string;
+      category: string;
+      dmOnly: boolean;
+      requireConnected: boolean;
+      hidden: boolean;
+    }>
+  > {
     const { status, data } = await this.request<{
       ok: boolean;
       commands?: Array<{
@@ -431,7 +494,11 @@ export class DaemonClient {
       contacts?: Array<{ id: string; name: string; tag?: string }>;
       groups?: Array<{ groupCode: string; name: string; tag?: string }>;
       aliases?: Array<{ alias: string; id: string; nickname?: string }>;
-      commands?: Array<{ name: string; aliases: string[]; description: string }>;
+      commands?: Array<{
+        name: string;
+        aliases: string[];
+        description: string;
+      }>;
       error?: string;
     }>("GET", "/completions");
     if (status !== 200 || !data.ok) {
@@ -496,10 +563,19 @@ function getDaemonEntryPath(): string {
       p = p.slice(1).replace(/\//g, "\\");
     }
     // p = .../packages/core/dist/access/daemon/client.js
-    const here = path.dirname(p);  // .../packages/core/dist/access/daemon
+    const here = path.dirname(p); // .../packages/core/dist/access/daemon
     // Walk up 4 levels: daemon → access → dist → core → packages
     // Then into cli/dist/index.js
-    const cliEntry = path.join(here, "..", "..", "..", "..", "cli", "dist", "index.js");
+    const cliEntry = path.join(
+      here,
+      "..",
+      "..",
+      "..",
+      "..",
+      "cli",
+      "dist",
+      "index.js",
+    );
     return cliEntry;
   }
 
@@ -511,8 +587,15 @@ function getDaemonEntryPath(): string {
 // Singleton client (default port)
 let defaultClient: DaemonClient | null = null;
 export function getDefaultClient(port?: number, host?: string): DaemonClient {
-  if (!defaultClient || (port !== undefined && port !== defaultClient.port) || (host !== undefined && host !== defaultClient.host)) {
-    defaultClient = new DaemonClient(port ?? DEFAULT_DAEMON_PORT, host ?? DEFAULT_DAEMON_HOST);
+  if (
+    !defaultClient ||
+    (port !== undefined && port !== defaultClient.port) ||
+    (host !== undefined && host !== defaultClient.host)
+  ) {
+    defaultClient = new DaemonClient(
+      port ?? DEFAULT_DAEMON_PORT,
+      host ?? DEFAULT_DAEMON_HOST,
+    );
   }
   return defaultClient;
 }

@@ -9,22 +9,23 @@
 
 import type { CommandSystem } from "../../registry.js";
 import type { CommandCategory } from "../../types.js";
+const USAGE = "/chat <目标> <消息>";
 
 export function register(cmdSys: CommandSystem): void {
   cmdSys.register({
     name: "chat",
     aliases: ["聊天"],
     description: "向指定目标发送消息（私聊或群聊）",
-    usage: "/chat <用户ID|group 群号> <消息>",
+    usage: USAGE,
     category: "chat" as CommandCategory,
     requireConnected: true,
     elevated: true,
     handler: async (ctx) => {
       if (ctx.args.length === 0) {
-        await ctx.reply("用法: /chat <用户ID> <消息>\n      /chat group <群号> <消息>");
+        await ctx.reply(`用法: ${USAGE}`);
         return;
       }
-      if (ctx.args[0] === "group" && ctx.args.length >= 3) {
+      if (/^\d{9}$/.test(ctx.args[0].trim()) && ctx.args.length >= 2) {
         const groupCode = ctx.args[1];
         const text = ctx.args.slice(2).join(" ");
         try {
@@ -44,7 +45,7 @@ export function register(cmdSys: CommandSystem): void {
           await ctx.reply(`❌ 发送失败: ${(err as Error).message}`);
         }
       } else {
-        await ctx.reply("用法: /chat <用户ID> <消息>\n      /chat group <群号> <消息>");
+        await ctx.reply(`用法: ${USAGE}`);
       }
     },
   });

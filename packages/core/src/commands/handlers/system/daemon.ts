@@ -12,7 +12,10 @@ import type { CommandCategory } from "../../types.js";
 
 export function register(cmdSys: CommandSystem): void {
   // Per-user confirmation tracking: key = `${userId}:${subCmd}`, value = { count, firstAt }
-  const daemonConfirmations = new Map<string, { count: number; firstAt: number }>();
+  const daemonConfirmations = new Map<
+    string,
+    { count: number; firstAt: number }
+  >();
   const CONFIRM_WINDOW_MS = 60_000; // 1 minute
   const REQUIRED_CONFIRMATIONS = 3;
 
@@ -30,7 +33,8 @@ export function register(cmdSys: CommandSystem): void {
 
       if (!subCmd || subCmd === "status") {
         // Status — no confirmation needed
-        const { getDefaultClient } = await import("../../../access/daemon/client.js");
+        const { getDefaultClient } =
+          await import("../../../access/daemon/client.js");
         const client = getDefaultClient();
         const info = await client.ping();
         if (!info) {
@@ -52,13 +56,16 @@ export function register(cmdSys: CommandSystem): void {
       }
 
       if (!["stop", "reset", "restart"].includes(subCmd)) {
-        await ctx.reply("用法: /daemon <stop|reset|restart|status>\nstop/reset/restart 需要1分钟内发送3次确认");
+        await ctx.reply(
+          "用法: /daemon <stop|reset|restart|status>\nstop/reset/restart 需要1分钟内发送3次确认",
+        );
         return;
       }
 
       // CLI source bypasses the 3x confirmation (CLI is pre-authorized)
       if (ctx.source === "cli") {
-        const { getDefaultClient } = await import("../../../access/daemon/client.js");
+        const { getDefaultClient } =
+          await import("../../../access/daemon/client.js");
         const client = getDefaultClient();
         try {
           if (subCmd === "stop") {
@@ -79,7 +86,9 @@ export function register(cmdSys: CommandSystem): void {
             await ctx.reply(`✅ daemon 已重置 (CLI 直接执行，缓存已清除)`);
           }
         } catch (err) {
-          await ctx.reply(`❌ daemon ${subCmd} 失败: ${(err as Error).message}`);
+          await ctx.reply(
+            `❌ daemon ${subCmd} 失败: ${(err as Error).message}`,
+          );
         }
         return;
       }
@@ -94,7 +103,7 @@ export function register(cmdSys: CommandSystem): void {
         daemonConfirmations.set(key, { count: 1, firstAt: now });
         await ctx.reply(
           `⚠️ 确认 ${subCmd} daemon (1/3)\n` +
-          `请在 ${CONFIRM_WINDOW_MS / 1000}s 内再发送 ${REQUIRED_CONFIRMATIONS - 1} 次 /daemon ${subCmd} 以确认操作`,
+            `请在 ${CONFIRM_WINDOW_MS / 1000}s 内再发送 ${REQUIRED_CONFIRMATIONS - 1} 次 /daemon ${subCmd} 以确认操作`,
         );
         return;
       }
@@ -103,20 +112,23 @@ export function register(cmdSys: CommandSystem): void {
       if (entry.count < REQUIRED_CONFIRMATIONS) {
         await ctx.reply(
           `⚠️ 确认 ${subCmd} daemon (${entry.count}/${REQUIRED_CONFIRMATIONS})\n` +
-          `还需 ${REQUIRED_CONFIRMATIONS - entry.count} 次确认`,
+            `还需 ${REQUIRED_CONFIRMATIONS - entry.count} 次确认`,
         );
         return;
       }
 
       // Reached required confirmations — execute
       daemonConfirmations.delete(key);
-      const { getDefaultClient } = await import("../../../access/daemon/client.js");
+      const { getDefaultClient } =
+        await import("../../../access/daemon/client.js");
       const client = getDefaultClient();
 
       try {
         if (subCmd === "stop") {
           await client.shutdown();
-          await ctx.reply(`✅ daemon 已停止 (${REQUIRED_CONFIRMATIONS} 次确认完成)`);
+          await ctx.reply(
+            `✅ daemon 已停止 (${REQUIRED_CONFIRMATIONS} 次确认完成)`,
+          );
         } else if (subCmd === "restart") {
           // CRITICAL: do NOT call client.shutdown() then client.ensureDaemon().
           // When this runs INSIDE the daemon (via /command from chat), shutdown()
@@ -127,11 +139,15 @@ export function register(cmdSys: CommandSystem): void {
           // The reply is sent BEFORE the old daemon is killed (the new daemon
           // takes a few seconds to start up and kill the old one).
           await client.restart();
-          await ctx.reply(`✅ daemon 已重启 (${REQUIRED_CONFIRMATIONS} 次确认完成)`);
+          await ctx.reply(
+            `✅ daemon 已重启 (${REQUIRED_CONFIRMATIONS} 次确认完成)`,
+          );
         } else if (subCmd === "reset") {
           // reset = restart + (caches cleared on boot by the new daemon)
           await client.restart();
-          await ctx.reply(`✅ daemon 已重置 (${REQUIRED_CONFIRMATIONS} 次确认完成，缓存已清除)`);
+          await ctx.reply(
+            `✅ daemon 已重置 (${REQUIRED_CONFIRMATIONS} 次确认完成，缓存已清除)`,
+          );
         }
       } catch (err) {
         await ctx.reply(`❌ daemon ${subCmd} 失败: ${(err as Error).message}`);

@@ -264,7 +264,7 @@ export class NodeFsAdapter implements PersistenceAdapter {
   listDir(dirPath: string): Array<{ name: string; isDirectory: boolean }> {
     if (!this.fs.existsSync(dirPath)) return [];
     const entries = this.fs.readdirSync(dirPath, { withFileTypes: true });
-    return entries.map(e => ({
+    return entries.map((e) => ({
       name: e.name,
       isDirectory: e.isDirectory(),
     }));
@@ -304,7 +304,9 @@ export function getDefaultPersistenceAdapter(): PersistenceAdapter {
     defaultAdapterInitError =
       err instanceof Error
         ? err
-        : new Error(`Failed to initialize default PersistenceAdapter: ${String(err)}`);
+        : new Error(
+            `Failed to initialize default PersistenceAdapter: ${String(err)}`,
+          );
     throw defaultAdapterInitError;
   }
 }
@@ -357,7 +359,7 @@ export function joinPath(...parts: string[]): string {
   // Browser fallback: simple /-join. Trims trailing/leading slashes on
   // adjacent parts to avoid double-slashes. Empty parts are skipped.
   return parts
-    .filter(p => p !== undefined && p !== null && p !== "")
+    .filter((p) => p !== undefined && p !== null && p !== "")
     .map((p, i) => {
       let s = String(p);
       if (i > 0) s = s.replace(/^\/+/, "");
@@ -405,7 +407,8 @@ export class BrowserLocalStorageAdapter implements PersistenceAdapter {
     this.prefix = opts?.prefix ?? "yuanbao-lite:";
     // Allow injecting a custom storage (for testing or for SSR environments
     // with a polyfill). Default to globalThis.localStorage.
-    const storage = opts?.storage ?? (globalThis as { localStorage?: Storage }).localStorage;
+    const storage =
+      opts?.storage ?? (globalThis as { localStorage?: Storage }).localStorage;
     if (!storage) {
       throw new Error(
         "BrowserLocalStorageAdapter requires globalThis.localStorage. " +

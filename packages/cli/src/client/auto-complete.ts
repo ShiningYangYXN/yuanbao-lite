@@ -90,14 +90,113 @@ const TOP_LEVEL_COMMANDS = [
 ];
 
 const SUB_COMMANDS: Record<string, string[]> = {
-  "/contacts": ["add", "rm", "remove", "del", "rename", "note", "备注", "tag", "fav", "favorite", "收藏", "dm", "search", "find", "save", "list", "ls"],
-  "/groups": ["add", "rm", "remove", "del", "rename", "note", "备注", "tag", "fav", "favorite", "收藏", "join", "search", "find", "save", "list", "ls"],
-  "/alias": ["add", "remove", "rm", "del", "list", "ls", "save", "load", "resolve"],
-  "/history": ["search", "find", "搜索", "stats", "统计", "recent", "最近", "user", "group"],
+  "/contacts": [
+    "add",
+    "rm",
+    "remove",
+    "del",
+    "rename",
+    "note",
+    "备注",
+    "tag",
+    "fav",
+    "favorite",
+    "收藏",
+    "dm",
+    "search",
+    "find",
+    "save",
+    "list",
+    "ls",
+  ],
+  "/groups": [
+    "add",
+    "rm",
+    "remove",
+    "del",
+    "rename",
+    "note",
+    "备注",
+    "tag",
+    "fav",
+    "favorite",
+    "收藏",
+    "join",
+    "search",
+    "find",
+    "save",
+    "list",
+    "ls",
+  ],
+  "/alias": [
+    "add",
+    "remove",
+    "rm",
+    "del",
+    "list",
+    "ls",
+    "save",
+    "load",
+    "resolve",
+  ],
+  "/history": [
+    "search",
+    "find",
+    "搜索",
+    "stats",
+    "统计",
+    "recent",
+    "最近",
+    "user",
+    "group",
+  ],
   "/search": ["groups", "群", "members", "member"],
   "/batch": ["text", "sticker", "image", "file", "stop", "status", "list"],
   "/account": ["add", "remove", "rm", "list", "ls", "switch", "start", "stop"],
-  "/llm": ["on", "off", "status", "chat", "ask", "问", "prompt", "系统提示", "model", "模型", "temp", "温度", "history", "历史", "clear", "清除", "raw", "im", "provider", "供应商", "apikey", "密钥", "baseurl", "group", "群聊", "merge", "合并", "cooldown", "冷却", "iterate", "迭代", "keypool", "密钥池", "providerpool", "供应商池", "customprovider", "自定义供应商", "billing", "用量", "账单", "config", "配置"],
+  "/llm": [
+    "on",
+    "off",
+    "status",
+    "chat",
+    "ask",
+    "问",
+    "prompt",
+    "系统提示",
+    "model",
+    "模型",
+    "temp",
+    "温度",
+    "history",
+    "历史",
+    "clear",
+    "清除",
+    "raw",
+    "im",
+    "provider",
+    "供应商",
+    "apikey",
+    "密钥",
+    "baseurl",
+    "group",
+    "群聊",
+    "merge",
+    "合并",
+    "cooldown",
+    "冷却",
+    "iterate",
+    "迭代",
+    "keypool",
+    "密钥池",
+    "providerpool",
+    "供应商池",
+    "customprovider",
+    "自定义供应商",
+    "billing",
+    "用量",
+    "账单",
+    "config",
+    "配置",
+  ],
   "/config": ["show", "get", "set", "profile", "export", "import"],
   "/init": ["appkey", "appsecret", "token", "cancel"],
   "/daemon": ["stop", "reset", "restart", "status"],
@@ -110,7 +209,15 @@ const SUB_COMMANDS: Record<string, string[]> = {
 };
 
 // Commands that support --all/-a flag for disabling truncation
-const COMMANDS_WITH_SHOW_ALL = ["/members", "/groups", "/switch", "/stickers", "/hsearch", "/history", "/shell"];
+const COMMANDS_WITH_SHOW_ALL = [
+  "/members",
+  "/groups",
+  "/switch",
+  "/stickers",
+  "/hsearch",
+  "/history",
+  "/shell",
+];
 
 const LLM_PROVIDERS = ["z-ai", "openai", "anthropic", "deepseek", "custom"];
 const LITTERBOX_EXPIRES = ["1h", "12h", "24h", "72h"];
@@ -124,14 +231,17 @@ const LITTERBOX_EXPIRES = ["1h", "12h", "24h", "72h"];
  * @param ctx  - Context stores for contact/group/alias completion
  * @returns Completion result with matching candidates
  */
-export function getCompletions(line: string, ctx?: CompletionContext): CompletionResult {
+export function getCompletions(
+  line: string,
+  ctx?: CompletionContext,
+): CompletionResult {
   const trimmed = line.trimStart();
   const _leadingSpaces = line.length - trimmed.length;
 
   // Empty line — suggest all commands
   if (!trimmed) {
     return {
-      completions: TOP_LEVEL_COMMANDS.map(c => c.cmd),
+      completions: TOP_LEVEL_COMMANDS.map((c) => c.cmd),
       replaceFrom: "",
     };
   }
@@ -190,7 +300,11 @@ function completeCommand(partial: string): CompletionResult {
 
 // ─── First argument completion ───
 
-function completeFirstArg(cmd: string, partial: string, ctx?: CompletionContext): CompletionResult {
+function completeFirstArg(
+  cmd: string,
+  partial: string,
+  ctx?: CompletionContext,
+): CompletionResult {
   // Suggest --all/-a for commands that support it
   if (COMMANDS_WITH_SHOW_ALL.includes(cmd)) {
     const flagMatches: string[] = [];
@@ -204,7 +318,7 @@ function completeFirstArg(cmd: string, partial: string, ctx?: CompletionContext)
   const subs = SUB_COMMANDS[cmd];
   if (subs) {
     // This command has sub-commands
-    const matches = subs.filter(s => s.startsWith(partial.toLowerCase()));
+    const matches = subs.filter((s) => s.startsWith(partial.toLowerCase()));
     // Also include --all/-a if the command supports it and partial doesn't start with -
     if (COMMANDS_WITH_SHOW_ALL.includes(cmd) && !partial.startsWith("-")) {
       if ("--all".startsWith(partial.toLowerCase())) matches.push("--all");
@@ -229,7 +343,12 @@ function completeFirstArg(cmd: string, partial: string, ctx?: CompletionContext)
   switch (cmd) {
     case "/tempfile": {
       // Could be a provider name or a file path
-      const providerMatches = ["gofile", "tmpfiles", "uguu", "litterbox"].filter(p => p.startsWith(partial));
+      const providerMatches = [
+        "gofile",
+        "tmpfiles",
+        "uguu",
+        "litterbox",
+      ].filter((p) => p.startsWith(partial));
       const pathMatches = completeFilePath(partial);
       return {
         completions: [...providerMatches, ...pathMatches],
@@ -263,12 +382,17 @@ function completeFirstArg(cmd: string, partial: string, ctx?: CompletionContext)
     }
 
     case "/llm": {
-      const matches = SUB_COMMANDS["/llm"]?.filter(s => s.startsWith(partial.toLowerCase())) || [];
+      const matches =
+        SUB_COMMANDS["/llm"]?.filter((s) =>
+          s.startsWith(partial.toLowerCase()),
+        ) || [];
       return { completions: matches, replaceFrom: partial };
     }
 
     case "/log": {
-      const levels = ["debug", "info", "warn", "error"].filter(l => l.startsWith(partial.toLowerCase()));
+      const levels = ["debug", "info", "warn", "error"].filter((l) =>
+        l.startsWith(partial.toLowerCase()),
+      );
       return { completions: levels, replaceFrom: partial };
     }
   }
@@ -278,21 +402,36 @@ function completeFirstArg(cmd: string, partial: string, ctx?: CompletionContext)
 
 // ─── Later argument completion ───
 
-function completeLaterArg(cmd: string, parts: string[], partial: string, ctx?: CompletionContext): CompletionResult {
+function completeLaterArg(
+  cmd: string,
+  parts: string[],
+  partial: string,
+  ctx?: CompletionContext,
+): CompletionResult {
   const subCmd = parts[1]?.toLowerCase();
 
   switch (cmd) {
     case "/tempfile": {
       // /tempfile <provider> <path> [options]
-      const isFirstArgProvider = ["gofile", "tmpfiles", "uguu", "litterbox"].includes(parts[1]?.toLowerCase());
+      const isFirstArgProvider = [
+        "gofile",
+        "tmpfiles",
+        "uguu",
+        "litterbox",
+      ].includes(parts[1]?.toLowerCase());
       if (isFirstArgProvider) {
         if (parts.length === 2 || (parts.length === 3 && !partial)) {
           // Complete file path
-          return { completions: completeFilePath(partial), replaceFrom: partial };
+          return {
+            completions: completeFilePath(partial),
+            replaceFrom: partial,
+          };
         }
         if (parts[1]?.toLowerCase() === "litterbox" && parts.length === 3) {
           // Complete expire time
-          const matches = LITTERBOX_EXPIRES.filter(e => e.startsWith(partial));
+          const matches = LITTERBOX_EXPIRES.filter((e) =>
+            e.startsWith(partial),
+          );
           if (matches.length > 0) {
             return { completions: matches, replaceFrom: partial };
           }
@@ -300,7 +439,10 @@ function completeLaterArg(cmd: string, parts: string[], partial: string, ctx?: C
       } else {
         // /tempfile <path> [desc] — path was already the first arg
         if (parts.length === 2 || (parts.length === 2 && !partial)) {
-          return { completions: completeFilePath(partial), replaceFrom: partial };
+          return {
+            completions: completeFilePath(partial),
+            replaceFrom: partial,
+          };
         }
       }
       break;
@@ -314,7 +456,19 @@ function completeLaterArg(cmd: string, parts: string[], partial: string, ctx?: C
 
     case "/contacts": {
       // /contacts <subcmd> <name|ID> ...
-      if (["note", "tag", "fav", "rename", "dm", "search", "rm", "remove", "del"].includes(subCmd)) {
+      if (
+        [
+          "note",
+          "tag",
+          "fav",
+          "rename",
+          "dm",
+          "search",
+          "rm",
+          "remove",
+          "del",
+        ].includes(subCmd)
+      ) {
         if (parts.length === 2 || (parts.length === 3 && !partial)) {
           return completeContactOrAlias(partial, ctx);
         }
@@ -324,7 +478,19 @@ function completeLaterArg(cmd: string, parts: string[], partial: string, ctx?: C
 
     case "/groups": {
       // /groups <subcmd> <groupCode> ...
-      if (["note", "tag", "fav", "rename", "join", "search", "rm", "remove", "del"].includes(subCmd)) {
+      if (
+        [
+          "note",
+          "tag",
+          "fav",
+          "rename",
+          "join",
+          "search",
+          "rm",
+          "remove",
+          "del",
+        ].includes(subCmd)
+      ) {
         if (parts.length === 2 || (parts.length === 3 && !partial)) {
           return completeGroupCode(partial, ctx);
         }
@@ -334,7 +500,9 @@ function completeLaterArg(cmd: string, parts: string[], partial: string, ctx?: C
 
     case "/llm": {
       if (subCmd === "provider") {
-        const matches = LLM_PROVIDERS.filter(p => p.startsWith(partial.toLowerCase()));
+        const matches = LLM_PROVIDERS.filter((p) =>
+          p.startsWith(partial.toLowerCase()),
+        );
         return { completions: matches, replaceFrom: partial };
       }
       break;
@@ -352,7 +520,12 @@ function completeLaterArg(cmd: string, parts: string[], partial: string, ctx?: C
   }
 
   // Default: try file path completion for any argument that looks like a path
-  if (partial.startsWith("/") || partial.startsWith("./") || partial.startsWith("~/") || partial.startsWith("../")) {
+  if (
+    partial.startsWith("/") ||
+    partial.startsWith("./") ||
+    partial.startsWith("~/") ||
+    partial.startsWith("../")
+  ) {
     return { completions: completeFilePath(partial), replaceFrom: partial };
   }
 
@@ -388,11 +561,11 @@ function completeFilePath(partial: string): string[] {
   }
 
   const entries = listDirEntries(dirPath);
-  if (!prefix) return entries.map(e => completePath(dirPath, e, partial));
+  if (!prefix) return entries.map((e) => completePath(dirPath, e, partial));
 
   return entries
-    .filter(e => e.startsWith(prefix))
-    .map(e => completePath(dirPath, e, partial));
+    .filter((e) => e.startsWith(prefix))
+    .map((e) => completePath(dirPath, e, partial));
 }
 
 function listDirEntries(dirPath: string): string[] {
@@ -423,7 +596,10 @@ function completePath(dir: string, entry: string, original: string): string {
 
 // ─── Contact/Alias completion ───
 
-function completeContactOrAlias(partial: string, ctx?: CompletionContext): CompletionResult {
+function completeContactOrAlias(
+  partial: string,
+  ctx?: CompletionContext,
+): CompletionResult {
   const completions: string[] = [];
 
   // Add contact names
@@ -451,7 +627,10 @@ function completeContactOrAlias(partial: string, ctx?: CompletionContext): Compl
 
 // ─── Group code completion ───
 
-function completeGroupCode(partial: string, ctx?: CompletionContext): CompletionResult {
+function completeGroupCode(
+  partial: string,
+  ctx?: CompletionContext,
+): CompletionResult {
   const completions: string[] = [];
 
   if (ctx?.groupStore) {
