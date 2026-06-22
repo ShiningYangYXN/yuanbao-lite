@@ -330,8 +330,9 @@ async function dispatchCommand(
     }
     if (result.replies.length > 0) {
       process.stdout.write("\n");
+      const { renderMarkdownAnsi } = await import("../utils/cli-format.js");
       for (const reply of result.replies) {
-        console.log(reply);
+        console.log(await renderMarkdownAnsi(reply));
       }
       process.stdout.write("\n");
     }

@@ -9,7 +9,7 @@
 | [架构总览](./architecture.md)            | 项目整体架构、模块划分、数据流                       | 所有开发者（必读） |
 | [快速上手](./getting-started.md)         | 安装、配置、第一个 Bot                               | 新用户             |
 | [核心 API 参考](./api-reference.md)      | YuanbaoBot 类、事件、方法的完整参考                  | 应用开发者         |
-| [命令系统](./command-system.md)          | 53 个内置命令、自定义命令、权限模型                  | 命令开发者         |
+| [命令系统](./command-system.md)          | 49 个内置命令、自定义命令、权限模型                  | 命令开发者         |
 | [LLM 接管引擎](./llm-takeover.md)        | 多供应商配置、密钥池、迭代调用、用量统计             | LLM 集成开发者     |
 | [持久化适配器](./persistence-adapter.md) | PersistenceAdapter 接口、NodeFsAdapter、浏览器适配器 | 跨平台开发者       |
 | [浏览器解耦](./browser-decouple.md)      | 同构架构、Web Crypto、动态导入、打包指南             | 浏览器/Edge 开发者 |
@@ -20,6 +20,8 @@
 
 ## 版本历史
 
+- **v12.1.0** — 清理屎山：修复 CLI Markdown 渲染（注册 ANSI 表格格式化器 + `renderMarkdownAnsi` 管线）；删除死代码（`commands/utils/table.ts`、`commands/index.ts`、重复的 `marked-terminal.d.ts`、`theme.ts` 中 8 个未使用的辅助函数、`table` 依赖）；删除过时文档（`BROWSER_DECOUPLE_ANALYSIS.md`、`cli/src/README.md`）；使用隔离 `Marked` 实例避免 CLI 渲染污染 IM 文本转换
+- **v12.0.x** — 合并 `/hsearch` 到 `/search`；修复 `handlers/index.ts` 中已删除模块的残留导入；清理自动补全和文档中已删除命令的引用
 - **v11.7.0** — Phase 4：js-md5 替换手搓 MD5；核心库与 CLI 拆分（`yuanbao-lite/cli` 子路径）；完整开发文档
 - **v11.6.0** — Phase 3：彻底移除 `require()`，命令系统浏览器移植，Web Crypto API 全面替换
 - **v11.5.x** — Phase 1-2：浏览器解耦——命令系统懒加载、PersistenceAdapter 接口、Web Crypto HMAC 签名、原生 WebSocket

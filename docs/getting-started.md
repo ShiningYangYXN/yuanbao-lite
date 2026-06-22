@@ -132,7 +132,7 @@ await bot.start();
 ## 下一步
 
 - [核心 API 参考](./api-reference.md) —— 了解所有公开 API
-- [命令系统](./command-system.md) —— 使用 53 个内置命令或自定义命令
+- [命令系统](./command-system.md) —— 使用 49 个内置命令或自定义命令
 - [LLM 接管引擎](./llm-takeover.md) —— 配置 AI 自动回复
 - [浏览器解耦](./browser-decouple.md) —— 在浏览器中使用
 

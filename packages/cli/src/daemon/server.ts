@@ -112,6 +112,18 @@ export class Daemon {
 
     this.bot = new YuanbaoBot(botConfig);
 
+    // Register the ANSI table formatter so that CLI-originated commands
+    // (source="cli" → outputMode="ansi") produce real colored CLI tables
+    // instead of falling back to Markdown tables. Without this, the
+    // _tableFormatter field on CommandSystem stays null and CLI users see
+    // raw Markdown `| ... |` syntax in their terminal.
+    await this.bot.init();
+    const cmdSys = this.bot.getCommandSystem();
+    if (cmdSys) {
+      const { formatCliTable } = await import("../utils/cli-format.js");
+      cmdSys.setTableFormatter(formatCliTable);
+    }
+
     // Forward incoming messages to all SSE subscribers
     this.bot.on("directMessage", (msg: ChatMessage) =>
       this.broadcastSse("directMessage", msg),

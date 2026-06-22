@@ -365,7 +365,8 @@ export function buildProgram(): Command {
         return;
       }
       for (const reply of result.replies) {
-        console.log(reply);
+        const { renderMarkdownAnsi } = await import("../utils/cli-format.js");
+        console.log(await renderMarkdownAnsi(reply));
       }
     });
 
@@ -435,7 +436,8 @@ export async function registerDynamicCommands(program: Command): Promise<void> {
           return;
         }
         for (const reply of result.replies) {
-          console.log(reply);
+          const { renderMarkdownAnsi } = await import("../utils/cli-format.js");
+          console.log(await renderMarkdownAnsi(reply));
         }
       });
 

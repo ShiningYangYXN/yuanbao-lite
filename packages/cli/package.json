@@ -1,6 +1,6 @@
 {
   "name": "@yuanbao-lite/cli",
-  "version": "12.0.3",
+  "version": "12.1.0",
   "type": "module",
   "description": "Yuanbao Lite CLI — daemon-first 交互式命令行工具",
   "license": "MIT",
@@ -37,7 +37,6 @@
     "marked": "^18.0.5",
     "marked-terminal": "^7.3.0",
     "string-width": "^8.2.1",
-    "table": "^6.9.0",
     "@yuanbao-lite/core": "workspace:*"
   },
   "devDependencies": {

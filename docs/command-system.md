@@ -1,6 +1,6 @@
 # 命令系统
 
-Yuanbao Lite 内置 53 个斜杠命令，覆盖聊天、群管、媒体、LLM、系统管理等场景。命令系统与 IM 共享同一套实现，CLI 与 Bot 收到的 `/cmd` 消息走相同的分发路径。
+Yuanbao Lite 内置 49 个斜杠命令，覆盖聊天、群管、媒体、LLM、系统管理等场景。命令系统与 IM 共享同一套实现，CLI 与 Bot 收到的 `/cmd` 消息走相同的分发路径。
 
 ## 命令分类
 
@@ -148,8 +148,6 @@ export function registerAll(cmdSys: CommandSystem): void {
 | `/init`                | 配置向导       | 完成或 `/init cancel`       |
 | `/llm config`          | LLM 配置向导   | 完成或 `/llm config cancel` |
 | `/term`                | 交互式终端     | `/term exit` 或 `exit`      |
-| `/switch group <群号>` | 上下文切换     | `/switch exit`              |
-| `/join <群号>`         | 加入群聊上下文 | `/switch exit`              |
 
 阻塞式会话使用 session-scoped 隔离（同一用户 + 同一会话才捕获）。
 
@@ -161,7 +159,6 @@ export function registerAll(cmdSys: CommandSystem): void {
 | ----------- | -------------------- | ------------------------------- |
 | `/shell`    | `node:child_process` | 返回"需要 Node.js 运行时"       |
 | `/term`     | `node:child_process` | 同上                            |
-| `/tempfile` | `node:fs`            | 同上                            |
 | `/myip`     | `node:os`（部分）    | 跳过本地接口检测，仅显示公网 IP |
 
 ## 命令帮助

@@ -1,31 +1,59 @@
 /**
- * CLI formatting utilities — colored tables and message rendering.
+ * CLI formatting utilities — colored tables, Markdown→ANSI rendering,
+ * and message display.
  *
- * Uses cli-table3 for tables, chalk for colors, marked-terminal for
- * Markdown→ANSI rendering.
+ * Uses mature libraries:
+ *   - cli-table3  — ANSI table rendering with box-drawing chars
+ *   - chalk       — ANSI colors
+ *   - marked      — Markdown parser (isolated instance, NOT the global one
+ *                   used by core's llm-takeover.ts, so terminal rendering
+ *                   options don't leak into IM text conversion)
+ *   - marked-terminal — Markdown→ANSI renderer extension for marked
  */
 
 import chalk from "chalk";
 import Table from "cli-table3";
+import { Marked } from "marked";
+import { markedTerminal } from "marked-terminal";
 import type { ChatMessage } from "@yuanbao-lite/core/types";
 import { getMasterUserId, isTrusted } from "@yuanbao-lite/core/business/trust";
 
-// Lazy-load marked + marked-terminal to avoid compatibility issues at import time
-let _markedReady = false;
-let _parse: ((text: string) => string) | null = null;
-async function ensureMarked(): Promise<(text: string) => string> {
-  if (!_markedReady) {
-    const { marked } = await import("marked");
-    const markedTerminal = (await import("marked-terminal")).default;
-    marked.use(markedTerminal());
-    _parse = (text: string) => marked.parse(text) as string;
-    _markedReady = true;
+// ─── Markdown → ANSI (isolated instance) ───
+
+// CRITICAL: use `new Marked()` instead of the global `marked` singleton.
+// The core package's llm-takeover.ts calls `marked.setOptions()` on the
+// global instance to convert Markdown→plain text for IM. If we also call
+// `marked.use(markedTerminal())` on the global, the terminal renderer
+// would corrupt IM text output. An isolated instance keeps the two use
+// cases cleanly separated.
+//
+// NOTE: `marked-terminal` exports `markedTerminal` as a NAMED export.
+// The default export is the `Renderer` class — calling it without `new`
+// crashes. This was a latent bug in the original code (never triggered
+// because renderMarkdownAnsi was never called).
+const cliMarked = new Marked();
+cliMarked.use(markedTerminal());
+
+/**
+ * Render Markdown text as ANSI for CLI display.
+ * Pre-colors @[nick](id) mentions so they survive Markdown parsing.
+ */
+export async function renderMarkdownAnsi(text: string): Promise<string> {
+  const colored = colorizeMentions(text);
+  try {
+    return cliMarked.parse(colored, { async: false }) as string;
+  } catch {
+    return colored;
   }
-  return _parse!;
 }
+
+// ─── ANSI table (cli-table3) ───
 
 /**
  * Format data as a colored CLI table (cli-table3 + chalk).
+ * Registered on the daemon's CommandSystem via setTableFormatter() so
+ * that `outputMode: "ansi"` produces real ANSI tables instead of
+ * falling back to Markdown tables.
  */
 export function formatCliTable(headers: string[], rows: string[][]): string {
   const table = new Table({
@@ -101,35 +129,27 @@ export function coloredName(userId: string, nickname: string): string {
  * Pre-process @[]() mention syntax to add color before Markdown rendering.
  * Converts @[nick](id) to a colored inline code span so marked-terminal
  * doesn't strip it.
+ *
+ * Wraps coloredName() in try/catch — if the trust store isn't initialized
+ * (e.g. during early daemon startup), falls back to a plain cyan mention
+ * instead of crashing.
  */
 function colorizeMentions(text: string): string {
-  // Replace @[nick](id) with colored version
   return text.replace(
     /@\[([^\]]*)\]\(([^)]+)\)/g,
-    (_match, nickname, userId) => {
-      return chalk.cyan(`@${coloredName(userId, nickname)}`);
+    (_match, nickname: string, userId: string) => {
+      try {
+        return chalk.cyan(`@${coloredName(userId, nickname)}`);
+      } catch {
+        return chalk.cyan(`@${nickname}`);
+      }
     },
   );
 }
 
 /**
- * Render Markdown text as ANSI for CLI display.
- * Uses marked-terminal for rendering, with @[]() mentions pre-colored.
- */
-export async function renderMarkdownAnsi(text: string): Promise<string> {
-  const colored = colorizeMentions(text);
-  try {
-    const parse = await ensureMarked();
-    return parse(colored) as string;
-  } catch {
-    return colored;
-  }
-}
-
-/**
  * Format an inbound message for CLI display.
- * Two-line layout (header + body), inspired by the old format but with
- * more slots: type label, nickname, group/scope, mention mark, time, text.
+ * Two-line layout (header + body).
  *
  * Format:
  *   私  昵称 👤 类型 · 11:45:14
@@ -141,15 +161,20 @@ export async function renderMarkdownAnsi(text: string): Promise<string> {
 export function formatInboundMessage(
   msg: ChatMessage,
   isGroup: boolean,
-  isMaster?: boolean,
 ): string {
   const time = chalk.dim(formatTime(msg.timestamp));
   const name = msg.fromNickname || msg.fromUserId;
-  const typeLabel = userTypeLabel(msg.fromUserId);
-  const nick = coloredName(msg.fromUserId, name);
+  let typeLabel = "";
+  let nick = name;
+  try {
+    typeLabel = userTypeLabel(msg.fromUserId);
+    nick = coloredName(msg.fromUserId, name);
+  } catch {
+    // Trust store not initialized — use plain names
+    nick = chalk.yellow(name);
+  }
   const mentionMark = msg.isMentioned ? chalk.yellow(" @我") : "";
 
-  // Detect attachments in text
   const hasAttachment =
     msg.text &&
     (msg.text.includes("[image:") ||
@@ -159,7 +184,6 @@ export function formatInboundMessage(
       msg.text.includes("[附件:"));
   const attachMark = hasAttachment ? chalk.blue(" 📎") : "";
 
-  // Detect content references
   const hasContent = msg.text && msg.text.includes("[content:");
   const contentMark = hasContent ? chalk.cyan(" 📄") : "";
 

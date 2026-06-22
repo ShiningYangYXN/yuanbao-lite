@@ -22,7 +22,6 @@ Yuanbao Lite 采用同构（isomorphic）架构，同一份 TypeScript 源码可
 | 持久化（自定义适配器）         | ✅                | ✅         | ✅         | ✅           |
 | 文件上传                       | ✅                | ✅         | ❌         | ❌           |
 | /shell、/term                  | ✅                | ✅         | ❌         | ❌           |
-| /tempfile                      | ✅                | ✅         | ❌         | ❌           |
 
 ## 实现原理
 
@@ -129,7 +128,7 @@ class BrowserLocalStorageAdapter implements PersistenceAdapter {
 
 ### 5. 命令系统浏览器移植
 
-所有 53 个命令 handler 已重构为浏览器安全：
+所有 49 个命令 handler 已重构为浏览器安全：
 
 | 命令             | Node 依赖            | 浏览器处理                                 |
 | ---------------- | -------------------- | ------------------------------------------ |
@@ -139,7 +138,6 @@ class BrowserLocalStorageAdapter implements PersistenceAdapter {
 | `/log`           | `node:fs`            | 改用 `PersistenceAdapter`                  |
 | `/llm reset`     | `node:fs`            | 改用 `PersistenceAdapter.remove()`         |
 | `/myip`          | `node:os`            | `getNodeModules().os`，跳过本地接口        |
-| `/tempfile`      | `node:fs`            | `getNodeModules().fs`，返回错误            |
 | `/stickers load` | `node:fs`            | `getNodeModules().fs`，返回错误            |
 
 ## 打包指南

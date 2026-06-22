@@ -22,7 +22,7 @@ Yuanbao Lite 采用 **同构（isomorphic）架构** —— 同一份 TypeScript
 │              │              │                           │
 │ • llm-takeover│ • registry  │ • ws/client.ts            │
 │ • alias       │ • handlers/ │ • http/request.ts         │
-│ • contacts    │   (53个)    │ • http/media.ts           │
+│ • contacts    │   (49个)    │ • http/media.ts           │
 │ • groups      │ • types.ts  │ • persistence/adapter.ts  │
 │ • history     │              │                           │
 │ • mention     │              │                           │
@@ -139,14 +139,13 @@ if (typeof process !== "undefined" && process.versions?.node) {
 
 **特点**：
 
-- 53 个内置命令，一命令一文件，按分类组织
+- 49 个内置命令，一命令一文件，按分类组织
 - 命令系统本身是浏览器安全的（所有 Node-only 操作通过动态 `import()` + try/catch）
 - 通过 `await bot.init()` 懒加载，避免增加初始 bundle 体积
 
 **Node-only 命令的处理方式**：
 
 - `/shell`、`/term`：`await import("node:child_process")`，浏览器调用返回明确错误
-- `/tempfile`：`getNodeModules().fs`，浏览器不可用
 - `/myip`：`getNodeModules().os`，浏览器跳过本地接口检测
 
 ### 3. LLM 接管引擎
