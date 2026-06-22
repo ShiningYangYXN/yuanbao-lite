@@ -289,6 +289,9 @@ async function dispatchCommand(line: string, client: DaemonClient): Promise<void
   const chatMode = state.chatMode === "group" ? "group" : "direct";
   const chatTarget = state.chatTarget || "cli";
 
+  // Check for commands that should terminate the CLI after execution
+  const shouldExitAfter = line.startsWith("/daemon stop") || line.startsWith("/daemon reset");
+
   try {
     const result = await client.runCommand(line, { chatMode: chatMode as "direct" | "group", chatTarget });
     if (!result.ok) {
@@ -308,6 +311,13 @@ async function dispatchCommand(line: string, client: DaemonClient): Promise<void
     }
   } catch (err) {
     printError(`dispatch 失败: ${(err as Error).message}`);
+  }
+
+  // After /daemon stop or /daemon reset, the daemon is gone.
+  // The CLI can no longer communicate with it, so exit cleanly.
+  if (shouldExitAfter) {
+    console.log(chalk.dim("CLI 将退出（daemon 已停止）"));
+    process.exit(0);
   }
 }
 
