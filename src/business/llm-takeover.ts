@@ -26,8 +26,8 @@ import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createAmazonBedrock } from "@ai-sdk/amazon-bedrock";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { marked } from "marked";
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
-import { dirname } from "node:path";
+import type { PersistenceAdapter } from "../access/persistence/adapter.js";
+import { getDefaultPersistenceAdapter } from "../access/persistence/adapter.js";
 import { createLog } from "../logger.js";
 import type { ModuleLog } from "../logger.js";
 import type { ChatMessage, YuanbaoMsgBodyElement } from "../types.js";
@@ -554,6 +554,7 @@ export class LlmTakeoverEngine {
   private log: ModuleLog;
   private mergeBuffer = new Map<string, { messages: ChatMessage[]; timer: ReturnType<typeof setTimeout> }>();
   private persistencePath: string | undefined;
+  private persistenceAdapter: PersistenceAdapter | null = null;
   private activeProviderName: string = "";
   private activeKeyIndex = 0;
   private keyFailures = new Map<string, number>();
@@ -561,7 +562,7 @@ export class LlmTakeoverEngine {
   private providerFailures = 0;
   private usageRecords: UsageRecord[] = [];
 
-  constructor(config?: LlmTakeoverConfig & { persistencePath?: string }) {
+  constructor(config?: LlmTakeoverConfig & { persistencePath?: string; persistenceAdapter?: PersistenceAdapter }) {
     this.config = {
       enabled: config?.enabled ?? true,
       systemPrompt: config?.systemPrompt ?? DEFAULT_SYSTEM_PROMPT,
@@ -590,12 +591,25 @@ export class LlmTakeoverEngine {
     this.conversationManager = new ConversationManager(this.config.maxHistoryTurns);
     this.log = createLog("llm-takeover");
     this.persistencePath = config?.persistencePath;
+    this.persistenceAdapter = config?.persistenceAdapter ?? null;
     this.activeProviderName = this.config.provider;
     if (this.persistencePath) {
-      const existed = existsSync(this.persistencePath);
+      const adapter = this.getAdapter();
+      const existed = adapter.exists(this.persistencePath);
       this.loadPersistedConfig();
       if (!existed) this.persistConfig();
     }
+  }
+
+  /**
+   * Resolve the persistence adapter — explicit config wins, else runtime default.
+   */
+  private getAdapter(): PersistenceAdapter {
+    if (!this.persistencePath) {
+      throw new Error("LlmTakeoverEngine: persistencePath is required to use persistence");
+    }
+    if (this.persistenceAdapter) return this.persistenceAdapter;
+    return getDefaultPersistenceAdapter();
   }
 
   getConfig(): Readonly<Required<LlmTakeoverConfig>> { return { ...this.config }; }
@@ -664,21 +678,21 @@ export class LlmTakeoverEngine {
   persistConfig(): void {
     if (!this.persistencePath) return;
     try {
-      const dir = dirname(this.persistencePath);
-      if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+      const adapter = this.getAdapter();
       // Never persist systemPrompt — it's locked to DEFAULT_SYSTEM_PROMPT.
       // Only persist userSystemPrompt (which is appended at runtime).
       const { systemPrompt: _strip, ...persistable } = this.config;
       void _strip;
-      writeFileSync(this.persistencePath, JSON.stringify(persistable, null, 2), "utf-8");
+      adapter.write(this.persistencePath, JSON.stringify(persistable, null, 2));
     } catch (e) { this.log.error(`persist failed: ${(e as Error).message}`); }
   }
 
   private loadPersistedConfig(): void {
     if (!this.persistencePath) return;
     try {
-      if (!existsSync(this.persistencePath)) return;
-      const raw = readFileSync(this.persistencePath, "utf-8");
+      const adapter = this.getAdapter();
+      if (!adapter.exists(this.persistencePath)) return;
+      const raw = adapter.read(this.persistencePath);
       const saved = JSON.parse(raw) as Partial<LlmTakeoverConfig>;
       // Validate structure — if malformed, treat as corrupt and overwrite
       if (!saved || typeof saved !== "object") {
@@ -1159,6 +1173,8 @@ export class LlmTakeoverEngine {
   }
 }
 
-export function createLlmTakeover(config?: LlmTakeoverConfig & { persistencePath?: string }): LlmTakeoverEngine {
+export function createLlmTakeover(
+  config?: LlmTakeoverConfig & { persistencePath?: string; persistenceAdapter?: PersistenceAdapter },
+): LlmTakeoverEngine {
   return new LlmTakeoverEngine(config);
 }

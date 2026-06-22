@@ -25,14 +25,53 @@
  * Persistence: ~/.yuanbao-lite/trust.json
  */
 
-import { existsSync, readFileSync, mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
-import { homedir } from "node:os";
 import { createLog } from "../logger.js";
+import type { PersistenceAdapter } from "../access/persistence/adapter.js";
+import {
+  getDefaultPersistenceAdapter,
+  getDefaultPersistenceDir,
+  nodePathJoin,
+} from "../access/persistence/adapter.js";
 
 const log = createLog("trust");
 
-const TRUST_FILE = join(homedir(), ".yuanbao-lite", "trust.json");
+// ─── Persistence path + adapter (lazy) ───
+
+let trustPersistencePath: string | null = null;
+let trustPersistenceAdapter: PersistenceAdapter | null = null;
+
+/**
+ * Configure the trust module's persistence backend.
+ *
+ * - Node callers can omit `persistencePath` to use the default
+ *   `~/.yuanbao-lite/trust.json`.
+ * - Browser callers MUST provide both `persistencePath` and `persistenceAdapter`.
+ */
+export function initTrustStore(config?: {
+  persistencePath?: string;
+  persistenceAdapter?: PersistenceAdapter;
+}): void {
+  trustPersistencePath = config?.persistencePath ?? null;
+  trustPersistenceAdapter = config?.persistenceAdapter ?? null;
+  cache = null;
+}
+
+function getPath(): string {
+  if (trustPersistencePath) return trustPersistencePath;
+  return nodePathJoin
+    ? nodePathJoin(getDefaultPersistenceDir(), "trust.json")
+    : (() => {
+        throw new Error(
+          "Trust module: no persistencePath configured and no Node default available. " +
+            "Call initTrustStore({ persistencePath, persistenceAdapter }) first.",
+        );
+      })();
+}
+
+function getAdapter(): PersistenceAdapter {
+  if (trustPersistenceAdapter) return trustPersistenceAdapter;
+  return getDefaultPersistenceAdapter();
+}
 
 export type TrustEntry = {
   /** User ID (Yuanbao account ID) */
@@ -65,9 +104,11 @@ const grantTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 function load(): TrustData {
   if (cache) return cache;
+  const filePath = getPath();
+  const adapter = getAdapter();
   try {
-    if (existsSync(TRUST_FILE)) {
-      const raw = readFileSync(TRUST_FILE, "utf-8");
+    if (adapter.exists(filePath)) {
+      const raw = adapter.read(filePath);
       const parsed = JSON.parse(raw) as TrustData;
       // Validate structure — if malformed, treat as file-not-found
       if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.entries)) {
@@ -87,9 +128,9 @@ function load(): TrustData {
 
 function save(): void {
   try {
-    const dir = join(homedir(), ".yuanbao-lite");
-    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-    writeFileSync(TRUST_FILE, JSON.stringify(cache, null, 2), "utf-8");
+    const filePath = getPath();
+    const adapter = getAdapter();
+    adapter.write(filePath, JSON.stringify(cache, null, 2));
   } catch (err) {
     log.error(`failed to save trust file: ${(err as Error).message}`);
   }

@@ -32,9 +32,6 @@
  * ```
  */
 
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
-import { homedir } from "node:os";
 import { YuanbaoWsClient } from "./access/ws/client.js";
 import { decodeInboundMessage } from "./access/ws/biz-codec.js";
 import { createLog, setLogLevel, setLogPrefix } from "./logger.js";
@@ -49,10 +46,20 @@ import { toChatMessage, buildTextMsgBody } from "./business/messaging/extract.js
 // contribute to the runtime import graph.
 import type { CommandSystem } from "./commands/registry.js";
 import type { CommandSystemConfig, CommandDefinition } from "./commands/types.js";
+import type { PersistenceAdapter } from "./access/persistence/adapter.js";
+import {
+  getDefaultPersistenceAdapter,
+  getDefaultPersistenceDir,
+  joinPath,
+} from "./access/persistence/adapter.js";
 import { uploadMedia, downloadMedia, extractMediaInfo, downloadAllMedia, buildImageMsgBody, buildFileMsgBody } from "./access/http/media.js";
 import type { UploadResult, DownloadResult, MediaInfo } from "./access/http/media.js";
 import { detectSticker, prepareStickerMsgBody, buildEmojiMsgBody } from "./business/sticker.js";
 import type { StickerInfo } from "./business/sticker.js";
+import { initBlockStore } from "./business/block.js";
+import { initTrustStore } from "./business/trust.js";
+import { initRemindersStore } from "./business/reminders.js";
+import { initStickerCacheStore } from "./business/sticker.js";
 import { LlmTakeoverEngine, createLlmTakeover } from "./business/llm-takeover.js";
 import type { LlmTakeoverConfig } from "./business/llm-takeover.js";
 import { AliasStore, getGlobalAliasStore } from "./business/alias.js";
@@ -119,6 +126,32 @@ export type YuanbaoBotConfig = YuanbaoAccountConfig & {
   llmConfig?: LlmTakeoverConfig;
   /** Whether non-slash messages should trigger LLM auto-reply (default: true) */
   llmAutoReply?: boolean;
+  /**
+   * Persistence configuration. Controls how the bot's internal stores
+   * (alias, contacts, groups, history, trust, block, reminders, llm-config,
+   * sticker-cache, runtime-prefs) are persisted.
+   *
+   * - Omitted (default):
+   *     - Under Node: uses `~/.yuanbao-lite/` with NodeFsAdapter.
+   *     - Under browser: throws at construction — caller MUST provide
+   *       explicit config OR set `persistence: null` to disable persistence
+   *       entirely (all stores become in-memory only, lost on reload).
+   *
+   * - `{ adapter, dir }`:
+   *     - `adapter`: PersistenceAdapter implementation (e.g.
+   *       BrowserLocalStorageAdapter from Phase 3). If omitted, the runtime
+   *       default is used (NodeFsAdapter under Node, throws in browser).
+   *     - `dir`: Base directory (Node) or key prefix (browser) for
+   *       persistence files. If omitted, defaults to `~/.yuanbao-lite/`
+   *       under Node; required under browser.
+   *
+   * - `null`: disable persistence entirely. All stores run in-memory only.
+   *   Useful for browser demos, ephemeral sessions, or tests.
+   */
+  persistence?: {
+    adapter?: PersistenceAdapter;
+    dir?: string;
+  } | null;
 };
 
 // ─── Main Bot class ───
@@ -181,29 +214,88 @@ export class YuanbaoBot {
 
     this.log = createLog("bot", config.logger);
 
+    // ─── Persistence configuration ───
+    //
+    // Resolve the persistence directory and adapter up-front so all stores
+    // share the same backend. Three modes:
+    //
+    //   1. `config.persistence === null` — disable persistence entirely.
+    //      All stores run in-memory only.
+    //   2. `config.persistence === { adapter, dir }` — use the provided
+    //      adapter and base directory.
+    //   3. `config.persistence === undefined` (default) — use Node default
+    //      (`~/.yuanbao-lite/` with NodeFsAdapter). Throws in browser.
+    const persistenceDisabled = config.persistence === null;
+    const persistenceDir = persistenceDisabled
+      ? null
+      : config.persistence?.dir ?? getDefaultPersistenceDir();
+    const persistenceAdapter = persistenceDisabled ? undefined : config.persistence?.adapter;
+
+    // Helper: build a persistence path under the configured dir. Returns
+    // undefined if persistence is disabled (in-memory mode).
+    const pathFor = (filename: string): string | undefined => {
+      if (persistenceDisabled || persistenceDir === null) return undefined;
+      return joinPath(persistenceDir, filename);
+    };
+
+    // Propagate persistence config to the module-level singleton stores
+    // (block, trust, reminders, sticker-cache). These modules use a
+    // module-level singleton pattern with initXxxStore() for configuration.
+    //
+    // When persistence is disabled OR a custom adapter is provided, we
+    // call their initXxxStore() to apply the configuration. Under Node
+    // with default config (no persistence field), the modules auto-resolve
+    // to NodeFsAdapter + ~/.yuanbao-lite/<module>.json, so we skip the
+    // explicit init.
+    //
+    // These modules are all browser-safe (no static node:* imports), so
+    // importing them statically doesn't pull node:* into the bundle.
+    if (!persistenceDisabled && persistenceAdapter) {
+      initBlockStore({
+        persistencePath: pathFor("block.json"),
+        persistenceAdapter,
+      });
+      initTrustStore({
+        persistencePath: pathFor("trust.json"),
+        persistenceAdapter,
+      });
+      initRemindersStore({
+        persistencePath: pathFor("reminders.json"),
+        persistenceAdapter,
+      });
+      initStickerCacheStore({
+        persistencePath: pathFor("sticker-cache.json"),
+        persistenceAdapter,
+      });
+    }
+
     // Initialize alias store
     this.aliasStore = getGlobalAliasStore({
-      persistencePath: join(homedir(), ".yuanbao-lite", "aliases.json"),
+      persistencePath: pathFor("aliases.json"),
       autoSave: true,
+      persistenceAdapter,
     });
 
     // Initialize contact store
     this.contactStore = getGlobalContactStore({
-      persistencePath: join(homedir(), ".yuanbao-lite", "contacts.json"),
+      persistencePath: pathFor("contacts.json"),
       autoSave: true,
+      persistenceAdapter,
     });
 
     // Initialize group store
     this.groupStore = getGlobalGroupStore({
-      persistencePath: join(homedir(), ".yuanbao-lite", "groups.json"),
+      persistencePath: pathFor("groups.json"),
       autoSave: true,
+      persistenceAdapter,
     });
 
     // Initialize history store
     this.historyStore = getGlobalHistoryStore({
       maxMessages: this.account.historyLimit || 10000,
-      persistencePath: join(homedir(), ".yuanbao-lite", "history.jsonl"),
+      persistencePath: pathFor("history.jsonl"),
       autoPersist: true,
+      persistenceAdapter,
     });
 
     // Initialize command system — DEFERRED to init().
@@ -229,15 +321,17 @@ export class YuanbaoBot {
     // The LLM engine's requireMentionInGroup (default true) ensures it only replies
     // to @mentions in groups, preventing spam.
     this.llmAutoReply = config.llmAutoReply ?? true;
+    const llmPersistencePath = pathFor("llm-config.json");
     this.llmEngine = createLlmTakeover({
       ...(config.llmConfig ?? {}),
-      persistencePath: join(homedir(), ".yuanbao-lite", "llm-config.json"),
+      ...(llmPersistencePath ? { persistencePath: llmPersistencePath } : {}),
+      ...(persistenceAdapter ? { persistenceAdapter } : {}),
     });
     // Diagnostic: log LLM engine state at startup so users can see why auto-reply
     // may not be working (no provider configured, disabled, etc.)
     const _llmCfg = this.llmEngine.getConfig();
     const _providerNames = Object.keys(_llmCfg.customProviders ?? {});
-    this.log.info(`LLM engine: enabled=${_llmCfg.enabled} autoReply=${this.llmAutoReply} isReady=${this.llmEngine.isReady} activeProvider="${_llmCfg.provider}" providers=[${_providerNames.join(",")}] persistencePath=${join(homedir(), ".yuanbao-lite", "llm-config.json")}`);
+    this.log.info(`LLM engine: enabled=${_llmCfg.enabled} autoReply=${this.llmAutoReply} isReady=${this.llmEngine.isReady} activeProvider="${_llmCfg.provider}" providers=[${_providerNames.join(",")}] persistencePath=${llmPersistencePath ?? "(in-memory)"}`);
     if (this.llmEngine.isReady) {
       const _ap = _llmCfg.customProviders?.[_llmCfg.provider];
       this.log.info(`LLM active provider: ${_llmCfg.provider} format=${_ap?.apiFormat} model=${_ap?.model} baseUrl=${_ap?.baseUrl} keys=${(_ap?.apiKeys?.length ?? 0) || (_ap?.apiKey ? 1 : 0)}`);
@@ -1141,14 +1235,25 @@ export class YuanbaoBot {
   }
 
   /**
-   * Load persisted runtime preferences from ~/.yuanbao-lite/runtime-prefs.json.
-   * Restores settings like log level that were changed via /log command.
+   * Load persisted runtime preferences (e.g. log level set via /log command).
+   *
+   * Uses the bot's persistence adapter — under Node, reads from
+   * `~/.yuanbao-lite/runtime-prefs.json`. Under browser, reads from
+   * the configured adapter (or no-ops if persistence is disabled).
    */
   private loadRuntimePrefs(): void {
+    // Persistence config is captured in the constructor closure below.
+    // We re-derive the path here (rather than storing it on `this`) to
+    // keep the bot's field count minimal.
+    const persistenceDisabled = this.config.persistence === null;
+    if (persistenceDisabled) return;
+
     try {
-      const prefsPath = join(homedir(), ".yuanbao-lite", "runtime-prefs.json");
-      if (!existsSync(prefsPath)) return;
-      const raw = readFileSync(prefsPath, "utf-8");
+      const dir = this.config.persistence?.dir ?? getDefaultPersistenceDir();
+      const adapter = this.config.persistence?.adapter ?? getDefaultPersistenceAdapter();
+      const prefsPath = joinPath(dir, "runtime-prefs.json");
+      if (!adapter.exists(prefsPath)) return;
+      const raw = adapter.read(prefsPath);
       const prefs = JSON.parse(raw) as Record<string, unknown>;
       if (prefs.logLevel && typeof prefs.logLevel === "string") {
         const validLevels = ["debug", "info", "warn", "error"];

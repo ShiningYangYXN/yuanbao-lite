@@ -11,10 +11,10 @@
  *   - Statistics (message counts, active users/groups)
  */
 
-import { existsSync, readFileSync, appendFileSync, writeFileSync, mkdirSync } from "node:fs";
-import { dirname } from "node:path";
 import { createLog } from "../logger.js";
 import type { ModuleLog } from "../logger.js";
+import type { PersistenceAdapter } from "../access/persistence/adapter.js";
+import { getDefaultPersistenceAdapter } from "../access/persistence/adapter.js";
 import type { ChatMessage } from "../types.js";
 
 // ─── Types ───
@@ -76,6 +76,13 @@ export type HistoryStoreConfig = {
   autoPersist?: boolean;
   /** Whether to auto-load on startup (default: true if persistencePath is set) */
   autoLoad?: boolean;
+  /**
+   * Persistence adapter — abstracts file I/O so the store works in browser
+   * and edge runtimes. If omitted, the runtime default is used:
+   *   - Node.js: NodeFsAdapter (uses node:fs, supports efficient append)
+   *   - Browser: throws — caller MUST pass an explicit adapter.
+   */
+  persistenceAdapter?: PersistenceAdapter;
 };
 
 // ─── HistoryStore ───
@@ -85,8 +92,10 @@ export class MessageHistoryStore {
   private config: Required<Pick<HistoryStoreConfig, "maxMessages" | "autoPersist">> & {
     persistencePath?: string;
     autoLoad: boolean;
+    persistenceAdapter?: PersistenceAdapter;
   };
   private log: ModuleLog;
+  private persistenceAdapter: PersistenceAdapter | null = null;
 
   constructor(config?: HistoryStoreConfig) {
     this.config = {
@@ -94,16 +103,34 @@ export class MessageHistoryStore {
       persistencePath: config?.persistencePath,
       autoPersist: config?.autoPersist ?? false,
       autoLoad: config?.autoLoad ?? Boolean(config?.persistencePath),
+      persistenceAdapter: config?.persistenceAdapter,
     };
     this.log = createLog("history");
 
     if (this.config.autoLoad && this.config.persistencePath) {
-      const fileExisted = existsSync(this.config.persistencePath);
+      const adapter = this.getAdapter();
+      const fileExisted = adapter.exists(this.config.persistencePath);
       this.load();
       if (!fileExisted) {
         this.save();
       }
     }
+  }
+
+  /**
+   * Resolve the persistence adapter — explicit config wins, else runtime default.
+   */
+  private getAdapter(): PersistenceAdapter {
+    if (!this.config.persistencePath) {
+      throw new Error("MessageHistoryStore: persistencePath is required to use persistence");
+    }
+    if (this.config.persistenceAdapter) {
+      return this.config.persistenceAdapter;
+    }
+    if (!this.persistenceAdapter) {
+      this.persistenceAdapter = getDefaultPersistenceAdapter();
+    }
+    return this.persistenceAdapter;
   }
 
   // ─── Add messages ───
@@ -287,13 +314,9 @@ export class MessageHistoryStore {
     }
 
     try {
-      const dir = dirname(this.config.persistencePath);
-      if (!existsSync(dir)) {
-        mkdirSync(dir, { recursive: true });
-      }
-
+      const adapter = this.getAdapter();
       const lines = this.messages.map(m => JSON.stringify(m)).join("\n") + "\n";
-      writeFileSync(this.config.persistencePath, lines, "utf-8");
+      adapter.write(this.config.persistencePath, lines);
       this.log.info(`history saved: ${this.messages.length} messages to ${this.config.persistencePath}`);
       return true;
     } catch (err) {
@@ -304,17 +327,23 @@ export class MessageHistoryStore {
 
   /**
    * Append a single message to the persistence file (efficient for auto-persist).
+   *
+   * If the underlying adapter doesn't implement `append`, falls back to a
+   * full `save()` (read-modify-write). This is correct but inefficient for
+   * append-heavy workloads — browser adapters based on localStorage will
+   * take this path.
    */
   append(msg: ChatMessage): boolean {
     if (!this.config.persistencePath) return false;
 
     try {
-      const dir = dirname(this.config.persistencePath);
-      if (!existsSync(dir)) {
-        mkdirSync(dir, { recursive: true });
+      const adapter = this.getAdapter();
+      if (adapter.append) {
+        adapter.append(this.config.persistencePath, JSON.stringify(msg) + "\n");
+      } else {
+        // Fallback: full save (read-modify-write semantics).
+        return this.save();
       }
-
-      appendFileSync(this.config.persistencePath, JSON.stringify(msg) + "\n", "utf-8");
       return true;
     } catch (err) {
       this.log.error(`failed to append history: ${(err as Error).message}`);
@@ -331,12 +360,13 @@ export class MessageHistoryStore {
     if (!this.config.persistencePath) return false;
 
     try {
-      if (!existsSync(this.config.persistencePath)) {
+      const adapter = this.getAdapter();
+      if (!adapter.exists(this.config.persistencePath)) {
         this.log.info("persistence file not found, starting with empty history");
         return true;
       }
 
-      const raw = readFileSync(this.config.persistencePath, "utf-8").trim();
+      const raw = adapter.read(this.config.persistencePath).trim();
       if (!raw) return true;
 
       const lines = raw.split("\n");

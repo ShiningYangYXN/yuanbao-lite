@@ -61,6 +61,19 @@ export interface PersistenceAdapter {
    * a directory before multiple writes.
    */
   ensureParentDir(path: string): void;
+
+  /**
+   * Optional: append data to an existing path. If the path doesn't exist,
+   * it's created. Adapters that support atomic append (e.g. NodeFsAdapter
+   * with `appendFileSync`) should implement this for efficiency.
+   *
+   * Adapters that DON'T implement it (e.g. localStorage-based adapters)
+   * will cause callers to fall back to read-modify-write. This is correct
+   * but inefficient for large append-heavy workloads (e.g. JSONL history).
+   *
+   * Callers should always check `if (adapter.append)` before calling.
+   */
+  append?(path: string, data: string): void;
 }
 
 // ─── Indirect Node require (browser-safe) ───
@@ -80,8 +93,12 @@ export interface PersistenceAdapter {
  *     `node:module` that's only loaded when the runtime check passes.
  *
  * Top-level await is supported in ESM (Node 14+, all modern bundlers).
+ *
+ * Exported so that modules with Node-only functionality (e.g.
+ * `loadStickerPacksFromDir` in sticker.ts) can lazily load `node:fs` /
+ * `node:path` without adding static imports that would break browser bundles.
  */
-let indirectRequire: NodeRequire | null = null;
+export let indirectRequire: NodeRequire | null = null;
 
 if (typeof process !== "undefined" && process.versions?.node) {
   try {
@@ -91,6 +108,75 @@ if (typeof process !== "undefined" && process.versions?.node) {
     // Dynamic import failed at runtime — fall through to null.
     // Stores that need persistence will throw a clear error when used.
   }
+}
+
+/**
+ * Node `os.homedir()` — lazily resolved via the same indirect-require
+ * pattern. Returns `null` in browser/edge runtimes. Used by modules
+ * (block.ts, trust.ts, reminders.ts, etc.) that compute a default
+ * persistence path under `~/.yuanbao-lite/`.
+ */
+export const nodeHomedir: string | null = (() => {
+  if (!indirectRequire) return null;
+  try {
+    const os = indirectRequire("node:os");
+    return os.homedir();
+  } catch {
+    return null;
+  }
+})();
+
+/**
+ * Node `path.join` — lazily resolved. Returns `null` in browser/edge.
+ * Used by modules that compute default persistence paths.
+ */
+export const nodePathJoin: ((...paths: string[]) => string) | null = (() => {
+  if (!indirectRequire) return null;
+  try {
+    const path = indirectRequire("node:path");
+    return path.join;
+  } catch {
+    return null;
+  }
+})();
+
+/**
+ * Compute the default persistence directory: `~/.yuanbao-lite/` under Node.
+ *
+ * Throws in browser/edge — callers MUST provide an explicit `persistencePath`
+ * (which can be any opaque string the adapter understands, e.g. a
+ * localStorage key prefix).
+ */
+export function getDefaultPersistenceDir(): string {
+  if (!nodeHomedir || !nodePathJoin) {
+    throw new Error(
+      "getDefaultPersistenceDir() requires Node.js runtime. " +
+        "Browser callers must provide an explicit persistencePath.",
+    );
+  }
+  return nodePathJoin(nodeHomedir, ".yuanbao-lite");
+}
+
+/**
+ * Join path segments — uses `node:path.join` under Node, falls back to
+ * `/`-separated join in browser/edge (sufficient for opaque adapter keys).
+ *
+ * Use this instead of `import { join } from "node:path"` in any module
+ * that needs to be browser-compatible.
+ */
+export function joinPath(...parts: string[]): string {
+  if (nodePathJoin) return nodePathJoin(...parts);
+  // Browser fallback: simple /-join. Trims trailing/leading slashes on
+  // adjacent parts to avoid double-slashes. Empty parts are skipped.
+  return parts
+    .filter(p => p !== undefined && p !== null && p !== "")
+    .map((p, i) => {
+      let s = String(p);
+      if (i > 0) s = s.replace(/^\/+/, "");
+      if (i < parts.length - 1) s = s.replace(/\/+$/, "");
+      return s;
+    })
+    .join("/");
 }
 
 // ─── NodeFsAdapter (default for Node) ───
@@ -140,6 +226,11 @@ export class NodeFsAdapter implements PersistenceAdapter {
     if (!this.fs.existsSync(dir)) {
       this.fs.mkdirSync(dir, { recursive: true });
     }
+  }
+
+  append(path: string, data: string): void {
+    this.ensureParentDir(path);
+    this.fs.appendFileSync(path, data, "utf-8");
   }
 }
 

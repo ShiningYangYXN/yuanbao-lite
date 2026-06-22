@@ -17,13 +17,17 @@
  * is always 0 for custom stickers; the actual sticker identity is in the "data" JSON.
  */
 
-import { existsSync, readdirSync, readFileSync, statSync, writeFileSync, mkdirSync } from "node:fs";
-import { join, extname, basename } from "node:path";
-import { homedir } from "node:os";
 import { createLog } from "../logger.js";
 import type { YuanbaoMsgBodyElement, ImImageInfoArrayItem } from "../types.js";
 import { uploadMediaToCos } from "../access/http/media.js";
 import type { ResolvedYuanbaoAccount } from "../types.js";
+import type { PersistenceAdapter } from "../access/persistence/adapter.js";
+import {
+  getDefaultPersistenceAdapter,
+  getDefaultPersistenceDir,
+  indirectRequire,
+  nodePathJoin,
+} from "../access/persistence/adapter.js";
 
 // ─── Types ───
 
@@ -190,7 +194,44 @@ type StickerCache = {
   stickers: Record<string, CachedSticker>;
 };
 
-const STICKER_CACHE_PATH = join(homedir(), ".yuanbao-lite", "sticker-cache.json");
+// ─── Sticker cache persistence (lazy, adapter-backed) ───
+
+let stickerCachePersistencePath: string | null = null;
+let stickerCachePersistenceAdapter: PersistenceAdapter | null = null;
+
+/**
+ * Configure the sticker cache's persistence backend.
+ *
+ * - Node callers can omit `persistencePath` to use the default
+ *   `~/.yuanbao-lite/sticker-cache.json`.
+ * - Browser callers MUST provide both `persistencePath` and `persistenceAdapter`.
+ */
+export function initStickerCacheStore(config?: {
+  persistencePath?: string;
+  persistenceAdapter?: PersistenceAdapter;
+}): void {
+  stickerCachePersistencePath = config?.persistencePath ?? null;
+  stickerCachePersistenceAdapter = config?.persistenceAdapter ?? null;
+  stickerCache = null; // reset cache so next getStickerCache() reloads
+}
+
+function getCachePath(): string {
+  if (stickerCachePersistencePath) return stickerCachePersistencePath;
+  return nodePathJoin
+    ? nodePathJoin(getDefaultPersistenceDir(), "sticker-cache.json")
+    : (() => {
+        throw new Error(
+          "Sticker cache: no persistencePath configured and no Node default available. " +
+            "Call initStickerCacheStore({ persistencePath, persistenceAdapter }) first.",
+        );
+      })();
+}
+
+function getCacheAdapter(): PersistenceAdapter {
+  if (stickerCachePersistenceAdapter) return stickerCachePersistenceAdapter;
+  return getDefaultPersistenceAdapter();
+}
+
 let stickerCache: StickerCache | null = null;
 
 function getStickerCache(): StickerCache {
@@ -219,8 +260,10 @@ function getStickerCache(): StickerCache {
 
 function loadStickerCache(): StickerCache {
   try {
-    if (existsSync(STICKER_CACHE_PATH)) {
-      const raw = readFileSync(STICKER_CACHE_PATH, "utf-8");
+    const filePath = getCachePath();
+    const adapter = getCacheAdapter();
+    if (adapter.exists(filePath)) {
+      const raw = adapter.read(filePath);
       return JSON.parse(raw) as StickerCache;
     }
   } catch {
@@ -232,11 +275,9 @@ function loadStickerCache(): StickerCache {
 function saveStickerCache(): void {
   if (!stickerCache) return;
   try {
-    const dir = join(STICKER_CACHE_PATH, "..");
-    if (!existsSync(dir)) {
-      mkdirSync(dir, { recursive: true });
-    }
-    writeFileSync(STICKER_CACHE_PATH, JSON.stringify(stickerCache, null, 2), "utf-8");
+    const filePath = getCachePath();
+    const adapter = getCacheAdapter();
+    adapter.write(filePath, JSON.stringify(stickerCache, null, 2));
   } catch {
     // Ignore write errors
   }
@@ -804,32 +845,46 @@ export function searchStickers(query: string, limit = 20): StickerInfo[] {
 
 /**
  * Load sticker packs from a local directory.
+ *
+ * Node-only — uses `node:fs.readdirSync` / `statSync` to scan a directory.
+ * Browser callers should use `registerStickerPack()` directly with sticker
+ * sources that are URLs (the bot will fetch + upload via `uploadMediaToCos`).
+ *
+ * Throws if called in a browser/edge runtime (no `node:fs` available).
  */
 export function loadStickerPacksFromDir(dirPath: string): number {
   const log = createLog("sticker");
+  if (!indirectRequire) {
+    throw new Error(
+      "loadStickerPacksFromDir is Node-only — it requires node:fs.readdirSync. " +
+        "Browser callers should use registerStickerPack() with URL-based sticker sources.",
+    );
+  }
+  const fs = indirectRequire("node:fs");
+  const path = indirectRequire("node:path");
   let packCount = 0;
 
-  if (!existsSync(dirPath)) {
+  if (!fs.existsSync(dirPath)) {
     log.warn(`sticker directory not found: ${dirPath}`);
     return 0;
   }
 
-  const entries = readdirSync(dirPath, { withFileTypes: true });
+  const entries = fs.readdirSync(dirPath, { withFileTypes: true });
 
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
 
-    const packDir = join(dirPath, entry.name);
+    const packDir = path.join(dirPath, entry.name);
     const stickers: StickerInfo[] = [];
-    const files = readdirSync(packDir);
+    const files = fs.readdirSync(packDir);
 
     for (const file of files) {
-      const ext = extname(file).toLowerCase();
+      const ext = path.extname(file).toLowerCase();
       if (![".gif", ".webp", ".png", ".jpg", ".jpeg"].includes(ext)) continue;
 
-      const filePath = join(packDir, file);
-      const name = basename(file, ext);
-      const _stat = statSync(filePath);
+      const filePath = path.join(packDir, file);
+      const name = path.basename(file, ext);
+      const _stat = fs.statSync(filePath);
 
       stickers.push({
         id: `${entry.name}:${name}`,
@@ -926,7 +981,13 @@ export async function prepareStickerMsgBody(
   const regSticker = stickerRegistry.get(stickerId);
   if (regSticker) {
     // For GIF/WebP stickers, upload and send as image
-    if (regSticker.source && existsSync(regSticker.source)) {
+    // Check if the source is a readable local file — only under Node
+    // (browser stickers should use URL sources, which don't need this check)
+    const sourceIsLocalFile =
+      regSticker.source &&
+      indirectRequire &&
+      indirectRequire("node:fs").existsSync(regSticker.source);
+    if (sourceIsLocalFile && regSticker.source) {
       log.info(`uploading sticker: ${regSticker.name} from ${regSticker.source}`);
       try {
         const uploadResult = await uploadMediaToCos(account, regSticker.source, {

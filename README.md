@@ -414,18 +414,52 @@ await bot.start(); // 仍会因 ws / http 模块的 node:* 依赖报错（见下
   `new Function("return (require)")()` 模式在 ESM 中 `require` 未定义，改为
   `await import("node:module")` + `createRequire`（top-level await）。
 
+### API 变更（v11.5.2）
+
+完成 Phase 2b —— 所有 persistence 模块均已迁移到 `PersistenceAdapter`：
+
+- `BlockStore` / `TrustStore` / `RemindersStore` / `StickerCacheStore` / `LlmTakeoverEngine`
+  均新增 `initXxxStore({ persistencePath, persistenceAdapter })` 配置函数。
+- `MessageHistoryStore` config 新增 `persistenceAdapter` 字段；`PersistenceAdapter`
+  接口新增可选 `append(path, data)` 方法（`NodeFsAdapter` 原生支持，浏览器适配器
+  可省略以触发 read-modify-write 回退）。
+- `sticker.ts` 的 `loadStickerPacksFromDir` 改为 Node-only（抛出明确错误）——
+  浏览器应使用 `registerStickerPack` 配合 URL-based sticker sources。
+- `YuanbaoBotConfig` 新增 `persistence` 配置字段：
+  ```typescript
+  // 浏览器侧（Phase 3）
+  new YuanbaoBot({
+    appKey, appSecret,
+    commands: false,
+    persistence: {
+      dir: "yuanbao-lite",           // localStorage key prefix
+      adapter: myBrowserAdapter,
+    },
+  });
+
+  // 完全禁用持久化（in-memory 模式）
+  new YuanbaoBot({ appKey, appSecret, persistence: null });
+  ```
+- `src/index.ts` 不再静态 import `node:fs` / `node:path` / `node:os` ——
+  esbuild `--platform=browser` 验证：所有 business/* persistence 模块
+  已从 `node:*` 错误列表中消失。
+- 仍待处理（Phase 2c）：`src/access/http/request.ts`（HMAC 签名）、
+  `src/access/ws/client.ts`（randomBytes）、`src/access/http/media.ts` +
+  `gofile.ts`（文件上传）。
+
 ### 已知限制（后续迭代处理）
 
-1. `src/index.ts` 仍直接 `import { existsSync, readFileSync } from "node:fs"` 等 ——
-   这些是 `loadRuntimePrefs()` 与各 store 的 `persistencePath` 使用。Phase 2 将引入
-   `PersistenceAdapter` 接口（NodeFsAdapter / BrowserIndexedDbAdapter）。
-2. `src/access/ws/client.ts` 使用 `ws` 包；浏览器有原生 `WebSocket`，Phase 2 将抽象为
-   `WebSocketAdapter`。
-3. `src/access/http/request.ts` 使用 `node:crypto` 的 `createHmac` 进行签名；Phase 2 将
-   改用 Web Crypto API。
-4. 所有 Tencent HTTP 端点（`bot.yuanbao.tencent.com` 等）存在 CORS 限制，浏览器无法直连。
+1. ~~`src/index.ts` 仍直接 `import { existsSync, readFileSync } from "node:fs"` 等~~
+   ✅ 已在 v11.5.2 修复 —— `src/index.ts` 不再静态 import 任何 `node:*` 模块。
+2. `src/access/ws/client.ts` 使用 `ws` 包；浏览器有原生 `WebSocket`，Phase 2c 将抽象为
+   `WebSocketAdapter`。当前 `client.ts` 仍直接 import `node:crypto` 用于生成消息 ID。
+3. `src/access/http/request.ts` 使用 `node:crypto` 的 `createHmac` 进行签名；Phase 2c 将
+   改用 Web Crypto API。同时使用 `node:os` 获取 hostname。
+4. `src/access/http/media.ts` + `gofile.ts` 使用 `node:fs` / `node:fs/promises` /
+   `node:path` / `node:crypto` 用于文件上传 —— 浏览器需用 Blob/File API。
+5. 所有 Tencent HTTP 端点（`bot.yuanbao.tencent.com` 等）存在 CORS 限制，浏览器无法直连。
    Phase 3 将提供 `httpProxy` 配置项与示例 serverless proxy。
-5. LLM 引擎中 `@ai-sdk/amazon-bedrock` 依赖 SigV4 (node-only)，浏览器不支持 AWS Bedrock
+6. LLM 引擎中 `@ai-sdk/amazon-bedrock` 依赖 SigV4 (node-only)，浏览器不支持 AWS Bedrock
    provider，但 OpenAI/Anthropic/Gemini 等 provider 均可使用。
 
 详见 [BROWSER_DECOUPLE_ANALYSIS.md](BROWSER_DECOUPLE_ANALYSIS.md) 的完整分析与分阶段计划。

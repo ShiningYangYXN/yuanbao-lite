@@ -31,14 +31,69 @@
  * Persistence: ~/.yuanbao-lite/block.json
  */
 
-import { existsSync, readFileSync, mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
-import { homedir } from "node:os";
 import { createLog } from "../logger.js";
+import type { PersistenceAdapter } from "../access/persistence/adapter.js";
+import {
+  getDefaultPersistenceAdapter,
+  getDefaultPersistenceDir,
+  nodePathJoin,
+} from "../access/persistence/adapter.js";
 
 const log = createLog("block");
 
-const BLOCK_FILE = join(homedir(), ".yuanbao-lite", "block.json");
+// ─── Persistence path + adapter (lazy) ───
+
+/**
+ * Module-level persistence configuration. Browser callers MUST call
+ * {@link initBlockStore} before invoking any block function; Node callers
+ * can leave this unset to use the default `~/.yuanbao-lite/block.json`.
+ */
+let blockPersistencePath: string | null = null;
+let blockPersistenceAdapter: PersistenceAdapter | null = null;
+
+/**
+ * Configure the block module's persistence backend.
+ *
+ * - Node callers can omit `persistencePath` to use the default
+ *   `~/.yuanbao-lite/block.json`.
+ * - Browser callers MUST provide both `persistencePath` (an opaque key
+ *   string, e.g. `"block"`) and `persistenceAdapter` (e.g.
+ *   `BrowserLocalStorageAdapter` from Phase 3).
+ *
+ * Calling this resets the in-memory cache so the next read picks up the
+ * new path/adapter.
+ */
+export function initBlockStore(config?: {
+  persistencePath?: string;
+  persistenceAdapter?: PersistenceAdapter;
+}): void {
+  blockPersistencePath = config?.persistencePath ?? null;
+  blockPersistenceAdapter = config?.persistenceAdapter ?? null;
+  cache = null;
+}
+
+/**
+ * Resolve the persistence path — explicit config wins, else default.
+ */
+function getPath(): string {
+  if (blockPersistencePath) return blockPersistencePath;
+  return nodePathJoin
+    ? nodePathJoin(getDefaultPersistenceDir(), "block.json")
+    : (() => {
+        throw new Error(
+          "Block module: no persistencePath configured and no Node default available. " +
+            "Call initBlockStore({ persistencePath, persistenceAdapter }) first.",
+        );
+      })();
+}
+
+/**
+ * Resolve the persistence adapter — explicit config wins, else runtime default.
+ */
+function getAdapter(): PersistenceAdapter {
+  if (blockPersistenceAdapter) return blockPersistenceAdapter;
+  return getDefaultPersistenceAdapter();
+}
 
 export type BlockEntry = {
   /** User ID (Yuanbao account ID). Use "*" to match ALL users. */
@@ -65,9 +120,11 @@ let cache: BlockData | null = null;
 
 function load(): BlockData {
   if (cache) return cache;
+  const filePath = getPath();
+  const adapter = getAdapter();
   try {
-    if (existsSync(BLOCK_FILE)) {
-      const raw = readFileSync(BLOCK_FILE, "utf-8");
+    if (adapter.exists(filePath)) {
+      const raw = adapter.read(filePath);
       const parsed = JSON.parse(raw) as BlockData;
       // Validate structure — if malformed, treat as file-not-found
       if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.entries)) {
@@ -87,9 +144,9 @@ function load(): BlockData {
 
 function save(): void {
   try {
-    const dir = join(homedir(), ".yuanbao-lite");
-    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-    writeFileSync(BLOCK_FILE, JSON.stringify(cache, null, 2), "utf-8");
+    const filePath = getPath();
+    const adapter = getAdapter();
+    adapter.write(filePath, JSON.stringify(cache, null, 2));
   } catch (err) {
     log.error(`failed to save block file: ${(err as Error).message}`);
   }

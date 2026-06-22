@@ -8,14 +8,53 @@
  * /cron: recurring scheduled messages (cron-like expressions)
  */
 
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
-import { join } from "node:path";
-import { homedir } from "node:os";
 import { createLog } from "../logger.js";
+import type { PersistenceAdapter } from "../access/persistence/adapter.js";
+import {
+  getDefaultPersistenceAdapter,
+  getDefaultPersistenceDir,
+  nodePathJoin,
+} from "../access/persistence/adapter.js";
 
 const log = createLog("reminders");
 
-const DATA_FILE = join(homedir(), ".yuanbao-lite", "reminders.json");
+// ─── Persistence path + adapter (lazy) ───
+
+let remindersPersistencePath: string | null = null;
+let remindersPersistenceAdapter: PersistenceAdapter | null = null;
+
+/**
+ * Configure the reminders module's persistence backend.
+ *
+ * - Node callers can omit `persistencePath` to use the default
+ *   `~/.yuanbao-lite/reminders.json`.
+ * - Browser callers MUST provide both `persistencePath` and `persistenceAdapter`.
+ */
+export function initRemindersStore(config?: {
+  persistencePath?: string;
+  persistenceAdapter?: PersistenceAdapter;
+}): void {
+  remindersPersistencePath = config?.persistencePath ?? null;
+  remindersPersistenceAdapter = config?.persistenceAdapter ?? null;
+  cache = null;
+}
+
+function getPath(): string {
+  if (remindersPersistencePath) return remindersPersistencePath;
+  return nodePathJoin
+    ? nodePathJoin(getDefaultPersistenceDir(), "reminders.json")
+    : (() => {
+        throw new Error(
+          "Reminders module: no persistencePath configured and no Node default available. " +
+            "Call initRemindersStore({ persistencePath, persistenceAdapter }) first.",
+        );
+      })();
+}
+
+function getAdapter(): PersistenceAdapter {
+  if (remindersPersistenceAdapter) return remindersPersistenceAdapter;
+  return getDefaultPersistenceAdapter();
+}
 
 export type ReminderJob = {
   id: string;
@@ -46,9 +85,11 @@ const activeTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 function load(): ReminderData {
   if (cache) return cache;
+  const filePath = getPath();
+  const adapter = getAdapter();
   try {
-    if (existsSync(DATA_FILE)) {
-      cache = JSON.parse(readFileSync(DATA_FILE, "utf-8")) as ReminderData;
+    if (adapter.exists(filePath)) {
+      cache = JSON.parse(adapter.read(filePath)) as ReminderData;
       return cache;
     }
   } catch (e) {
@@ -60,9 +101,9 @@ function load(): ReminderData {
 
 function save(): void {
   try {
-    const dir = join(homedir(), ".yuanbao-lite");
-    if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-    writeFileSync(DATA_FILE, JSON.stringify(cache, null, 2), "utf-8");
+    const filePath = getPath();
+    const adapter = getAdapter();
+    adapter.write(filePath, JSON.stringify(cache, null, 2));
   } catch (e) {
     log.error(`save failed: ${(e as Error).message}`);
   }
