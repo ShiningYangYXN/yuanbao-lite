@@ -434,8 +434,28 @@ class LineEditor {
 
 let editor: LineEditor | null = null;
 
+/** Exit the alternate screen buffer (restores original terminal). */
+function exitAltScreen(): void {
+  if (process.stdout.isTTY) {
+    process.stdout.write("\x1b[?1049l"); // exit alt screen
+  }
+}
+
 export async function runInteractive(): Promise<void> {
   const client = getDefaultClient();
+
+  // 0. Enter alternate screen buffer (restores the original terminal on exit)
+  // This makes the CLI behave like vim/less — full-screen, no scrollback pollution.
+  if (process.stdout.isTTY) {
+    process.stdout.write("\x1b[?1049h"); // enter alt screen
+  }
+  // Ensure alt screen is restored on any exit path (SIGTERM, SIGHUP, crash)
+  const restoreOnSignal = (sig: string) => {
+    exitAltScreen();
+    process.exit(0);
+  };
+  process.on("SIGTERM", () => restoreOnSignal("SIGTERM"));
+  process.on("SIGHUP", () => restoreOnSignal("SIGHUP"));
 
   // 1. Ensure daemon
   let info;
@@ -443,6 +463,7 @@ export async function runInteractive(): Promise<void> {
     info = await client.ensureDaemon({});
   } catch (err) {
     printError(`无法启动 daemon: ${(err as Error).message}`);
+    exitAltScreen();
     process.exit(1);
   }
 
@@ -462,6 +483,44 @@ export async function runInteractive(): Promise<void> {
   const unsubscribe = client.subscribeSse((event, data) => {
     handleSseEvent(event, data);
   });
+
+  // 4b. Daemon health monitor — detect disconnects, log, and auto-reconnect
+  let daemonConnected = true;
+  let reconnecting = false;
+  const healthCheck = async () => {
+    try {
+      const pingInfo = await client.ping(2000);
+      if (!pingInfo) throw new Error("no response");
+      if (!daemonConnected) {
+        // Was disconnected, now back — log recovery
+        daemonConnected = true;
+        reconnecting = false;
+        printResult("daemon 已重连 ✓");
+        editor?.forceRender();
+      }
+    } catch {
+      if (daemonConnected) {
+        // Just lost connection — log and attempt reconnect
+        daemonConnected = false;
+        printError("与 daemon 断开连接，正在尝试重连...");
+        editor?.forceRender();
+      }
+      if (!reconnecting) {
+        reconnecting = true;
+        // Attempt to re-ensure daemon in the background
+        client
+          .ensureDaemon({})
+          .then(() => {
+            // Reconnected — next healthCheck tick will confirm and log recovery
+          })
+          .catch(() => {
+            // Still down — will retry on next tick
+            reconnecting = false;
+          });
+      }
+    }
+  };
+  const healthTimer = setInterval(healthCheck, 5000);
 
   // 5. Periodically refresh completion data from daemon
   const completionCtx: CompletionContext = {};
@@ -551,6 +610,7 @@ export async function runInteractive(): Promise<void> {
   function cleanupAndExit(): void {
     clearInterval(completionTimer);
     clearInterval(wizardTimer);
+    clearInterval(healthTimer);
     unsubscribe();
     if (process.stdin.isTTY) {
       process.stdin.setRawMode(false);
@@ -558,6 +618,7 @@ export async function runInteractive(): Promise<void> {
     process.stdin.pause();
     editor = null;
     printStatus("再见 👋");
+    exitAltScreen();
   }
 
   await new Promise((r) => setTimeout(r, 0));
@@ -691,22 +752,23 @@ async function processSingleCommand(
       }
       return;
     }
-    // /chat <target> [message] → enter session mode for that target,
-    // AND dispatch to daemon if there's a message.
-    const target = parts[1];
-    if (GROUP_CODE_RE.test(target)) {
-      state.chatMode = "group";
-      state.chatTarget = target;
-      printStatus(`切换到群聊会话: ${target}`);
-    } else {
-      state.chatMode = "dm";
-      state.chatTarget = target;
-      printStatus(`切换到私聊会话: ${target}`);
+    // /chat <target> (no message) → switch CLI session mode ONLY
+    if (parts.length === 2) {
+      const target = parts[1];
+      if (GROUP_CODE_RE.test(target)) {
+        state.chatMode = "group";
+        state.chatTarget = target;
+        printStatus(`切换到群聊会话: ${target}`);
+      } else {
+        state.chatMode = "dm";
+        state.chatTarget = target;
+        printStatus(`切换到私聊会话: ${target}`);
+      }
+      return;
     }
-    // If there's a message (3+ parts), dispatch to daemon to actually send.
-    if (parts.length >= 3) {
-      await dispatchCommand(line, client);
-    }
+    // /chat <target> <message> → send message ONLY, do NOT switch session.
+    // This lets the user send a one-off message without entering a session.
+    await dispatchCommand(line, client);
     return;
   }
 
@@ -883,14 +945,14 @@ function currentPrompt(): string {
 function printWelcome(version: string, pid: number, port: number): void {
   printH1(`Yuanbao Lite CLI v${version}`);
   console.log(
-    `  ${COLORS.dim("raw-mode · RichHistory + auto-complete + syntax-highlight + Ctrl+R search")}`,
+    `  ${COLORS.dim("alt-buffer · raw-mode · RichHistory + auto-complete + syntax-highlight + Ctrl+R search")}`,
   );
   console.log(`  ${COLORS.dim(`daemon pid=${pid} port=${port}`)}`);
   console.log(
     `  ${COLORS.dim("/help 查看命令  ·  ↑↓ 历史  ·  Ctrl+R 搜索  ·  Tab 补全  ·  \\ 换行  ·  Ctrl+C 退出")}`,
   );
   console.log(
-    `  ${COLORS.dim("/chat <目标> 进入会话  ·  /chat 退出会话  (9位数字=群，其他=私聊)")}`,
+    `  ${COLORS.dim("/chat <目标> 切换会话  ·  /chat 退出会话  ·  /chat <目标> <消息> 仅发送不切换  (9位数字=群)")}`,
   );
   console.log("");
 }
