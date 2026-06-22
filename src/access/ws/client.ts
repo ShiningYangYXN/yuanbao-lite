@@ -4,8 +4,6 @@
  * Standalone version without OpenClaw dependencies.
  */
 
-import { randomUUID } from "node:crypto";
-import WebSocket from "ws";
 import { createLog } from "../../logger.js";
 import type { ModuleLog } from "../../logger.js";
 import {
@@ -78,13 +76,96 @@ type PendingRequest = {
   timer: ReturnType<typeof setTimeout>;
 };
 
+// ─── WebSocket constructor (browser-native or ws-package) ───
+//
+// We need a WebSocket constructor that works in both Node and browser.
+// Strategy:
+//   1. If `globalThis.WebSocket` exists (Node 21+ has it as a global;
+//      all modern browsers have it), use it directly.
+//   2. Otherwise (Node 18-20), dynamically import the `ws` package via
+//      top-level await. This keeps `ws` out of the static import graph
+//      so browser bundles don't try to include it.
+//
+// The `ws` package's WebSocket accepts an options object as the 2nd
+// constructor arg (e.g. { maxPayload }). The browser's native WebSocket
+// accepts only protocols. We normalize by accepting `unknown` options
+// and ignoring them when running on native WebSocket.
+type AnyWebSocket = {
+  binaryType: string;
+  readyState: number;
+  onopen: ((this: AnyWebSocket) => void) | null;
+  onmessage: ((this: AnyWebSocket, event: { data: unknown }) => void) | null;
+  onclose: ((this: AnyWebSocket, event: { code: number; reason: string }) => void) | null;
+  onerror: ((this: AnyWebSocket, event: unknown) => void) | null;
+  send(data: string | ArrayBuffer | Uint8Array): void;
+  close(code?: number, reason?: string): void;
+};
+
+type WebSocketCtor = new (url: string, options?: unknown) => AnyWebSocket;
+
+let webSocketCtor: WebSocketCtor | null = null;
+
+if (typeof globalThis.WebSocket !== "undefined") {
+  // Browser or Node 21+ — use the native global WebSocket.
+  // The native constructor's 2nd arg is `protocols` (string | string[]),
+  // but we pass an options object which it will simply ignore (it coerces
+  // to string, which is then ignored if not a valid protocol).
+  // To be safe, we strip the options arg when running on native WebSocket.
+  webSocketCtor = class NativeWebSocketWrapper extends globalThis.WebSocket {
+    constructor(url: string, _options?: unknown) {
+      // Native WebSocket only accepts (url, protocols) — ignore options.
+      super(url);
+    }
+  } as WebSocketCtor;
+} else {
+  // Node 18-20 without global WebSocket — dynamically import the ws package.
+  // Top-level await ensures the import resolves before any code uses
+  // webSocketCtor. Bundlers will create a separate chunk for `ws` that's
+  // only loaded in this code path (which never runs in a browser).
+  try {
+    const wsModule = await import("ws");
+    webSocketCtor = wsModule.default as unknown as WebSocketCtor;
+  } catch {
+    // ws package not available — webSocketCtor stays null, and connect()
+    // will throw a clear error if called.
+  }
+}
+
+// ─── UUID helper (Web Crypto) ───
+
+/**
+ * Generate a RFC 4122 v4 UUID using the Web Crypto API.
+ *
+ * Available in Node 18+ (`globalThis.crypto.randomUUID`) and all modern
+ * browsers. Falls back to a manual implementation if `randomUUID` is
+ * unavailable (extremely rare — only very old runtimes).
+ */
+function randomUUID(): string {
+  const cryptoObj = globalThis.crypto;
+  if (cryptoObj?.randomUUID) {
+    return cryptoObj.randomUUID();
+  }
+  // Fallback: manual UUID v4 using getRandomValues
+  if (cryptoObj?.getRandomValues) {
+    const bytes = cryptoObj.getRandomValues(new Uint8Array(16));
+    bytes[6] = (bytes[6] & 0x0f) | 0x40; // version 4
+    bytes[8] = (bytes[8] & 0x3f) | 0x80; // variant 1
+    const hex = Array.from(bytes, b => b.toString(16).padStart(2, "0"));
+    return `${hex.slice(0, 4).join("")}-${hex.slice(4, 6).join("")}-${hex.slice(6, 8).join("")}-${hex.slice(8, 10).join("")}-${hex.slice(10, 16).join("")}`;
+  }
+  throw new Error(
+    "randomUUID: globalThis.crypto.randomUUID and getRandomValues are both unavailable. " +
+      "This requires Node 18+ or a modern browser runtime.",
+  );
+}
+
 export class YuanbaoWsClient {
   private connectionConfig: WsConnectionConfig;
   private clientConfig: Required<WsClientConfig>;
   private callbacks: WsClientCallbacks;
   private log: ModuleLog;
 
-  private ws: WebSocket | null = null;
+  private ws: AnyWebSocket | null = null;
   private state: WsClientState = "disconnected";
   private reconnectAttempts = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -123,7 +204,15 @@ export class YuanbaoWsClient {
     this.log.info(`connecting to ${this.connectionConfig.gatewayUrl}`);
 
     try {
-      this.ws = new WebSocket(this.connectionConfig.gatewayUrl, {
+      if (!webSocketCtor) {
+        throw new Error(
+          "No WebSocket constructor available. Under Node 18-20, install the `ws` package. " +
+            "Under browser/Node 21+, a global WebSocket is required.",
+        );
+      }
+      // The `ws` package accepts an options object as the 2nd arg; the
+      // native browser WebSocket (wrapped in NativeWebSocketWrapper) ignores it.
+      this.ws = new webSocketCtor(this.connectionConfig.gatewayUrl, {
         maxPayload: MAX_MESSAGE_SIZE,
       });
       this.ws.binaryType = "arraybuffer";
@@ -271,19 +360,24 @@ export class YuanbaoWsClient {
     }, AUTH_TIMEOUT_MS);
   }
 
-  private handleMessage(event: WebSocket.MessageEvent): void {
+  private handleMessage(event: { data: unknown }): void {
     let rawData: ArrayBuffer | Uint8Array;
 
     if (event.data instanceof ArrayBuffer) {
       rawData = event.data;
-    } else if (event.data instanceof Buffer) {
+    } else if (typeof Buffer !== "undefined" && event.data instanceof Buffer) {
+      // Node Buffer (from the `ws` package) — wrap as Uint8Array view.
+      // `Buffer` is undefined in browser; the `typeof Buffer !== "undefined"`
+      // guard prevents a ReferenceError under browser.
       rawData = new Uint8Array(event.data.buffer, event.data.byteOffset, event.data.byteLength);
     } else if (typeof event.data === "string") {
       // Text frame — unusual but handle gracefully
       this.log.debug("received text frame (unexpected), ignoring");
       return;
+    } else if (event.data instanceof Uint8Array) {
+      rawData = event.data;
     } else {
-      // Buffer or other
+      // Unknown — try to coerce as ArrayBuffer
       rawData = new Uint8Array(event.data as unknown as ArrayBuffer);
     }
 
@@ -450,7 +544,7 @@ export class YuanbaoWsClient {
     this.scheduleReconnect();
   }
 
-  private handleError(_event: WebSocket.ErrorEvent): void {
+  private handleError(_event: unknown): void {
     this.log.error("WebSocket error");
     // onclose will fire after onerror, so reconnection is handled there
   }

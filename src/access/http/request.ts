@@ -2,13 +2,17 @@
  * HTTP request layer — token signing, caching, and HTTP utilities.
  *
  * Standalone version without OpenClaw dependencies.
- * Uses Node.js native fetch and crypto.
+ * Uses the global Web Crypto API (available in Node 18+ and all modern
+ * browsers) and global fetch — no static node:* imports, so this module
+ * is browser-bundleable.
+ *
+ * Note: `computeSignature` is ASYNC because Web Crypto's HMAC API returns
+ * a Promise. Callers must `await` it.
  */
 
-import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
-import os from "node:os";
 import { createLog } from "../../logger.js";
 import type { ResolvedYuanbaoAccount } from "../../types.js";
+import { indirectRequire } from "../persistence/adapter.js";
 
 export type SignTokenData = {
   bot_id: string;
@@ -42,8 +46,91 @@ function getPluginVersion(): string {
   return PLUGIN_VERSION;
 }
 
+/**
+ * Detect the operating system for the X-OperationSystem header.
+ *
+ * Returns "Browser" when running in a browser/edge runtime, otherwise
+ * the Node `os.type()` value (e.g. "Linux", "Darwin", "Windows_NT").
+ */
 function getOperationSystem(): string {
-  return os.type();
+  // Browser/edge: no os module available.
+  if (!indirectRequire) {
+    return "Browser";
+  }
+  // Node: use the indirect require (resolved via top-level await in
+  // adapter.ts) to load node:os without a static import.
+  try {
+    return indirectRequire("node:os").type();
+  } catch {
+    return "Unknown";
+  }
+}
+
+// ─── Web Crypto helpers ───
+
+/**
+ * Encode a UTF-8 string as Uint8Array. Uses TextEncoder when available
+ * (Node 11+ and all modern browsers), falls back to a manual UTF-8 encoder.
+ */
+function encodeUtf8(input: string): Uint8Array {
+  if (typeof TextEncoder !== "undefined") {
+    return new TextEncoder().encode(input);
+  }
+  // Fallback: manual UTF-8 encoding (rare path — TextEncoder is universal)
+  const bytes: number[] = [];
+  for (let i = 0; i < input.length; i++) {
+    const c = input.charCodeAt(i);
+    if (c < 0x80) bytes.push(c);
+    else if (c < 0x800) bytes.push(0xc0 | (c >> 6), 0x80 | (c & 0x3f));
+    else if (c >= 0xd800 && c < 0xe000) {
+      // surrogate pair
+      i++;
+      const c2 = input.charCodeAt(i);
+      const cp = 0x10000 + ((c & 0x3ff) << 10) + (c2 & 0x3ff);
+      bytes.push(
+        0xf0 | (cp >> 18),
+        0x80 | ((cp >> 12) & 0x3f),
+        0x80 | ((cp >> 6) & 0x3f),
+        0x80 | (cp & 0x3f),
+      );
+    } else {
+      bytes.push(0xe0 | (c >> 12), 0x80 | ((c >> 6) & 0x3f), 0x80 | (c & 0x3f));
+    }
+  }
+  return new Uint8Array(bytes);
+}
+
+/**
+ * Convert a Uint8Array to a lowercase hex string.
+ */
+function bytesToHex(bytes: Uint8Array): string {
+  let out = "";
+  for (let i = 0; i < bytes.length; i++) {
+    out += bytes[i].toString(16).padStart(2, "0");
+  }
+  return out;
+}
+
+/**
+ * Generate a cryptographically random hex string of the given byte length.
+ *
+ * Uses `crypto.getRandomValues` (Web Crypto API — available in Node 18+
+ * and all modern browsers). The output is hex-encoded, so `byteLength = 16`
+ * produces a 32-character hex string.
+ */
+function randomHex(byteLength: number): string {
+  const bytes = new Uint8Array(byteLength);
+  // `globalThis.crypto` is the Web Crypto API, available in Node 18+ and
+  // all modern browsers.
+  const cryptoObj = globalThis.crypto;
+  if (!cryptoObj || !cryptoObj.getRandomValues) {
+    throw new Error(
+      "randomHex: globalThis.crypto.getRandomValues is not available. " +
+        "This requires Node 18+ or a modern browser runtime.",
+    );
+  }
+  cryptoObj.getRandomValues(bytes);
+  return bytesToHex(bytes);
 }
 
 // ─── Token cache ───
@@ -93,23 +180,65 @@ export function getTokenStatus(accountId: string): {
 
 // ─── Signature ───
 
-export function computeSignature(params: {
+/**
+ * Compute the HMAC-SHA256 signature for the sign-token request.
+ *
+ * ASYNC since v11.5.3 — uses the Web Crypto API (`crypto.subtle.importKey`
+ * + `crypto.subtle.sign`), which is async. This makes the module
+ * browser-bundleable (no static `node:crypto` import).
+ *
+ * The signature is computed over `nonce + timestamp + appKey + appSecret`
+ * using `appSecret` as the HMAC key, then hex-encoded.
+ *
+ * Available in Node 18+ (global `crypto`) and all modern browsers.
+ */
+export async function computeSignature(params: {
   nonce: string;
   timestamp: string;
   appKey: string;
   appSecret: string;
-}): string {
+}): Promise<string> {
   const plain = params.nonce + params.timestamp + params.appKey + params.appSecret;
-  return createHmac("sha256", params.appSecret).update(plain).digest("hex");
+  const keyBytes = encodeUtf8(params.appSecret);
+  const msgBytes = encodeUtf8(plain);
+
+  const cryptoObj = globalThis.crypto;
+  if (!cryptoObj?.subtle) {
+    throw new Error(
+      "computeSignature: globalThis.crypto.subtle is not available. " +
+        "This requires Node 18+ or a secure browser context (https or localhost).",
+    );
+  }
+
+  const key = await cryptoObj.subtle.importKey(
+    "raw",
+    keyBytes as BufferSource,
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const sigBuf = await cryptoObj.subtle.sign("HMAC", key, msgBytes as BufferSource);
+  return bytesToHex(new Uint8Array(sigBuf));
 }
 
+/**
+ * Constant-time string comparison (hex strings).
+ *
+ * Replaces `node:crypto.timingSafeEqual` with a pure-JS implementation
+ * that works in both Node and browser. The comparison time is independent
+ * of where the first mismatch occurs, preventing timing side-channels.
+ *
+ * Used for verifying inbound webhook signatures (the bot itself uses
+ * WebSocket, so this is only relevant for users implementing custom
+ * webhook receivers).
+ */
 export function verifySignature(expected: string, actual: string): boolean {
-  const expectedBuf = Buffer.from(expected, "hex");
-  const actualBuf = Buffer.from(actual, "hex");
-  if (expectedBuf.length !== actualBuf.length) {
-    return false;
+  if (expected.length !== actual.length) return false;
+  let diff = 0;
+  for (let i = 0; i < expected.length; i++) {
+    diff |= expected.charCodeAt(i) ^ actual.charCodeAt(i);
   }
-  return timingSafeEqual(expectedBuf, actualBuf);
+  return diff === 0;
 }
 
 // ─── Sign token fetch ───
@@ -127,13 +256,13 @@ async function doFetchSignToken(
   const url = `https://${apiDomain}${SIGN_TOKEN_PATH}`;
 
   for (let attempt = 0; attempt <= SIGN_MAX_RETRIES; attempt++) {
-    const nonce = randomBytes(16).toString("hex");
+    const nonce = randomHex(16);
     const bjTime = new Date(Date.now() + 8 * 3600000);
     const timestamp = bjTime
       .toISOString()
       .replace("Z", "+08:00")
       .replace(/\.\d{3}/, "");
-    const signature = computeSignature({ nonce, timestamp, appKey, appSecret });
+    const signature = await computeSignature({ nonce, timestamp, appKey, appSecret });
     const body = { app_key: appKey, nonce, signature, timestamp };
 
     mlog.info(`signing token: url=${url}${attempt > 0 ? ` (retry ${attempt}/${SIGN_MAX_RETRIES})` : ""}`);

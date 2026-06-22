@@ -1,6 +1,6 @@
 {
   "name": "yuanbao-lite",
-  "version": "11.5.2",
+  "version": "11.5.3",
   "type": "module",
   "description": "Lightweight standalone Yuanbao bot client — chat, commands, media, stickers, LLM takeover, interactive CLI",
   "license": "MIT",

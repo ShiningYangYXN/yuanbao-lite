@@ -414,6 +414,30 @@ await bot.start(); // 仍会因 ws / http 模块的 node:* 依赖报错（见下
   `new Function("return (require)")()` 模式在 ESM 中 `require` 未定义，改为
   `await import("node:module")` + `createRequire`（top-level await）。
 
+### API 变更（v11.5.3）
+
+完成 Phase 2c —— 核心 access 层（HTTP 签名 + WebSocket）已迁移到 Web Crypto API
+和原生 WebSocket：
+
+- `src/access/http/request.ts`:
+  * `computeSignature()` 改为 **async** —— 使用 `crypto.subtle.importKey` + `sign`
+    （Web Crypto API）替代 `node:crypto.createHmac`。Node 18+ 与所有现代浏览器均可用。
+  * `verifySignature()` 改用纯 JS 常量时间比较（替代 `timingSafeEqual` + `Buffer`）。
+  * `randomBytes(16).toString("hex")` → `randomHex(16)`（基于 `crypto.getRandomValues`）。
+  * `os.type()` → 运行时检测：Node 下用 indirect require 加载 `node:os`，
+    浏览器下返回 `"Browser"`。
+  * **Breaking**：`computeSignature` 返回 `Promise<string>` 而非 `string`。
+    所有调用方需 `await`。
+- `src/access/ws/client.ts`:
+  * 移除 `import WebSocket from "ws"` 和 `import { randomUUID } from "node:crypto"`。
+  * WebSocket 构造器改为运行时检测：
+    - Node 21+ / 浏览器：使用 `globalThis.WebSocket`（原生）
+    - Node 18-20：通过 top-level await 动态 `import("ws")` 加载 `ws` 包
+  * `randomUUID()` → `globalThis.crypto.randomUUID()`（带 `getRandomValues` fallback）。
+  * `Buffer` 类型检测加入 `typeof Buffer !== "undefined"` 守卫（浏览器无 `Buffer`）。
+- esbuild `--platform=browser` 验证：`request.ts` 和 `ws/client.ts` 已从
+  `node:*` 错误列表中消失。仅剩 `http/media.ts` + `gofile.ts`（文件上传，Phase 2d）。
+
 ### API 变更（v11.5.2）
 
 完成 Phase 2b —— 所有 persistence 模块均已迁移到 `PersistenceAdapter`：
