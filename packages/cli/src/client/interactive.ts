@@ -433,12 +433,38 @@ class LineEditor {
 // ─── Main ───
 
 let editor: LineEditor | null = null;
+/** Shared completion context — module-level so SSE handlers can access it
+ * for outbound message name resolution. Populated by refreshCompletions(). */
+let sharedCompletionCtx: CompletionContext = {};
 
 /** Exit the alternate screen buffer (restores original terminal). */
 function exitAltScreen(): void {
   if (process.stdout.isTTY) {
     process.stdout.write("\x1b[?1049l"); // exit alt screen
   }
+}
+
+/**
+ * Resolve a target (group code or user ID) to a display name using the
+ * shared completion context's group/contact stores.
+ */
+function resolveTargetName(to: string, isGroup: boolean): string | undefined {
+  try {
+    if (isGroup) {
+      const g = sharedCompletionCtx.groupStore?.get(to);
+      return g?.name ?? g?.groupName;
+    } else {
+      // Try contact store first
+      const c = sharedCompletionCtx.contactStore?.get(to);
+      if (c?.name) return c.name;
+      // Try alias store
+      const a = sharedCompletionCtx.aliasStore?.get(to);
+      if (a?.nickname) return a.nickname;
+    }
+  } catch {
+    // store not initialized — fall through
+  }
+  return undefined;
 }
 
 export async function runInteractive(): Promise<void> {
@@ -485,16 +511,21 @@ export async function runInteractive(): Promise<void> {
   });
 
   // 4b. Daemon health monitor — detect disconnects, log, and auto-reconnect
+  // Uses exponential backoff (2s → 4s → 8s → ... max 60s) to avoid hammering
+  // the daemon when it's down for an extended period.
   let daemonConnected = true;
   let reconnecting = false;
+  let reconnectDelayMs = 2000;
+  const MAX_RECONNECT_DELAY_MS = 60_000;
   const healthCheck = async () => {
     try {
       const pingInfo = await client.ping(2000);
       if (!pingInfo) throw new Error("no response");
       if (!daemonConnected) {
-        // Was disconnected, now back — log recovery
+        // Was disconnected, now back — log recovery and reset backoff
         daemonConnected = true;
         reconnecting = false;
+        reconnectDelayMs = 2000;
         printResult("daemon 已重连 ✓");
         editor?.forceRender();
       }
@@ -502,28 +533,34 @@ export async function runInteractive(): Promise<void> {
       if (daemonConnected) {
         // Just lost connection — log and attempt reconnect
         daemonConnected = false;
+        reconnectDelayMs = 2000; // reset backoff on fresh disconnect
         printError("与 daemon 断开连接，正在尝试重连...");
         editor?.forceRender();
       }
       if (!reconnecting) {
         reconnecting = true;
-        // Attempt to re-ensure daemon in the background
-        client
-          .ensureDaemon({})
-          .then(() => {
-            // Reconnected — next healthCheck tick will confirm and log recovery
-          })
-          .catch(() => {
-            // Still down — will retry on next tick
-            reconnecting = false;
-          });
+        const delay = reconnectDelayMs;
+        reconnectDelayMs = Math.min(reconnectDelayMs * 2, MAX_RECONNECT_DELAY_MS);
+        // Attempt to re-ensure daemon after the backoff delay
+        setTimeout(() => {
+          client
+            .ensureDaemon({})
+            .then(() => {
+              // Reconnected — next healthCheck tick will confirm and log recovery
+              reconnecting = false;
+            })
+            .catch(() => {
+              // Still down — will retry on next healthCheck with longer backoff
+              reconnecting = false;
+            });
+        }, delay);
       }
     }
   };
   const healthTimer = setInterval(healthCheck, 5000);
 
   // 5. Periodically refresh completion data from daemon
-  const completionCtx: CompletionContext = {};
+  const completionCtx: CompletionContext = sharedCompletionCtx;
   const refreshCompletions = async () => {
     try {
       const data = await client.fetchCompletions();
@@ -579,6 +616,15 @@ export async function runInteractive(): Promise<void> {
   process.stdin.setEncoding("utf-8");
   process.stdin.resume();
 
+  // Handle terminal resize (SIGWINCH) — re-render the prompt so it stays
+  // correctly positioned in the alt screen buffer after window resize.
+  const onResize = () => {
+    // Clear screen and re-render from scratch
+    process.stdout.write("\x1b[2J\x1b[H"); // clear screen + move cursor home
+    editor?.forceRender();
+  };
+  process.on("SIGWINCH", onResize);
+
   // Render initial prompt
   editor.forceRender();
 
@@ -611,6 +657,7 @@ export async function runInteractive(): Promise<void> {
     clearInterval(completionTimer);
     clearInterval(wizardTimer);
     clearInterval(healthTimer);
+    process.removeListener("SIGWINCH", onResize);
     unsubscribe();
     if (process.stdin.isTTY) {
       process.stdin.setRawMode(false);
@@ -914,7 +961,7 @@ async function printOutboundMessage(
 ): Promise<void> {
   const { formatOutboundMessage } = await import("../utils/cli-format.js");
   process.stdout.write("\r\x1b[K");
-  console.log(formatOutboundMessage(text, to, isGroup));
+  console.log(formatOutboundMessage(text, to, isGroup, resolveTargetName));
   editor?.forceRender();
 }
 

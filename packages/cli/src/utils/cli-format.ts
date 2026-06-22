@@ -205,17 +205,31 @@ export function formatInboundMessage(
 
 /**
  * Format a bot outbound message for CLI display.
+ * Resolves the target to a group name or user name (via the provided stores)
+ * instead of showing a raw group code or user ID.
+ *
  * Format:
- *   📤出站  →  群名/DM · 11:45:14
+ *   📤出站  →  群名/昵称 · 11:45:14
  *       消息文本
+ *
+ * @param text - Message text
+ * @param to - Target (group code or user ID)
+ * @param isGroup - Whether this is a group message
+ * @param nameResolver - Optional resolver that returns a display name for the target
  */
 export function formatOutboundMessage(
   text: string,
   to: string,
   isGroup: boolean,
+  nameResolver?: (to: string, isGroup: boolean) => string | undefined,
 ): string {
   const time = chalk.dim(formatTime(Date.now()));
-  const scope = isGroup ? chalk.cyan(`群${to}`) : chalk.dim(`私聊`);
+  // Try to resolve a friendly name; fall back to the raw target.
+  const resolvedName = nameResolver?.(to, isGroup);
+  const displayTarget = resolvedName ?? to;
+  const scope = isGroup
+    ? chalk.cyan(`群 ${displayTarget}`)
+    : chalk.dim(`私聊 ${displayTarget}`);
   const header = `  ${chalk.magenta("📤 出站")}  ${chalk.dim("→")}  ${scope} ${chalk.dim("·")} ${time}`;
   const displayText =
     text.length > 500 ? text.substring(0, 500) + chalk.dim("...") : text;

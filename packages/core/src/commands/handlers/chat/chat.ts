@@ -12,16 +12,17 @@
  *   /chat u_abc123 你好           → 私聊（用户ID）
  *   /chat alice 你好              → 私聊（联系人名/别名）
  *
- * In a CLI context, calling /chat with a target but no message enters
- * session mode (the CLI client intercepts this; the daemon handler
- * just sends or enters mode).
+ * IMPORTANT: This handler ONLY sends messages. It does NOT switch sessions.
+ * Session switching (entering a focused chat context) is a CLI-only feature
+ * implemented in interactive.ts. When a user on the Yuanbao IM platform
+ * (DM or group) calls /chat, they can only send a one-off message — they
+ * cannot enter a session. The CLI intercepts /chat <target> (no message)
+ * locally before it reaches the daemon; if the daemon handler receives
+ * /chat with no message, it replies with usage (session switch not
+ * available on IM platform).
  *
  * Backward compatibility: /dm and /group are now aliases of /chat. They
  * dispatch to this same handler — no separate code paths.
- *
- * Bug fix (v12.2.0): the original chat.ts had an inverted check that
- * tested args[0] against /^\d{9}$/ but then used args[1] as the
- * groupCode. Now args[0] is consistently the target (group or user).
  */
 
 import type { CommandSystem } from "../../registry.js";
@@ -30,7 +31,8 @@ import type { CommandCategory } from "../../types.js";
 const USAGE =
   "/chat <目标> <消息>\n" +
   "  目标为 9 位纯数字 → 群聊\n" +
-  "  目标为用户ID/@提及/联系人名 → 私聊";
+  "  目标为用户ID/@提及/联系人名 → 私聊\n" +
+  "  (仅发送消息，不切换会话。会话切换仅 CLI 支持)";
 
 const GROUP_CODE_RE = /^\d{9}$/;
 
