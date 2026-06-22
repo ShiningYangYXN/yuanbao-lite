@@ -1,6 +1,6 @@
 {
   "name": "yuanbao-lite",
-  "version": "11.6.0",
+  "version": "11.7.0",
   "type": "module",
   "description": "Lightweight standalone Yuanbao bot client — chat, commands, media, stickers, LLM takeover, interactive CLI",
   "license": "MIT",
@@ -14,7 +14,12 @@
     "./commands": {
       "types": "./dist/commands-entry.d.ts",
       "default": "./dist/commands-entry.js"
-    }
+    },
+    "./cli": {
+      "types": "./dist/cli/index.d.ts",
+      "default": "./dist/cli/index.js"
+    },
+    "./package.json": "./package.json"
   },
   "bin": {
     "yb-cli": "./dist/cli/index.js",
@@ -24,7 +29,8 @@
     "src",
     "dist",
     "tsconfig.json",
-    "README.md"
+    "README.md",
+    "docs"
   ],
   "keywords": [
     "yuanbao",
@@ -35,7 +41,9 @@
     "media-upload",
     "llm",
     "ai-takeover",
-    "cli"
+    "cli",
+    "browser",
+    "isomorphic"
   ],
   "scripts": {
     "build": "tsc",
@@ -47,7 +55,8 @@
     "daemon:status": "node dist/cli/index.js daemon status",
     "daemon:restart": "node dist/cli/index.js daemon restart",
     "lint": "eslint .",
-    "lint:fix": "eslint . --fix"
+    "lint:fix": "eslint . --fix",
+    "test:e2e": "node ../scripts/phase4a-e2e-test.mjs"
   },
   "dependencies": {
     "@ai-sdk/amazon-bedrock": "^4.0.117",
@@ -62,6 +71,7 @@
     "cli-table3": "^0.6.5",
     "commander": "^15.0.0",
     "defuddle": "^0.19.0",
+    "js-md5": "^0.8.3",
     "linkedom": "^0.18.12",
     "markdown-table": "^3.0.4",
     "marked": "^18.0.5",
@@ -77,6 +87,7 @@
     "@eslint/js": "^10.0.1",
     "@eslint/json": "^2.0.0",
     "@eslint/markdown": "^8.0.2",
+    "@types/js-md5": "^0.8.0",
     "@types/marked": "^5.0.2",
     "@types/node": "^24.12.2",
     "@types/ws": "^8.18.1",
@@ -86,3 +97,4 @@
     "typescript-eslint": "^8.61.1"
   }
 }
+

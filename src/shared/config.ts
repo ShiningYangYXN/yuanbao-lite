@@ -89,7 +89,16 @@ export type CliConfigData = {
 
 // ─── Constants ───
 
-const DEFAULT_CONFIG_DIR = getDefaultPersistenceDir();
+/**
+ * Default config directory — lazily resolved on first access.
+ *
+ * Cannot be resolved at module load time because `getDefaultPersistenceDir()`
+ * requires `nodeModules` to be loaded (via top-level await in adapter.ts),
+ * which may not have completed when this module is first imported.
+ */
+function getDefaultConfigDir(): string {
+  return getDefaultPersistenceDir();
+}
 const DEFAULT_CONFIG_FILE = "config.json";
 const CURRENT_VERSION = 1;
 
@@ -133,7 +142,7 @@ export class ConfigStore {
     configDir?: string;
     autoSave?: boolean;
   }) {
-    this.configDir = normalizePath(options?.configDir) || DEFAULT_CONFIG_DIR;
+    this.configDir = normalizePath(options?.configDir) || getDefaultConfigDir();
     this.configPath = joinPath(this.configDir, DEFAULT_CONFIG_FILE);
     this.autoSave = options?.autoSave ?? true;
     this.data = this.createDefaultData();

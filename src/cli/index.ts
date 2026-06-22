@@ -31,8 +31,14 @@ import {
   DEFAULT_DAEMON_PORT,
   DEFAULT_DAEMON_HOST,
 } from "./client/daemon-client.js";
+import { nodeModulesReady } from "../access/persistence/adapter.js";
 
 async function main(): Promise<void> {
+  // Ensure Node built-in modules (fs, path, os) are loaded before any
+  // command runs. The top-level await in adapter.ts kicks this off at
+  // module load time, but we await explicitly here to be safe.
+  await nodeModulesReady;
+
   const args = process.argv.slice(2);
 
   // ─── `daemon start` runs the server in-process ───
