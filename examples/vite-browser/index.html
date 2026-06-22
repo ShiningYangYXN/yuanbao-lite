@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Yuanbao Lite 浏览器示例</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 800px; margin: 2rem auto; padding: 0 1rem; }
+    #log { border: 1px solid #ccc; padding: 1rem; height: 400px; overflow-y: scroll; font-family: monospace; font-size: 13px; }
+    .msg-in { color: #0066cc; }
+    .msg-out { color: #009966; }
+    .msg-sys { color: #999; font-style: italic; }
+    input { width: 70%; padding: 0.5rem; }
+    button { padding: 0.5rem 1rem; }
+  </style>
+</head>
+<body>
+  <h1>🤖 Yuanbao Lite 浏览器示例</h1>
+  <p>AppKey: <input id="appKey" placeholder="你的AppKey" /></p>
+  <p>AppSecret: <input id="appSecret" type="password" placeholder="你的AppSecret" /></p>
+  <p>
+    <button id="connect">连接</button>
+    <button id="disconnect" disabled>断开</button>
+  </p>
+  <div id="log"></div>
+  <p>
+    <input id="msgInput" placeholder="输入消息..." disabled />
+    <button id="send" disabled>发送</button>
+  </p>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

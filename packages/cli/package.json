@@ -1,0 +1,45 @@
+{
+  "name": "@yuanbao-lite/cli",
+  "version": "12.0.0",
+  "type": "module",
+  "description": "Yuanbao Lite CLI — daemon-first 交互式命令行工具",
+  "license": "MIT",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "yb-cli": "./dist/index.js",
+    "yuanbao-lite-cli": "./dist/index.js"
+  },
+  "files": [
+    "src",
+    "dist"
+  ],
+  "keywords": [
+    "yuanbao",
+    "cli",
+    "daemon"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "cli": "node dist/index.js",
+    "daemon": "node dist/index.js daemon start",
+    "daemon:start": "node dist/index.js daemon start",
+    "daemon:stop": "node dist/index.js daemon stop",
+    "daemon:status": "node dist/index.js daemon status",
+    "daemon:restart": "node dist/index.js daemon restart"
+  },
+  "dependencies": {
+    "@yuanbao-lite/core": "*",
+    "@clack/prompts": "^1.5.1",
+    "chalk": "^5.6.2",
+    "cli-table3": "^0.6.5",
+    "commander": "^15.0.0",
+    "marked-terminal": "^7.3.0",
+    "table": "^6.9.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.12.2",
+    "typescript": "^5.7.0"
+  }
+}

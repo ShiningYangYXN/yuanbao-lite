@@ -1,0 +1,91 @@
+{
+  "name": "@yuanbao-lite/core",
+  "version": "12.0.0",
+  "type": "module",
+  "description": "Yuanbao Lite 核心库 — 同构腾讯元宝机器人客户端（Node.js + 浏览器）",
+  "license": "MIT",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./commands": {
+      "types": "./dist/commands-entry.d.ts",
+      "default": "./dist/commands-entry.js"
+    },
+    "./access/*": {
+      "types": "./dist/access/*.d.ts",
+      "default": "./dist/access/*.js"
+    },
+    "./business/*": {
+      "types": "./dist/business/*.d.ts",
+      "default": "./dist/business/*.js"
+    },
+    "./shared/*": {
+      "types": "./dist/shared/*.d.ts",
+      "default": "./dist/shared/*.js"
+    },
+    "./version": {
+      "types": "./dist/version.d.ts",
+      "default": "./dist/version.js"
+    },
+    "./logger": {
+      "types": "./dist/logger.d.ts",
+      "default": "./dist/logger.js"
+    },
+    "./types": {
+      "types": "./dist/types.d.ts",
+      "default": "./dist/types.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "src",
+    "dist",
+    "test"
+  ],
+  "keywords": [
+    "yuanbao",
+    "tencent-im",
+    "chatbot",
+    "browser",
+    "isomorphic",
+    "llm",
+    "ai-sdk"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "lint": "eslint src/",
+    "test": "node --test --import tsx test/unit/*.test.ts",
+    "test:e2e": "tsx test/e2e/smoke-test.ts"
+  },
+  "dependencies": {
+    "@ai-sdk/amazon-bedrock": "^4.0.117",
+    "@ai-sdk/anthropic": "^3.0.84",
+    "@ai-sdk/google": "^3.0.82",
+    "@ai-sdk/openai": "^3.0.71",
+    "@ai-sdk/openai-compatible": "^2.0.50",
+    "@ai-sdk/provider": "^3.0.10",
+    "ai": "^6.0.206",
+    "chalk": "^5.6.2",
+    "defuddle": "^0.19.0",
+    "js-md5": "^0.8.3",
+    "linkedom": "^0.18.12",
+    "markdown-table": "^3.0.4",
+    "marked": "^18.0.5",
+    "protobufjs": "^7.5.4",
+    "string-width": "^8.2.1",
+    "ws": "^8.20.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/js-md5": "^0.8.0",
+    "@types/marked": "^5.0.2",
+    "@types/node": "^24.12.2",
+    "@types/ws": "^8.18.1",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}
