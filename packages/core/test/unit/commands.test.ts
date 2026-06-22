@@ -143,7 +143,7 @@ describe("CommandSystem", () => {
 
   it("getVisibleCommands returns all commands", () => {
     const commands = cs.getVisibleCommands();
-    assert.ok(commands.length >= 40); // 49 built-in commands
+    assert.ok(commands.length >= 45); // 47 built-in commands
   });
 
   it("enableUnsafeMode + isUnsafeMode", () => {

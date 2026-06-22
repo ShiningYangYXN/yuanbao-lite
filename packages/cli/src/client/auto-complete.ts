@@ -38,10 +38,8 @@ export type CompletionResult = {
 
 const TOP_LEVEL_COMMANDS = [
   { cmd: "/help", aliases: ["/h", "/?", "/帮助"] },
-  { cmd: "/dm", aliases: ["/私聊"] },
-  { cmd: "/group", aliases: ["/群发"] },
   { cmd: "/reply", aliases: ["/引用回复"] },
-  { cmd: "/chat", aliases: ["/聊天"] },
+  { cmd: "/chat", aliases: ["/聊天", "/dm", "/私聊", "/group", "/群发"] },
   { cmd: "/upload", aliases: ["/上传"] },
   { cmd: "/download", aliases: ["/下载"] },
   { cmd: "/img", aliases: ["/图片", "/发送图片"] },
@@ -51,7 +49,6 @@ const TOP_LEVEL_COMMANDS = [
   { cmd: "/stickers", aliases: ["/贴纸列表", "/stickerlist"] },
   { cmd: "/contacts", aliases: ["/联系人"] },
   { cmd: "/groups", aliases: ["/glist"] },
-  { cmd: "/join", aliases: ["/加入"] },
   { cmd: "/switch", aliases: ["/切换", "/sw"] },
   { cmd: "/info", aliases: ["/gi", "/groupinfo", "/群信息"] },
   { cmd: "/members", aliases: ["/member", "/成员", "/群成员"] },
@@ -199,7 +196,7 @@ const SUB_COMMANDS: Record<string, string[]> = {
   "/trust": ["list", "add", "remove", "rm", "status"],
   "/stickers": ["search", "load", "emojis"],
   "/tempfile": ["gofile", "tmpfiles", "uguu", "litterbox"],
-  "/chat": ["group"],
+  "/chat": [],
   "/log": ["debug", "info", "warn", "error"],
   "/unsafe": ["on", "off", "status", "allow", "disallow", "forever"],
 };
@@ -352,18 +349,23 @@ function completeFirstArg(
       };
     }
 
-    case "/dm":
     case "/chat": {
-      // Complete with contact names
-      return completeContactOrAlias(partial, ctx);
+      // /chat accepts both user IDs (DM) and group codes (9-digit).
+      // Offer both contact/alias matches and group-code matches.
+      const contactMatches = completeContactOrAlias(partial, ctx);
+      const groupMatches = completeGroupCode(partial, ctx);
+      return {
+        completions: [
+          ...contactMatches.completions,
+          ...groupMatches.completions,
+        ],
+        replaceFrom: partial,
+      };
     }
 
-    case "/group":
-    case "/join":
     case "/groups": {
       // For groups add/fav/note etc., complete with group codes
       if (subs && !subs.includes(partial)) {
-        // Might be a group code
         return completeGroupCode(partial, ctx);
       }
       break;
@@ -444,9 +446,8 @@ function completeLaterArg(
       break;
     }
 
-    case "/dm":
     case "/chat": {
-      // After the ID, it's just message text — no completion
+      // After the target, it's just message text — no completion
       break;
     }
 

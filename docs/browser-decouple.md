@@ -128,7 +128,7 @@ class BrowserLocalStorageAdapter implements PersistenceAdapter {
 
 ### 5. 命令系统浏览器移植
 
-所有 49 个命令 handler 已重构为浏览器安全：
+所有 47 个命令 handler 已重构为浏览器安全：
 
 | 命令             | Node 依赖            | 浏览器处理                                 |
 | ---------------- | -------------------- | ------------------------------------------ |

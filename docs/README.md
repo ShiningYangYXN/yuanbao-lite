@@ -9,7 +9,7 @@
 | [架构总览](./architecture.md)            | 项目整体架构、模块划分、数据流                       | 所有开发者（必读） |
 | [快速上手](./getting-started.md)         | 安装、配置、第一个 Bot                               | 新用户             |
 | [核心 API 参考](./api-reference.md)      | YuanbaoBot 类、事件、方法的完整参考                  | 应用开发者         |
-| [命令系统](./command-system.md)          | 49 个内置命令、自定义命令、权限模型                  | 命令开发者         |
+| [命令系统](./command-system.md)          | 47 个内置命令、自定义命令、权限模型                  | 命令开发者         |
 | [LLM 接管引擎](./llm-takeover.md)        | 多供应商配置、密钥池、迭代调用、用量统计             | LLM 集成开发者     |
 | [持久化适配器](./persistence-adapter.md) | PersistenceAdapter 接口、NodeFsAdapter、浏览器适配器 | 跨平台开发者       |
 | [浏览器解耦](./browser-decouple.md)      | 同构架构、Web Crypto、动态导入、打包指南             | 浏览器/Edge 开发者 |

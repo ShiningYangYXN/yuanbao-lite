@@ -13,7 +13,7 @@
 
 - **同构架构** — 同一份 TypeScript 源码，Node.js 与浏览器均可运行
 - **daemon-first** — CLI 与 daemon 分离，零 WebSocket 重连
-- **49 个内置命令** — 聊天、群管、媒体、LLM、系统管理
+- **47 个内置命令** — 聊天、群管、媒体、LLM、系统管理
 - **LLM 接管** — 多供应商（OpenAI/Claude/Gemini/Bedrock/Azure）、密钥池、迭代调用
 - **安全机制** — 信任系统 + 封禁系统 + unsafe 模式 + 插值安全
 - **持久化适配器** — `PersistenceAdapter` 接口抽象文件 I/O，支持浏览器自定义后端
@@ -133,7 +133,7 @@ new YuanbaoBot({
 
 ### 命令系统
 
-49 个内置命令，支持自定义。通过 `await bot.init()` 懒加载。
+47 个内置命令，支持自定义。通过 `await bot.init()` 懒加载。
 
 ```typescript
 await bot.registerCommand({
@@ -211,7 +211,7 @@ src/
 │   └── search.ts         # 模糊搜索
 ├── commands/             # 命令系统（全部浏览器安全）
 │   ├── registry.ts       # 命令注册与分发
-│   ├── handlers/         # 49 个命令 handler（按分类组织）
+│   ├── handlers/         # 47 个命令 handler（按分类组织）
 │   ├── types.ts          # 命令类型
 │   └── help-text.ts      # 帮助文本
 ├── shared/

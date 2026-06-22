@@ -21,16 +21,13 @@ import type { ChatMessage } from "../../src/types.js";
 
 // Commands that require a connected bot (will skip dispatch, just test registration)
 const REQUIRE_CONNECTED = new Set([
-  "dm",
-  "group",
+  "chat",
   "reply",
   "sticker",
   "upload",
   "download",
   "file",
   "img",
-  "atall",
-  "mention",
 ]);
 
 // Commands that are Node-only (may fail in browser, but should work in Node test)
@@ -110,11 +107,11 @@ describe("All commands dispatch test", () => {
     cs.enableUnsafeMode(60000);
   });
 
-  it("registers 40+ commands", () => {
+  it("registers 45+ commands", () => {
     const commands = cs.getVisibleCommands();
     assert.ok(
-      commands.length >= 40,
-      `expected 40+ commands, got ${commands.length}`,
+      commands.length >= 45,
+      `expected 45+ commands, got ${commands.length}`,
     );
   });
 

@@ -1,21 +1,45 @@
 /**
- * /chat command handler — extracted from registry.ts (lossless split).
+ * /chat command handler — unified message sending.
  * Category: chat
  *
- * Handler logic is copied verbatim from the original registerBuiltinCommands()
- * method, with only `this.X` → `cmdSys.X` substitutions and relative import
- * path fixes.
+ * Auto-detects the target type:
+ *   - 9-digit pure number (regex /^\d{9}$/) → group message
+ *   - Otherwise → direct message (resolved via contact store + @-reference)
+ *
+ * Examples:
+ *   /chat 707881071 大家好       → 群消息
+ *   /chat @张三 你好              → 私聊（@-reference）
+ *   /chat u_abc123 你好           → 私聊（用户ID）
+ *   /chat alice 你好              → 私聊（联系人名/别名）
+ *
+ * In a CLI context, calling /chat with a target but no message enters
+ * session mode (the CLI client intercepts this; the daemon handler
+ * just sends or enters mode).
+ *
+ * Backward compatibility: /dm and /group are now aliases of /chat. They
+ * dispatch to this same handler — no separate code paths.
+ *
+ * Bug fix (v12.2.0): the original chat.ts had an inverted check that
+ * tested args[0] against /^\d{9}$/ but then used args[1] as the
+ * groupCode. Now args[0] is consistently the target (group or user).
  */
 
 import type { CommandSystem } from "../../registry.js";
 import type { CommandCategory } from "../../types.js";
-const USAGE = "/chat <目标> <消息>";
+
+const USAGE =
+  "/chat <目标> <消息>\n" +
+  "  目标为 9 位纯数字 → 群聊\n" +
+  "  目标为用户ID/@提及/联系人名 → 私聊";
+
+const GROUP_CODE_RE = /^\d{9}$/;
 
 export function register(cmdSys: CommandSystem): void {
   cmdSys.register({
     name: "chat",
-    aliases: ["聊天"],
-    description: "向指定目标发送消息（私聊或群聊）",
+    aliases: ["聊天", "dm", "私聊", "group", "群发"],
+    description:
+      "发送消息（自动识别群聊/私聊：9位纯数字=群，其他=私聊）",
     usage: USAGE,
     category: "chat" as CommandCategory,
     requireConnected: true,
@@ -25,27 +49,42 @@ export function register(cmdSys: CommandSystem): void {
         await ctx.reply(`用法: ${USAGE}`);
         return;
       }
-      if (/^\d{9}$/.test(ctx.args[0].trim()) && ctx.args.length >= 2) {
-        const groupCode = ctx.args[1];
-        const text = ctx.args.slice(2).join(" ");
+
+      const rawTarget = ctx.args[0];
+
+      // Case 1: 9-digit pure number → group message
+      if (GROUP_CODE_RE.test(rawTarget.trim())) {
+        if (ctx.args.length < 2) {
+          await ctx.reply(`用法: /chat <群号> <消息>`);
+          return;
+        }
+        const groupCode = rawTarget.trim();
+        const text = ctx.args.slice(1).join(" ");
         try {
           await ctx.bot.sendGroupMessage(groupCode, text);
           await ctx.reply(`✅ 已发送群聊消息到 ${groupCode}`);
         } catch (err) {
           await ctx.reply(`❌ 发送失败: ${(err as Error).message}`);
         }
-      } else if (ctx.args.length >= 2) {
-        // Resolve @-references in the first arg (user ID)
-        const userId = await ctx.resolveAtReference(ctx.args[0]);
-        const text = ctx.args.slice(1).join(" ");
-        try {
-          await ctx.bot.sendDirectMessage(userId, text);
-          await ctx.reply(`✅ 已发送私聊消息给 ${userId}`);
-        } catch (err) {
-          await ctx.reply(`❌ 发送失败: ${(err as Error).message}`);
-        }
-      } else {
-        await ctx.reply(`用法: ${USAGE}`);
+        return;
+      }
+
+      // Case 2: direct message (resolve @-reference, then contact store)
+      if (ctx.args.length < 2) {
+        await ctx.reply(`用法: /chat <用户ID或别名> <消息>`);
+        return;
+      }
+      const rawUserId = await ctx.resolveAtReference(rawTarget);
+      const userId = ctx.bot.getContactStore().resolve(rawUserId);
+      const text = ctx.args.slice(1).join(" ");
+      ctx.bot.getContactStore().touch(rawUserId);
+      try {
+        await ctx.bot.sendDirectMessage(userId, text);
+        await ctx.reply(
+          `✅ 已发送私聊消息给 ${rawUserId === userId ? userId : `${rawUserId} (${userId})`}`,
+        );
+      } catch (err) {
+        await ctx.reply(`❌ 发送失败: ${(err as Error).message}`);
       }
     },
   });

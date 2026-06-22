@@ -5,9 +5,12 @@
  *   - Persistent history (RichHistory, deduped, ~/.yuanbao-lite/history)
  *   - ↑↓ navigation through history
  *   - Tab completion (commands, sub-commands, file paths, contacts/groups/aliases)
- *   - Real-time syntax highlighting of the input line
+ *   - Committed-line syntax highlighting (slash commands, flags, mentions)
  *   - Multi-line input via trailing backslash
  *   - Live SSE subscription for incoming DM/group messages
+ *   - Prompt re-rendering after inbound messages (stays at terminal bottom)
+ *   - Wizard real-time content display (init/llm config wizards)
+ *   - Unified /chat session mode (auto-detect group vs DM by 9-digit regex)
  *
  * All commands route through the daemon via /command — zero business logic
  * in the client.
@@ -25,6 +28,7 @@ import {
   type CompletionContext,
   type CompletionResult,
 } from "./auto-complete.js";
+import { highlightLine } from "./syntax-highlight.js";
 import {
   COLORS,
   printH1,
@@ -44,7 +48,12 @@ const state = {
   chatTarget: "",
   running: true,
   multilineBuffer: "",
+  /** Wizard active flag — cached locally to avoid 2 HTTP hops per message */
+  wizardActive: false,
 };
+
+// 9-digit pure number = group code (per /chat handler convention)
+const GROUP_CODE_RE = /^\d{9}$/;
 
 // ─── Main ───
 
@@ -82,9 +91,6 @@ export async function runInteractive(): Promise<void> {
   const refreshCompletions = async () => {
     try {
       const data = await client.fetchCompletions();
-      // Build lightweight stores that satisfy the CompletionContext shape.
-      // The auto-complete module only reads .getAll() / .resolve() / .get()
-      // — we provide minimal in-memory implementations.
       completionCtx.contactStore = makeLiteContactStore(data.contacts) as never;
       completionCtx.groupStore = makeLiteGroupStore(data.groups) as never;
       completionCtx.aliasStore = makeLiteAliasStore(data.aliases) as never;
@@ -95,6 +101,17 @@ export async function runInteractive(): Promise<void> {
   void refreshCompletions();
   const completionTimer = setInterval(refreshCompletions, 30_000);
 
+  // Also poll wizard status every 2s so wizardActive stays fresh without
+  // adding a round-trip to every plain-text message
+  const wizardTimer = setInterval(async () => {
+    try {
+      const wiz = await client.wizardStatus("cli");
+      state.wizardActive = wiz.active;
+    } catch {
+      state.wizardActive = false;
+    }
+  }, 2000);
+
   // 6. Readline interface
   const rl = readline.createInterface({
     input: process.stdin,
@@ -102,16 +119,22 @@ export async function runInteractive(): Promise<void> {
     completer: (line: string) => completer(line, completionCtx),
     historySize: 0, // we manage history ourselves via RichHistory
     prompt: currentPrompt(),
+    // terminal: true is the default when stdout is a TTY; explicit for safety
+    terminal: true,
   });
+
+  // Expose rl to SSE handlers so they can re-render the prompt after
+  // printing inbound messages (keeps prompt at terminal bottom).
+  rlInstance = rl;
 
   // Sync RichHistory → readline.history for ↑↓ navigation
   syncHistory(rl, history);
 
-  // Custom keypress handler for real-time syntax highlighting
-  setupSyntaxHighlight(rl);
-
   // Refresh prompt when chat mode changes
-  const refreshPrompt = () => rl.setPrompt(currentPrompt());
+  const refreshPrompt = () => {
+    rl.setPrompt(currentPrompt());
+    rl.prompt(true);
+  };
 
   // 7. REPL loop
   rl.prompt();
@@ -119,9 +142,6 @@ export async function runInteractive(): Promise<void> {
   await new Promise<void>((resolve) => {
     rl.on("line", async (input: string) => {
       // 续行 (continuation): line ending with \ is extension of previous input.
-      // Join with \n so the assembled fullLine preserves line boundaries —
-      // processLine below splits by \n and dispatches each line independently
-      // (per dispatch rule 2: 续行本来就要拆行).
       if (input.endsWith("\\") && !input.endsWith("\\\\")) {
         state.multilineBuffer += input.slice(0, -1) + "\n";
         rl.setPrompt(
@@ -140,6 +160,17 @@ export async function runInteractive(): Promise<void> {
         return;
       }
 
+      // Re-display the committed line with syntax highlighting.
+      // readline already echoed the raw input; we move up one line, clear
+      // it, and re-print the highlighted version so the user sees colored
+      // output in their scrollback.
+      if (fullLine.startsWith("/")) {
+        process.stdout.write("\r\x1b[K"); // CR + clear current line
+        process.stdout.write(
+          `${currentPrompt()}${highlightLine(fullLine)}\n`,
+        );
+      }
+
       // Save to history (skip sensitive commands)
       history.add(fullLine);
       syncHistory(rl, history);
@@ -154,7 +185,6 @@ export async function runInteractive(): Promise<void> {
       }
 
       refreshPrompt();
-      rl.prompt();
     });
 
     rl.on("SIGINT", () => {
@@ -176,27 +206,16 @@ export async function runInteractive(): Promise<void> {
 
   // Cleanup
   clearInterval(completionTimer);
+  clearInterval(wizardTimer);
   unsubscribe();
+  rlInstance = null;
 
   printStatus("再见 👋");
 }
 
 // ─── Line processing ───
-//
-// Dispatch rules (mirror src/index.ts handleDispatch Step 2):
-//   1. 未续行 (standalone line, not preceded by \) → independent content,
-//      recognize slash independently. Lines starting with / are slash commands.
-//   2. 续行 (continuation, preceded by \) → extension of previous input, but
-//      the joined fullLine preserves \n so processLine below splits and
-//      dispatches each line independently (续行本来就要拆行).
-//   3. 不符合任何一条规则 (standalone plain text — no slash, not continuation):
-//      - 私聊 (bot-side DM, chatType=direct in src/index.ts): auto-reply via LLM.
-//      - CLI (here): send directly as chat message to the current target.
-//        If no chat target is set, sendChatMessage() prints an error hint.
+
 async function processLine(line: string, client: DaemonClient): Promise<void> {
-  // Split by \n — this includes both pasted multi-line input AND lines joined
-  // by \ continuation (which preserve \n per the readline handler above).
-  // Each line is dispatched independently in its original order.
   const lines = line
     .split(/\n/)
     .map((l) => l.trim())
@@ -222,26 +241,24 @@ async function processSingleCommand(
     return;
   }
 
-  // /chat [dm|group <id>] — handle locally + delegate to CommandSystem
+  // /chat with a target but no message → enter session mode (CLI-side)
+  // /chat with no args → exit session mode
   if (line === "/chat" || line.startsWith("/chat ")) {
-    handleChatCommand(line);
-    await dispatchCommand(line, client);
-    return;
-  }
-
-  // /join <groupCode> — set chat mode locally + delegate
-  if (line === "/join" || line.startsWith("/join ")) {
-    const parts = line.split(/\s+/);
-    if (parts.length >= 2) {
-      state.chatMode = "group";
-      state.chatTarget = parts[1];
-      printStatus(`切换到群聊模式: ${parts[1]}`);
+    const handled = handleChatCommand(line);
+    if (handled) {
+      // Session mode change handled locally — still dispatch to daemon
+      // so the bot-side context is consistent, but only if there's a message
+      const parts = line.split(/\s+/);
+      if (parts.length >= 3) {
+        await dispatchCommand(line, client);
+      }
+      return;
     }
     await dispatchCommand(line, client);
     return;
   }
 
-  // /switch — show locally + delegate
+  // /switch — show current mode locally + delegate
   if (line === "/switch" || line.startsWith("/switch ")) {
     printStatus(
       `当前模式: ${state.chatMode} ${state.chatTarget ? `→ ${state.chatTarget}` : ""}`,
@@ -251,21 +268,50 @@ async function processSingleCommand(
   }
 
   // Any other /command → daemon dispatch
-  if (line.startsWith("/")) {
-    await dispatchCommand(line, client);
-    return;
+  await dispatchCommand(line, client);
+}
+
+/**
+ * Handle /chat locally for session mode entry/exit.
+ * Returns true if the command was a session-mode change (no message to send),
+ * false if it should be dispatched to the daemon.
+ */
+function handleChatCommand(line: string): boolean {
+  const parts = line.split(/\s+/);
+  // /chat (no args) → exit session mode
+  if (parts.length === 1) {
+    if (state.chatMode !== "none") {
+      state.chatMode = "none";
+      state.chatTarget = "";
+      printStatus("已退出会话模式");
+    }
+    return true;
   }
+  // /chat <target> (no message) → enter session mode
+  if (parts.length === 2) {
+    const target = parts[1];
+    if (GROUP_CODE_RE.test(target)) {
+      state.chatMode = "group";
+      state.chatTarget = target;
+      printStatus(`切换到群聊会话: ${target}`);
+    } else {
+      state.chatMode = "dm";
+      state.chatTarget = target;
+      printStatus(`切换到私聊会话: ${target}`);
+    }
+    return true;
+  }
+  // /chat <target> <message> → not a session change, dispatch to daemon
+  return false;
 }
 
 async function sendChatMessage(
   text: string,
   client: DaemonClient,
 ): Promise<void> {
-  // Non-slash input — check if a wizard session is active
-  // If so, route the input to the wizard instead of sending as chat message
-  try {
-    const wizStatus = await client.wizardStatus("cli");
-    if (wizStatus.active) {
+  // If a wizard session is active (cached locally), route input to it
+  if (state.wizardActive) {
+    try {
       const result = await client.wizardInput(text, "cli");
       if (result.handled) {
         if (result.replies.length > 0) {
@@ -277,14 +323,14 @@ async function sendChatMessage(
         }
         return;
       }
+    } catch {
+      // wizard check failed — fall through to normal send
     }
-  } catch {
-    // wizard check failed — fall through to normal send
   }
 
   // Plain text → send to current chat target
   if (state.chatMode === "none") {
-    printError("未进入聊天模式，使用 /chat dm <id> 或 /chat group <groupCode>");
+    printError("未进入会话模式，使用 /chat <目标> 进入（9位数字=群，其他=私聊）");
     return;
   }
   if (state.chatMode === "dm") {
@@ -341,40 +387,10 @@ async function dispatchCommand(
   }
 
   // After /daemon stop or /daemon reset, the daemon is gone.
-  // The CLI can no longer communicate with it, so exit cleanly.
   if (shouldExitAfter) {
     console.log(chalk.dim("CLI 将退出（daemon 已停止）"));
     process.exit(0);
   }
-}
-
-function handleChatCommand(line: string): void {
-  const parts = line.split(/\s+/);
-  if (parts.length === 1) {
-    state.chatMode = "none";
-    state.chatTarget = "";
-    printStatus("已退出聊天模式");
-    return;
-  }
-  if (parts[1] === "group" && parts[2]) {
-    state.chatMode = "group";
-    state.chatTarget = parts[2];
-    printStatus(`切换到群聊模式: ${parts[2]}`);
-    return;
-  }
-  if (parts[1] === "dm" && parts[2]) {
-    state.chatMode = "dm";
-    state.chatTarget = parts[2];
-    printStatus(`切换到私聊模式: ${parts[2]}`);
-    return;
-  }
-  if (parts[1] && parts[1] !== "dm" && parts[1] !== "group") {
-    state.chatMode = "dm";
-    state.chatTarget = parts[1];
-    printStatus(`切换到私聊模式: ${parts[1]}`);
-    return;
-  }
-  printWarn("用法: /chat [dm <id> | group <groupCode>]");
 }
 
 // ─── Tab completion ───
@@ -388,29 +404,10 @@ function completer(line: string, ctx: CompletionContext): [string[], string] {
   }
 }
 
-// ─── Real-time syntax highlighting ───
-
-function setupSyntaxHighlight(rl: readline.Interface): void {
-  // node:readline doesn't expose a clean "on input change" hook.
-  // Real-time syntax highlighting would require intercepting keypress events
-  // and re-rendering the line — this conflicts with readline's own cursor
-  // management and breaks arrow keys / history navigation.
-  //
-  // Instead, we apply syntax highlighting to the FINAL committed line via
-  // the /command dispatch path (the daemon's CommandSystem produces colored
-  // output). For interactive editing, we rely on readline's default behavior.
-  //
-  // The highlightLine() function from cli/client/syntax-highlight.ts (removed) is
-  // still available and applied to command replies in dispatchCommand().
-  void rl;
-}
-
 // ─── History sync ───
 
 function syncHistory(rl: readline.Interface, history: RichHistory): void {
-  // readline.history is the array used for ↑↓ navigation (reversed: index 0 = most recent)
   const all = history.getAll().slice(-500);
-  // readline expects most-recent-first
   (rl as unknown as { history: string[] }).history = all.slice().reverse();
 }
 
@@ -444,10 +441,26 @@ async function printInboundMessage(
   isGroup: boolean,
 ): Promise<void> {
   if (msg.fromUserId === "cli") return;
+
+  // Session-mode filtering: if the user is in a group/DM session, only
+  // show messages from THAT session. Other messages are silently dropped
+  // (the user explicitly entered a focused session).
+  if (state.chatMode === "group" && state.chatTarget) {
+    if (!isGroup || msg.groupCode !== state.chatTarget) return;
+  } else if (state.chatMode === "dm" && state.chatTarget) {
+    if (isGroup || msg.fromUserId !== state.chatTarget) return;
+  }
+
   const { formatInboundMessage } = await import("../utils/cli-format.js");
-  process.stdout.write("\n");
+  // Clear the current prompt line, print the message, then re-render the
+  // prompt below it — this keeps the prompt "stuck" to the bottom of the
+  // terminal instead of leaving it stranded mid-screen.
+  process.stdout.write("\r\x1b[K"); // CR + clear line
   console.log(formatInboundMessage(msg, isGroup));
-  process.stdout.write("\n");
+  // Re-render prompt on the new bottom line
+  if (rlInstance) {
+    rlInstance.prompt(true);
+  }
 }
 
 async function printOutboundMessage(
@@ -456,12 +469,15 @@ async function printOutboundMessage(
   isGroup: boolean,
 ): Promise<void> {
   const { formatOutboundMessage } = await import("../utils/cli-format.js");
-  process.stdout.write("\n");
+  process.stdout.write("\r\x1b[K");
   console.log(formatOutboundMessage(text, to, isGroup));
-  process.stdout.write("\n");
+  if (rlInstance) {
+    rlInstance.prompt(true);
+  }
 }
 
 function printStateChange(s: BotState): void {
+  process.stdout.write("\r\x1b[K");
   if (s.connected) {
     printResult(`bot 已连接${s.botId ? ` (botId=${s.botId})` : ""}`);
   } else {
@@ -469,9 +485,10 @@ function printStateChange(s: BotState): void {
       `bot 状态变更: ${s.status}${s.lastError ? ` — ${s.lastError}` : ""}`,
     );
   }
+  if (rlInstance) {
+    rlInstance.prompt(true);
+  }
 }
-
-// formatTime/pad2 moved to cli-format.ts
 
 // ─── Prompt rendering ───
 
@@ -485,21 +502,26 @@ function currentPrompt(): string {
   return chalk.rgb(100, 180, 255).bold("yuanbao ❯ ");
 }
 
+// rlInstance is set after readline.createInterface so that SSE handlers
+// can re-render the prompt after printing inbound messages.
+let rlInstance: readline.Interface | null = null;
+
 function printWelcome(version: string, pid: number, port: number): void {
   printH1(`Yuanbao Lite CLI v${version}`);
   console.log(
-    `  ${COLORS.dim("shell-mode · readline + RichHistory + auto-complete")}`,
+    `  ${COLORS.dim("shell-mode · readline + RichHistory + auto-complete + syntax-highlight")}`,
   );
   console.log(`  ${COLORS.dim(`daemon pid=${pid} port=${port}`)}`);
   console.log(
     `  ${COLORS.dim("/help 查看命令  ·  ↑↓ 历史  ·  Tab 补全  ·  \\ 换行  ·  Ctrl+C 退出")}`,
   );
+  console.log(
+    `  ${COLORS.dim("/chat <目标> 进入会话  ·  /chat 退出会话  (9位数字=群，其他=私聊)")}`,
+  );
   console.log("");
 }
 
 // ─── Lite in-memory stores for completion context ───
-// The auto-complete module reads .getAll() / .resolve() / .get() — we provide
-// minimal implementations backed by data fetched from the daemon.
 
 type LiteContact = { id: string; name: string; tag?: string };
 type LiteGroup = { groupCode: string; name: string; tag?: string };

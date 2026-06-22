@@ -187,12 +187,17 @@ export function formatInboundMessage(
   const hasContent = msg.text && msg.text.includes("[content:");
   const contentMark = hasContent ? chalk.cyan(" 📄") : "";
 
+  // Detect inbound slash commands — show with a ⚡ 命令 tag (yellow),
+  // placed AFTER the @mention tag so the order is: type · @我 · ⚡ 命令
+  const isCommand = msg.text && msg.text.trim().startsWith("/");
+  const commandMark = isCommand ? chalk.yellow(" ⚡ 命令") : "";
+
   let header: string;
   if (isGroup) {
     const group = chalk.cyan(msg.groupName || msg.groupCode || "?");
-    header = `  ${chalk.green("群")}  ${group} ${chalk.dim("/")} ${nick}${typeLabel}${mentionMark}${attachMark}${contentMark} ${chalk.dim("·")} ${time}`;
+    header = `  ${chalk.green("群")}  ${group} ${chalk.dim("/")} ${nick}${typeLabel}${mentionMark}${commandMark}${attachMark}${contentMark} ${chalk.dim("·")} ${time}`;
   } else {
-    header = `  ${chalk.cyan("私")}  ${nick}${typeLabel}${attachMark}${contentMark} ${chalk.dim("·")} ${time}`;
+    header = `  ${chalk.cyan("私")}  ${nick}${typeLabel}${commandMark}${attachMark}${contentMark} ${chalk.dim("·")} ${time}`;
   }
   const body = `      ${msg.text || "(非文本)"}`;
   return `${header}\n${body}`;

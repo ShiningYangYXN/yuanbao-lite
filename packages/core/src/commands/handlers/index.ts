@@ -5,8 +5,6 @@
 import type { CommandSystem } from "../registry.js";
 
 import { register as registerChat } from "./chat/chat.js";
-import { register as registerDm } from "./chat/dm.js";
-import { register as registerGroup } from "./chat/group.js";
 import { register as registerReply } from "./chat/reply.js";
 import { register as registerSticker } from "./chat/sticker.js";
 import { register as registerStickers } from "./chat/stickers.js";
@@ -56,8 +54,6 @@ import { register as registerVisit } from "./utility/visit.js";
 
 export {
   registerChat,
-  registerDm,
-  registerGroup,
   registerReply,
   registerSticker,
   registerStickers,
@@ -108,8 +104,6 @@ export {
 
 export function registerAll(cmdSys: CommandSystem): void {
   registerChat(cmdSys);
-  registerDm(cmdSys);
-  registerGroup(cmdSys);
   registerReply(cmdSys);
   registerSticker(cmdSys);
   registerStickers(cmdSys);
