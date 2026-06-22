@@ -1,11 +1,21 @@
 {
   "name": "yuanbao-lite",
-  "version": "11.4.3",
+  "version": "11.5.0",
   "type": "module",
   "description": "Lightweight standalone Yuanbao bot client — chat, commands, media, stickers, LLM takeover, interactive CLI",
   "license": "MIT",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./commands": {
+      "types": "./dist/commands-entry.d.ts",
+      "default": "./dist/commands-entry.js"
+    }
+  },
   "bin": {
     "yb-cli": "./dist/cli/index.js",
     "yuanbao-lite-cli": "./dist/cli/index.js"
@@ -59,7 +69,8 @@
     "protobufjs": "^7.5.4",
     "string-width": "^8.2.1",
     "table": "^6.9.0",
-    "ws": "^8.20.0"
+    "ws": "^8.20.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@eslint/css": "^1.3.0",

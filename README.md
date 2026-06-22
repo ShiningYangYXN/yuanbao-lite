@@ -358,6 +358,58 @@ pnpm build
 pnpm lint
 ```
 
+## 浏览器解耦（实验性，v11.5.0+）
+
+从 v11.5.0 开始，核心逻辑（`src/index.ts` + `business/` + `access/`）与命令系统在
+**静态导入图**层面解耦。这意味着浏览器打包工具（Vite/Rollup/esbuild）可以将命令系统
+（含 53 个 handler 文件及其 `node:*` 依赖）独立拆分为按需加载的 chunk，仅在调用
+`bot.init()` 时才下载。
+
+### 当前可用能力
+
+```typescript
+// 浏览器侧 — 关闭命令系统，避免拉入 node:* 依赖
+import { YuanbaoBot } from "yuanbao-lite";
+
+const bot = new YuanbaoBot({
+  appKey: "...",
+  appSecret: "...",
+  commands: false, // 关键：阻止 ./commands/registry.js 被加载
+});
+
+await bot.start(); // 仍会因 ws / http 模块的 node:* 依赖报错（见下方"已知限制"）
+```
+
+### API 变更（v11.5.0）
+
+- `YuanbaoBot` 构造函数**不再**静态 import `CommandSystem`。
+- 新增 `await bot.init()` —— 显式触发命令系统加载（idempotent，`start()` 会自动调用）。
+- `bot.registerCommand(def)` 与 `bot.unregisterCommand(name)` 改为 **async**，需 `await`。
+- `bot.getCommandSystem()` 在 `init()` 之前返回 `null`；当 `config.commands = false` 时永远返回 `null`。
+- 主入口 `yuanbao-lite` 不再静态导出运行时 `CommandSystem` 类。需要直接 new 出实例时使用子路径：
+  ```typescript
+  import { CommandSystem } from "yuanbao-lite/commands";
+  ```
+  （类型导出 `import type { CommandSystem } from "yuanbao-lite"` 仍可用。）
+- `version.ts` 不再静态 import `node:fs/path/url`，改用 opaque 间接 `require`，
+  浏览器/Edge runtime 会回退到硬编码 fallback 版本号。
+
+### 已知限制（后续迭代处理）
+
+1. `src/index.ts` 仍直接 `import { existsSync, readFileSync } from "node:fs"` 等 ——
+   这些是 `loadRuntimePrefs()` 与各 store 的 `persistencePath` 使用。Phase 2 将引入
+   `PersistenceAdapter` 接口（NodeFsAdapter / BrowserIndexedDbAdapter）。
+2. `src/access/ws/client.ts` 使用 `ws` 包；浏览器有原生 `WebSocket`，Phase 2 将抽象为
+   `WebSocketAdapter`。
+3. `src/access/http/request.ts` 使用 `node:crypto` 的 `createHmac` 进行签名；Phase 2 将
+   改用 Web Crypto API。
+4. 所有 Tencent HTTP 端点（`bot.yuanbao.tencent.com` 等）存在 CORS 限制，浏览器无法直连。
+   Phase 3 将提供 `httpProxy` 配置项与示例 serverless proxy。
+5. LLM 引擎中 `@ai-sdk/amazon-bedrock` 依赖 SigV4 (node-only)，浏览器不支持 AWS Bedrock
+   provider，但 OpenAI/Anthropic/Gemini 等 provider 均可使用。
+
+详见 [BROWSER_DECOUPLE_ANALYSIS.md](BROWSER_DECOUPLE_ANALYSIS.md) 的完整分析与分阶段计划。
+
 ## 许可证
 
 MIT

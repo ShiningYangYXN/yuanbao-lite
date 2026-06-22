@@ -42,7 +42,12 @@ import type { ModuleLog, PluginLogger } from "./logger.js";
 import { getSignToken, forceRefreshSignToken, clearAllSignTokenCache } from "./access/http/request.js";
 import { resolveAccount } from "./accounts.js";
 import { toChatMessage, buildTextMsgBody } from "./business/messaging/extract.js";
-import { CommandSystem } from "./commands/registry.js";
+// CommandSystem is loaded LAZILY via dynamic import() in init() so that
+// browser/edge bundlers can tree-shake the 53 command handlers (several of
+// which import node:child_process / node:os / node:fs) out of the browser
+// bundle. The type import below is erased at compile time and does NOT
+// contribute to the runtime import graph.
+import type { CommandSystem } from "./commands/registry.js";
 import type { CommandSystemConfig, CommandDefinition } from "./commands/types.js";
 import { uploadMedia, downloadMedia, extractMediaInfo, downloadAllMedia, buildImageMsgBody, buildFileMsgBody } from "./access/http/media.js";
 import type { UploadResult, DownloadResult, MediaInfo } from "./access/http/media.js";
@@ -127,6 +132,20 @@ export class YuanbaoBot {
 
   private eventHandlers = new Map<string, Set<(...args: unknown[]) => void>>();
   private commandSystem: CommandSystem | null = null;
+  /**
+   * Pending CommandSystem config + custom commands saved by the constructor.
+   * `init()` consumes these when it lazily imports `./commands/registry.js`
+   * and instantiates the CommandSystem. Keeping them here lets the constructor
+   * stay sync (and lets browser/edge callers skip the heavy command-system
+   * import entirely by setting `config.commands = false`).
+   */
+  private pendingCommandConfig?: CommandSystemConfig;
+  private pendingCustomCommands?: CommandDefinition[];
+  /**
+   * In-flight init promise — ensures `init()` is idempotent even when called
+   * concurrently from `start()` and external code.
+   */
+  private initPromise: Promise<void> | null = null;
   private aliasStore: AliasStore;
   private contactStore: ContactStore;
   private groupStore: GroupStore;
@@ -187,17 +206,20 @@ export class YuanbaoBot {
       autoPersist: true,
     });
 
-    // Initialize command system
+    // Initialize command system — DEFERRED to init().
+    //
+    // We do NOT statically import CommandSystem here (see import note above).
+    // The constructor only records the user's intent (config + custom commands);
+    // the actual `await import("./commands/registry.js")` happens in init() so
+    // that browser bundles can omit the entire 53-handler chain.
+    //
+    // `config.commands === false` is honored: we set the `commandsDisabled`
+    // flag and init() will short-circuit without touching the registry.
     if (config.commands !== false) {
-      const cmdConfig = typeof config.commands === "object" ? config.commands : undefined;
-      this.commandSystem = new CommandSystem(cmdConfig);
-
-      // Register custom commands
-      if (config.customCommands) {
-        for (const cmd of config.customCommands) {
-          this.commandSystem.register(cmd);
-        }
-      }
+      this.pendingCommandConfig = typeof config.commands === "object" ? config.commands : undefined;
+      this.pendingCustomCommands = config.customCommands;
+    } else {
+      this.commandsDisabled = true;
     }
 
     // Initialize LLM engine — always create so /llm commands work.
@@ -253,6 +275,73 @@ export class YuanbaoBot {
   // ─── Lifecycle ───
 
   /**
+   * Initialize the bot's heavy sub-systems (currently: the command system).
+   *
+   * This is called automatically by {@link start}, but advanced users can
+   * call it explicitly to:
+   *   - Fail fast if `./commands/registry.js` (and its 53 handlers) cannot load.
+   *   - Pre-warm the command system before registering custom commands via
+   *     {@link registerCommand} (which is now async and awaits `init()`).
+   *   - Verify that the command system is available before calling
+   *     {@link getCommandSystem}.
+   *
+   * Idempotent: concurrent calls share the same in-flight promise; subsequent
+   * calls after success are no-ops. Returns immediately if `config.commands`
+   * was set to `false` (in which case the command system is never loaded and
+   * `getCommandSystem()` will return `null`).
+   *
+   * Browser/edge callers that set `config.commands = false` can safely call
+   * `init()` — it resolves without touching any Node-only module.
+   */
+  async init(): Promise<void> {
+    if (this.initPromise) return this.initPromise;
+    this.initPromise = this.doInit().catch((err) => {
+      // Allow a retry on failure — otherwise the cached rejected promise
+      // would prevent any subsequent init() from running.
+      this.initPromise = null;
+      throw err;
+    });
+    return this.initPromise;
+  }
+
+  private async doInit(): Promise<void> {
+    // Skip if the user explicitly disabled commands at construction time.
+    // We track this via the `commandsDisabled` flag set in the constructor.
+    if (this.commandsDisabled) return;
+    // Already initialized (e.g. via a prior registerCommand() call).
+    if (this.commandSystem) {
+      // Clear any pending custom commands so a second init() doesn't
+      // double-register them — but if there ARE pending ones, register now.
+      if (this.pendingCustomCommands?.length) {
+        for (const cmd of this.pendingCustomCommands) {
+          this.commandSystem.register(cmd);
+        }
+        this.pendingCustomCommands = undefined;
+      }
+      this.pendingCommandConfig = undefined;
+      return;
+    }
+
+    // The single dynamic import() that keeps `./commands/registry.js`
+    // (and the 53 handler files it transitively imports) out of any
+    // bundler's static graph for `src/index.ts`.
+    const { CommandSystem: CommandSystemCtor } = await import("./commands/registry.js");
+    this.commandSystem = new CommandSystemCtor(this.pendingCommandConfig);
+    if (this.pendingCustomCommands) {
+      for (const cmd of this.pendingCustomCommands) {
+        this.commandSystem.register(cmd);
+      }
+    }
+    // Clear pending fields so a second init() (e.g. after a failed first attempt)
+    // doesn't re-register the same custom commands.
+    this.pendingCommandConfig = undefined;
+    this.pendingCustomCommands = undefined;
+  }
+
+  /** Set by the constructor when `config.commands === false`. */
+  private commandsDisabled = false;
+
+  /**
    * Start the bot — connects to Yuanbao WebSocket gateway.
    *
    * Resolves when the bot is disconnected (via stop() or fatal error).
@@ -262,6 +351,12 @@ export class YuanbaoBot {
     if (!this.account.configured) {
       throw new Error("Bot not configured: appKey and appSecret are required");
     }
+
+    // Eagerly initialize the command system (if enabled) so that incoming
+    // messages can be dispatched as soon as the WS handshake completes.
+    // Browser callers that set `config.commands = false` skip this and
+    // the dynamic import of ./commands/registry.js never happens.
+    await this.init();
 
     // Load persisted runtime preferences (log level, etc.)
     this.loadRuntimePrefs();
@@ -846,6 +941,13 @@ export class YuanbaoBot {
 
   /**
    * Get the command system instance.
+   *
+   * Returns `null` until {@link init} (or {@link start}) has been awaited.
+   * Also returns `null` if the bot was constructed with `config.commands = false`.
+   *
+   * Browser callers that disable the command system will always get `null`
+   * here — they cannot dispatch slash commands, but they can still use
+   * `sendText`, `sendDirectMessage`, etc. directly.
    */
   getCommandSystem(): CommandSystem | null {
     return this.commandSystem;
@@ -853,18 +955,33 @@ export class YuanbaoBot {
 
   /**
    * Register a custom command.
+   *
+   * Now async — awaits {@link init} to ensure `./commands/registry.js` is
+   * loaded before registration. Callers that previously did
+   * `bot.registerCommand(def)` synchronously should update to
+   * `await bot.registerCommand(def)`.
+   *
+   * If the bot was constructed with `config.commands = false`, this method
+   * is a no-op (the command system is permanently disabled).
    */
-  registerCommand(def: CommandDefinition): void {
+  async registerCommand(def: CommandDefinition): Promise<void> {
+    if (this.commandsDisabled) return;
+    await this.init();
     if (!this.commandSystem) {
-      this.commandSystem = new CommandSystem();
+      // Should not happen unless init() was a no-op for some other reason.
+      throw new Error("Command system failed to initialize");
     }
     this.commandSystem.register(def);
   }
 
   /**
    * Unregister a command.
+   *
+   * Now async for the same reason as {@link registerCommand}.
    */
-  unregisterCommand(name: string): boolean {
+  async unregisterCommand(name: string): Promise<boolean> {
+    if (this.commandsDisabled) return false;
+    await this.init();
     return this.commandSystem?.unregister(name) ?? false;
   }
 
@@ -1892,7 +2009,15 @@ export { uploadMedia, uploadMediaToCos, downloadMedia, extractMediaInfo, downloa
 export type { UploadResult, DownloadResult, MediaInfo, MediaType } from "./access/http/media.js";
 export { uploadToGoFile, uploadAndFormatLink } from "./access/http/gofile.js";
 export type { GoFileUploadResult } from "./access/http/gofile.js";
-export { CommandSystem } from "./commands/registry.js";
+// CommandSystem is re-exported as TYPE ONLY from the main entry to keep the
+// 53 command handlers (and their transitive node:* imports) out of any
+// bundler's static graph for `src/index.ts`. To obtain the runtime class,
+// import from the dedicated subpath:
+//
+//   import { CommandSystem } from "yuanbao-lite/commands";
+//
+// or use `bot.getCommandSystem()` after `await bot.init()`.
+export type { CommandSystem } from "./commands/registry.js";
 export type { CommandContext, CommandDefinition, CommandResult, CommandSystemConfig } from "./commands/types.js";
 export { detectSticker, prepareStickerMsgBody, buildEmojiMsgBody, buildCustomStickerMsgBody, buildStickerImageMsgBody, buildStickerMsgBody, buildStickerMsgBodyFromParts, registerStickerPack, unregisterStickerPack, getSticker, getStickerPacks, searchStickers, loadStickerPacksFromDir, getBuiltinEmojis, getBuiltinStickersData, cacheReceivedSticker } from "./business/sticker.js";
 export type { StickerInfo, StickerType, StickerPack } from "./business/sticker.js";
