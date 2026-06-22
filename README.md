@@ -394,6 +394,26 @@ await bot.start(); // 仍会因 ws / http 模块的 node:* 依赖报错（见下
 - `version.ts` 不再静态 import `node:fs/path/url`，改用 opaque 间接 `require`，
   浏览器/Edge runtime 会回退到硬编码 fallback 版本号。
 
+### API 变更（v11.5.1）
+
+- 新增 `PersistenceAdapter` 接口（`src/access/persistence/adapter.ts`）—— 抽象文件 I/O，
+  让 store 可在浏览器/edge runtime 中运行。默认实现：`NodeFsAdapter`（在 Node 中
+  自动启用，使用 `node:fs`）。
+- `AliasStore` / `ContactStore` / `GroupStore` 的 config 新增可选字段 `persistenceAdapter`：
+  ```typescript
+  // 浏览器侧（Phase 3 将提供 BrowserLocalStorageAdapter）
+  const store = new AliasStore({
+    persistencePath: "aliases",  // 在浏览器中作为存储 key 使用
+    autoSave: true,
+    persistenceAdapter: myBrowserAdapter,
+  });
+  ```
+- `AliasStore` / `ContactStore` / `GroupStore` 不再静态 import `node:fs` / `node:path` ——
+  浏览器打包工具（Vite/Rollup/esbuild）已验证这三个模块可被 tree-shake 出 `node:*` 依赖。
+- 修复 `version.ts` 在 Node ESM 下静默回退到硬编码版本的 bug —— 之前的
+  `new Function("return (require)")()` 模式在 ESM 中 `require` 未定义，改为
+  `await import("node:module")` + `createRequire`（top-level await）。
+
 ### 已知限制（后续迭代处理）
 
 1. `src/index.ts` 仍直接 `import { existsSync, readFileSync } from "node:fs"` 等 ——

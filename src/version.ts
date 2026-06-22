@@ -18,32 +18,37 @@
 
 // Hardcoded fallback — keep in sync with package.json `version` on release.
 // This is the value browser/edge callers will see.
-const FALLBACK_VERSION = "11.5.0";
+const FALLBACK_VERSION = "11.5.1";
 
 // Cache the version after first read
 let cachedVersion: string | null = null;
 
 /**
  * Lazily-resolved indirect `require` — only available when running under
- * Node. Returns `null` in browser/edge runtimes (where `require` does not
- * exist or `process.versions.node` is undefined).
+ * Node. Returns `null` in browser/edge runtimes.
  *
- * The `new Function("return (require)")` indirection prevents bundlers from
- * following the call at build time, so `node:*` modules are NOT pulled into
- * the browser bundle.
+ * Implementation note: in Node ESM, `require` is not defined globally,
+ * so we use `createRequire` from `node:module`. We load it via top-level
+ * `await import("node:module")` so that:
+ *
+ *   - Under Node: the dynamic import resolves and `indirectRequire` is set.
+ *   - Under browser: the `typeof process` check fails and the import never
+ *     happens, so `node:module` is NOT pulled into the browser bundle.
+ *   - Bundlers (Vite/Rollup/esbuild): create a separate chunk for
+ *     `node:module` that's only loaded when the runtime check passes.
+ *
+ * Top-level await is supported in ESM (Node 14+, all modern bundlers).
  */
-const indirectRequire: NodeRequire | null = (() => {
+let indirectRequire: NodeRequire | null = null;
+
+if (typeof process !== "undefined" && process.versions?.node) {
   try {
-    if (typeof process !== "undefined" && process.versions?.node) {
-      // `new Function` keeps this reference opaque to bundlers so that
-      // `node:*` modules are not pulled into the browser bundle graph.
-      return (new Function("return (require)"))() as NodeRequire;
-    }
+    const { createRequire } = await import("node:module");
+    indirectRequire = createRequire(import.meta.url);
   } catch {
-    // Not in Node, or require is unavailable — fall back to null.
+    // Dynamic import failed at runtime — fall through to fallback version.
   }
-  return null;
-})();
+}
 
 /**
  * Get the current version from package.json.

@@ -14,10 +14,10 @@
  *   /contacts dm <name|id>           — start DM with a contact
  */
 
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
-import { dirname } from "node:path";
 import { createLog } from "../logger.js";
 import type { ModuleLog } from "../logger.js";
+import type { PersistenceAdapter } from "../access/persistence/adapter.js";
+import { getDefaultPersistenceAdapter } from "../access/persistence/adapter.js";
 
 // ─── Types ───
 
@@ -43,6 +43,13 @@ export type ContactStoreConfig = {
   persistencePath?: string;
   /** Whether to auto-save on every mutation (default: false) */
   autoSave?: boolean;
+  /**
+   * Persistence adapter — abstracts file I/O so the store works in browser
+   * and edge runtimes. If omitted, the runtime default is used:
+   *   - Node.js: NodeFsAdapter (uses node:fs)
+   *   - Browser: throws — caller MUST pass an explicit adapter.
+   */
+  persistenceAdapter?: PersistenceAdapter;
 };
 
 // ─── ContactStore ───
@@ -52,22 +59,42 @@ export class ContactStore {
   private idIndex = new Map<string, ContactEntry>();     // id -> entry
   private config: ContactStoreConfig;
   private log: ModuleLog;
+  private persistenceAdapter: PersistenceAdapter | null = null;
 
   constructor(config?: ContactStoreConfig) {
     this.config = {
       persistencePath: config?.persistencePath,
       autoSave: config?.autoSave ?? false,
+      persistenceAdapter: config?.persistenceAdapter,
     };
     this.log = createLog("contacts");
 
     // Auto-load if persistence path is set; auto-create the file if it doesn't exist
     if (this.config.persistencePath) {
-      const fileExisted = existsSync(this.config.persistencePath);
+      const adapter = this.getAdapter();
+      const fileExisted = adapter.exists(this.config.persistencePath);
       this.load();
       if (!fileExisted) {
         this.save();
       }
     }
+  }
+
+  /**
+   * Resolve the persistence adapter — explicit config wins, else runtime default.
+   * Throws if no persistencePath is set or no adapter is available (browser).
+   */
+  private getAdapter(): PersistenceAdapter {
+    if (!this.config.persistencePath) {
+      throw new Error("ContactStore: persistencePath is required to use persistence");
+    }
+    if (this.config.persistenceAdapter) {
+      return this.config.persistenceAdapter;
+    }
+    if (!this.persistenceAdapter) {
+      this.persistenceAdapter = getDefaultPersistenceAdapter();
+    }
+    return this.persistenceAdapter;
   }
 
   // ─── CRUD ───
@@ -293,13 +320,9 @@ export class ContactStore {
     }
 
     try {
-      const dir = dirname(this.config.persistencePath);
-      if (!existsSync(dir)) {
-        mkdirSync(dir, { recursive: true });
-      }
-
+      const adapter = this.getAdapter();
       const data = [...this.contacts.values()];
-      writeFileSync(this.config.persistencePath, JSON.stringify(data, null, 2), "utf-8");
+      adapter.write(this.config.persistencePath, JSON.stringify(data, null, 2));
       this.log.info(`contacts saved to ${this.config.persistencePath} (${data.length} entries)`);
       return true;
     } catch (err) {
@@ -320,12 +343,13 @@ export class ContactStore {
     }
 
     try {
-      if (!existsSync(this.config.persistencePath)) {
+      const adapter = this.getAdapter();
+      if (!adapter.exists(this.config.persistencePath)) {
         this.log.info("persistence file not found, starting with empty contacts");
         return true;
       }
 
-      const raw = readFileSync(this.config.persistencePath, "utf-8");
+      const raw = adapter.read(this.config.persistencePath);
       const data = JSON.parse(raw) as ContactEntry[];
 
       for (const entry of data) {
