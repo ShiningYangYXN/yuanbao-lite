@@ -7,7 +7,6 @@ import type { CommandSystem } from "../registry.js";
 import { register as registerChat } from "./chat/chat.js";
 import { register as registerDm } from "./chat/dm.js";
 import { register as registerGroup } from "./chat/group.js";
-import { register as registerMention } from "./group/mention.js";
 import { register as registerReply } from "./chat/reply.js";
 import { register as registerSticker } from "./chat/sticker.js";
 import { register as registerStickers } from "./chat/stickers.js";
@@ -16,7 +15,6 @@ import { register as registerGroups } from "./group/groups.js";
 import { register as registerMembers } from "./group/members.js";
 import { register as registerSearch } from "./group/search.js";
 import { register as registerHistory } from "./history/history.js";
-import { register as registerHsearch } from "./history/hsearch.js";
 import { register as registerInspect } from "./history/inspect.js";
 import { register as registerCalc } from "./utility/calc.js";
 import { register as registerEcho } from "./utility/echo.js";
@@ -60,7 +58,6 @@ export {
   registerChat,
   registerDm,
   registerGroup,
-  registerMention,
   registerReply,
   registerSticker,
   registerStickers,
@@ -69,7 +66,6 @@ export {
   registerMembers,
   registerSearch,
   registerHistory,
-  registerHsearch,
   registerInspect,
   registerCalc,
   registerEcho,
@@ -114,7 +110,6 @@ export function registerAll(cmdSys: CommandSystem): void {
   registerChat(cmdSys);
   registerDm(cmdSys);
   registerGroup(cmdSys);
-  registerMention(cmdSys);
   registerReply(cmdSys);
   registerSticker(cmdSys);
   registerStickers(cmdSys);
@@ -123,7 +118,6 @@ export function registerAll(cmdSys: CommandSystem): void {
   registerMembers(cmdSys);
   registerSearch(cmdSys);
   registerHistory(cmdSys);
-  registerHsearch(cmdSys);
   registerInspect(cmdSys);
   registerCalc(cmdSys);
   registerEcho(cmdSys);

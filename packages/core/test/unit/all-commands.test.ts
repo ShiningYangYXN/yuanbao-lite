@@ -14,11 +14,8 @@
 import { describe, it, before } from "node:test";
 import assert from "node:assert/strict";
 import { CommandSystem } from "../../src/commands/registry.js";
-import {
-  initTrustStore,
-  initBlockStore,
-  setMasterUserId,
-} from "../../src/business/trust.js";
+import { initTrustStore, setMasterUserId } from "../../src/business/trust.js";
+import { initBlockStore } from "../../src/business/block.js";
 import { MemoryAdapter } from "../../src/access/persistence/adapter.js";
 import type { ChatMessage } from "../../src/types.js";
 
@@ -41,13 +38,13 @@ const NODE_ONLY = new Set(["shell", "term", "tempfile"]);
 
 function makeMsg(text: string, fromUserId = "test-user"): ChatMessage {
   return {
+    id: `msg_${Date.now()}_${Math.random()}`,
     text,
     fromUserId,
     fromNickname: "Tester",
     chatType: "direct",
     isMentioned: false,
     timestamp: Date.now(),
-    msgId: `msg_${Date.now()}_${Math.random()}`,
   };
 }
 
@@ -68,12 +65,25 @@ function makeMockBot() {
     getGroupStore: () => ({ add: () => {}, remove: () => {} }),
     getHistoryStore: () => ({
       add: () => {},
-      search: () => ({ messages: [] }),
+      search: () => ({ messages: [], total: 0 }),
+      searchByKeyword: () => [],
+      getRecent: () => [],
+      getByUser: () => [],
+      getByGroup: () => [],
+      getStats: () => ({
+        totalMessages: 0,
+        directMessages: 0,
+        groupMessages: 0,
+        uniqueUsers: 0,
+        uniqueGroups: 0,
+      }),
+      getHistory: () => [],
     }),
     getLlmEngine: () => ({
       isReady: false,
       getConfig: () => ({ enabled: false }),
     }),
+    getState: () => ({ connected: false }),
     sendText: async () => {},
     sendDirectMessage: async () => {},
     sendGroupMessage: async () => {},
@@ -100,11 +110,11 @@ describe("All commands dispatch test", () => {
     cs.enableUnsafeMode(60000);
   });
 
-  it("registers 50+ commands", () => {
+  it("registers 40+ commands", () => {
     const commands = cs.getVisibleCommands();
     assert.ok(
-      commands.length >= 50,
-      `expected 50+ commands, got ${commands.length}`,
+      commands.length >= 40,
+      `expected 40+ commands, got ${commands.length}`,
     );
   });
 
@@ -126,6 +136,7 @@ describe("All commands dispatch test", () => {
     { name: "contacts", args: "list" },
     { name: "account", args: "list" },
     { name: "history", args: "recent 5" },
+    { name: "search", args: "history test" },
     { name: "hsearch", args: "test" },
     { name: "groups", args: "list" },
     { name: "trust", args: "status" },
@@ -163,13 +174,23 @@ describe("All commands dispatch test", () => {
     }
   });
 
-  it("unknown command returns handled=false", async () => {
+  it("unknown command returns handled=true with hint reply", async () => {
+    // The dispatcher replies "❓ 未知命令" and returns handled=true so the
+    // caller knows the message was processed (and not, e.g., passed to LLM).
     const { bot } = makeMockBot();
+    const replies: string[] = [];
     const result = await cs.dispatch(
       bot as never,
       makeMsg("/nonexistent-command-xyz"),
+      async (text: string) => {
+        replies.push(text);
+      },
     );
-    assert.equal(result.handled, false);
+    assert.equal(result.handled, true);
+    assert.ok(
+      replies.some((r) => r.includes("未知命令")),
+      `expected an "未知命令" hint reply, got: ${JSON.stringify(replies)}`,
+    );
   });
 
   it("plain text (no /) returns handled=false", async () => {

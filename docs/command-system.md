@@ -9,7 +9,7 @@ Yuanbao Lite 内置 53 个斜杠命令，覆盖聊天、群管、媒体、LLM、
 | info    | 9      | 信息查询（status, version, ping, ip, whoami 等）    |
 | chat    | 8      | 聊天与贴纸（dm, group, reply, mention, sticker 等） |
 | group   | 8      | 群聊管理（groups, members, join, search 等）        |
-| history | 4      | 消息历史（history, hsearch, hclear, inspect）       |
+| history | 3      | 消息历史（history, inspect）                        |
 | system  | 8      | 系统管理（shell, term, daemon, config, log 等）     |
 | llm     | 2      | LLM 控制（llm, new）                                |
 | media   | 5      | 媒体文件（upload, download, file, img, attachment） |

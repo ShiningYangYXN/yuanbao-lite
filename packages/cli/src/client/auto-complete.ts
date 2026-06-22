@@ -49,8 +49,6 @@ const TOP_LEVEL_COMMANDS = [
   { cmd: "/tempfile", aliases: ["/临时文件", "/tmpfile"] },
   { cmd: "/sticker", aliases: ["/贴纸"] },
   { cmd: "/stickers", aliases: ["/贴纸列表", "/stickerlist"] },
-  { cmd: "/mention", aliases: ["/at", "/提及"] },
-  { cmd: "/atall", aliases: ["/所有人", "/at-all", "/@all"] },
   { cmd: "/contacts", aliases: ["/联系人"] },
   { cmd: "/groups", aliases: ["/glist"] },
   { cmd: "/join", aliases: ["/加入"] },
@@ -59,7 +57,7 @@ const TOP_LEVEL_COMMANDS = [
   { cmd: "/members", aliases: ["/member", "/成员", "/群成员"] },
   { cmd: "/alias", aliases: ["/别名"] },
   { cmd: "/history", aliases: ["/hist", "/历史"] },
-  { cmd: "/search", aliases: ["/搜索", "/查找"] },
+  { cmd: "/search", aliases: ["/搜索", "/查找", "/hsearch", "/搜索历史", "/histsearch"] },
   { cmd: "/batch", aliases: ["/批量"] },
   { cmd: "/account", aliases: ["/账号", "/acc"] },
   { cmd: "/llm", aliases: ["/ai"] },
@@ -69,8 +67,6 @@ const TOP_LEVEL_COMMANDS = [
   { cmd: "/trust", aliases: ["/信任", "/受信"] },
   { cmd: "/status", aliases: ["/state", "/状态"] },
   { cmd: "/log", aliases: ["/日志"] },
-  { cmd: "/hsearch", aliases: ["/搜索历史", "/histsearch"] },
-  { cmd: "/hclear", aliases: ["/清除历史"] },
   { cmd: "/shell", aliases: ["/sh"] },
   { cmd: "/version", aliases: ["/v", "/ver", "/版本"] },
   { cmd: "/uptime", aliases: ["/运行时间"] },
@@ -150,7 +146,7 @@ const SUB_COMMANDS: Record<string, string[]> = {
     "user",
     "group",
   ],
-  "/search": ["groups", "群", "members", "member"],
+  "/search": ["groups", "群", "群组", "members", "member", "成员", "history", "hist", "历史"],
   "/batch": ["text", "sticker", "image", "file", "stop", "status", "list"],
   "/account": ["add", "remove", "rm", "list", "ls", "switch", "start", "stop"],
   "/llm": [
@@ -214,7 +210,7 @@ const COMMANDS_WITH_SHOW_ALL = [
   "/groups",
   "/switch",
   "/stickers",
-  "/hsearch",
+  "/search",
   "/history",
   "/shell",
 ];
@@ -329,7 +325,7 @@ function completeFirstArg(
     }
   }
 
-  // For commands with --all support but no sub-commands (like /hsearch, /shell), suggest --all/-a
+  // For commands with --all support but no sub-commands (like /shell), suggest --all/-a
   if (COMMANDS_WITH_SHOW_ALL.includes(cmd) && !subs) {
     const flagMatches: string[] = [];
     if ("--all".startsWith(partial)) flagMatches.push("--all");

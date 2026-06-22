@@ -88,12 +88,15 @@ describe("CommandSystem", () => {
     assert.equal(result.handled, true);
   });
 
-  it("returns handled=false for unknown command", async () => {
+  it("returns handled=true for unknown command (sends hint)", async () => {
+    // The dispatcher replies "❓ 未知命令" and returns handled=true so the
+    // caller knows the message was processed (and not, e.g., passed to LLM).
     const result = await cs.dispatch(
       { makeReply: async () => {} } as never,
       makeMsg("/nonexistent command"),
+      async () => {},
     );
-    assert.equal(result.handled, false);
+    assert.equal(result.handled, true);
   });
 
   it("returns handled=false for non-command message", async () => {
@@ -140,7 +143,7 @@ describe("CommandSystem", () => {
 
   it("getVisibleCommands returns all commands", () => {
     const commands = cs.getVisibleCommands();
-    assert.ok(commands.length >= 50); // 53+ built-in commands
+    assert.ok(commands.length >= 40); // 49 built-in commands
   });
 
   it("enableUnsafeMode + isUnsafeMode", () => {
