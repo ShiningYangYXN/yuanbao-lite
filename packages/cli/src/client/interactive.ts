@@ -1,22 +1,38 @@
 /**
- * Interactive REPL — shell-like experience via node:readline.
+ * Interactive REPL — raw-mode terminal implementation.
+ *
+ * Replaces node:readline with a hand-rolled raw-mode line editor using
+ * process.stdin.setRawMode(true). This gives us:
+ *   - Real-time syntax highlighting (re-renders on every keystroke)
+ *   - Full control over Tab completion rendering
+ *   - RichHistory prev()/next()/search() wired up properly
+ *   - Prompt always at terminal bottom (re-renders after inbound messages)
+ *
+ * Why raw mode instead of readline?
+ *   - readline's terminal mode intercepts keypresses but doesn't expose
+ *     a clean "on input change" hook — real-time highlighting requires
+ *     re-rendering the line on every keystroke, which conflicts with
+ *     readline's cursor management.
+ *   - readline's completer API returns [completions, replaceFrom] but
+ *     doesn't let us control how completions are DISPLAYED (single-line
+ *     vs multi-line, coloring, etc).
+ *   - readline's history is a plain array — no search, no dedup, no
+ *     persistence. RichHistory provides all three but its prev()/next()/
+ *     search() methods were never wired up.
  *
  * Features:
- *   - Persistent history (RichHistory, deduped, ~/.yuanbao-lite/history)
- *   - ↑↓ navigation through history
- *   - Tab completion (commands, sub-commands, file paths, contacts/groups/aliases)
- *   - Committed-line syntax highlighting (slash commands, flags, mentions)
+ *   - Persistent history (RichHistory: deduped, ~/.yuanbao-lite/history)
+ *   - ↑↓ navigation through history (via RichHistory.prev/next)
+ *   - Ctrl+R reverse search (via RichHistory.search)
+ *   - Tab completion (commands, sub-commands, file paths, contacts/groups)
+ *   - Real-time syntax highlighting (slash commands, flags, mentions)
  *   - Multi-line input via trailing backslash
  *   - Live SSE subscription for incoming DM/group messages
  *   - Prompt re-rendering after inbound messages (stays at terminal bottom)
- *   - Wizard real-time content display (init/llm config wizards)
+ *   - Wizard real-time content display
  *   - Unified /chat session mode (auto-detect group vs DM by 9-digit regex)
- *
- * All commands route through the daemon via /command — zero business logic
- * in the client.
  */
 
-import * as readline from "node:readline";
 import chalk from "chalk";
 import {
   getDefaultClient,
@@ -48,14 +64,375 @@ const state = {
   chatTarget: "",
   running: true,
   multilineBuffer: "",
-  /** Wizard active flag — cached locally to avoid 2 HTTP hops per message */
   wizardActive: false,
 };
 
 // 9-digit pure number = group code (per /chat handler convention)
 const GROUP_CODE_RE = /^\d{9}$/;
 
+// ─── Line editor (raw mode) ───
+
+class LineEditor {
+  private buffer = "";
+  private cursor = 0;
+  private history: RichHistory;
+  private completionCtx: CompletionContext;
+  private renderPrompt: () => string;
+  private onSubmit: (line: string) => void;
+  // Search mode (Ctrl+R)
+  private searchMode = false;
+  private searchQuery = "";
+  private searchResults: string[] = [];
+  private searchIndex = 0;
+  // Saved buffer before entering search mode
+  private savedBuffer = "";
+  private savedCursor = 0;
+
+  constructor(opts: {
+    history: RichHistory;
+    completionCtx: CompletionContext;
+    renderPrompt: () => string;
+    onSubmit: (line: string) => void;
+  }) {
+    this.history = opts.history;
+    this.completionCtx = opts.completionCtx;
+    this.renderPrompt = opts.renderPrompt;
+    this.onSubmit = opts.onSubmit;
+  }
+
+  /** Current line content (for testing / external access). */
+  getLine(): string {
+    return this.buffer;
+  }
+
+  /** Handle a single keypress from process.stdin in raw mode. */
+  handleKey(key: string, isCtrl: boolean): void {
+    // Ctrl+R — toggle reverse search
+    if (isCtrl && key === "r") {
+      if (this.searchMode) {
+        // Already in search mode — cycle to next result
+        this.cycleSearch();
+      } else {
+        this.enterSearch();
+      }
+      this.render();
+      return;
+    }
+
+    // Ctrl+C — cancel search / multiline / exit
+    if (isCtrl && key === "c") {
+      if (this.searchMode) {
+        this.exitSearch(false);
+        this.render();
+        return;
+      }
+      if (state.multilineBuffer) {
+        state.multilineBuffer = "";
+        this.buffer = "";
+        this.cursor = 0;
+        this.render();
+        return;
+      }
+      // Exit CLI
+      state.running = false;
+      return;
+    }
+
+    // Ctrl+D — exit on empty line
+    if (isCtrl && key === "d") {
+      if (this.buffer.length === 0 && !state.multilineBuffer) {
+        state.running = false;
+        return;
+      }
+      return;
+    }
+
+    // If in search mode, handle search keys
+    if (this.searchMode) {
+      this.handleSearchKey(key, isCtrl);
+      this.render();
+      return;
+    }
+
+    // Enter — submit line (or continuation)
+    if (key === "\r" || key === "\n") {
+      const line = this.buffer;
+      // Multi-line continuation: trailing backslash
+      if (line.endsWith("\\") && !line.endsWith("\\\\")) {
+        state.multilineBuffer += line.slice(0, -1) + "\n";
+        this.buffer = "";
+        this.cursor = 0;
+        this.render();
+        return;
+      }
+      const fullLine = (state.multilineBuffer + line).trim();
+      state.multilineBuffer = "";
+      this.buffer = "";
+      this.cursor = 0;
+      this.history.resetNav();
+      if (fullLine) {
+        this.history.add(fullLine);
+      }
+      this.onSubmit(fullLine);
+      return;
+    }
+
+    // Up arrow — history previous
+    if (key === "\x1b[A") {
+      const prev = this.history.prev();
+      if (prev !== null) {
+        this.buffer = prev;
+        this.cursor = this.buffer.length;
+      }
+      this.render();
+      return;
+    }
+
+    // Down arrow — history next
+    if (key === "\x1b[B") {
+      const next = this.history.next();
+      if (next !== null) {
+        this.buffer = next;
+        this.cursor = this.buffer.length;
+      } else {
+        this.buffer = "";
+        this.cursor = 0;
+      }
+      this.render();
+      return;
+    }
+
+    // Right arrow — move cursor right
+    if (key === "\x1b[C") {
+      if (this.cursor < this.buffer.length) {
+        this.cursor++;
+        this.render();
+      }
+      return;
+    }
+
+    // Left arrow — move cursor left
+    if (key === "\x1b[D") {
+      if (this.cursor > 0) {
+        this.cursor--;
+        this.render();
+      }
+      return;
+    }
+
+    // Home (Ctrl+A) — move to start
+    if ((isCtrl && key === "a") || key === "\x1b[H") {
+      this.cursor = 0;
+      this.render();
+      return;
+    }
+
+    // End (Ctrl+E) — move to end
+    if ((isCtrl && key === "e") || key === "\x1b[F") {
+      this.cursor = this.buffer.length;
+      this.render();
+      return;
+    }
+
+    // Ctrl+U — delete to start
+    if (isCtrl && key === "u") {
+      this.buffer = this.buffer.slice(this.cursor);
+      this.cursor = 0;
+      this.render();
+      return;
+    }
+
+    // Ctrl+K — delete to end
+    if (isCtrl && key === "k") {
+      this.buffer = this.buffer.slice(0, this.cursor);
+      this.render();
+      return;
+    }
+
+    // Ctrl+W — delete previous word
+    if (isCtrl && key === "w") {
+      const before = this.buffer.slice(0, this.cursor);
+      const after = this.buffer.slice(this.cursor);
+      const match = before.match(/\S+\s*$/);
+      if (match) {
+        this.buffer = before.slice(0, before.length - match[0].length) + after;
+        this.cursor -= match[0].length;
+      }
+      this.render();
+      return;
+    }
+
+    // Tab — completion
+    if (key === "\t") {
+      this.handleTab();
+      this.render();
+      return;
+    }
+
+    // Backspace
+    if (key === "\x7f" || key === "\b") {
+      if (this.cursor > 0) {
+        this.buffer =
+          this.buffer.slice(0, this.cursor - 1) + this.buffer.slice(this.cursor);
+        this.cursor--;
+      }
+      this.render();
+      return;
+    }
+
+    // Delete (forward)
+    if (key === "\x1b[3~") {
+      if (this.cursor < this.buffer.length) {
+        this.buffer =
+          this.buffer.slice(0, this.cursor) + this.buffer.slice(this.cursor + 1);
+      }
+      this.render();
+      return;
+    }
+
+    // Regular printable character
+    if (key.length === 1 && !isCtrl) {
+      this.buffer =
+        this.buffer.slice(0, this.cursor) + key + this.buffer.slice(this.cursor);
+      this.cursor++;
+      this.render();
+      return;
+    }
+  }
+
+  /** Render the current line with prompt + syntax highlighting. */
+  render(): void {
+    // Clear current line and move cursor to start
+    process.stdout.write("\r\x1b[K");
+    // If in search mode, render search UI
+    if (this.searchMode) {
+      const match = this.searchResults[this.searchIndex] ?? "";
+      process.stdout.write(
+        chalk.dim("(reverse-search)`") + this.searchQuery + chalk.dim("' ") +
+        chalk.cyan(match),
+      );
+      return;
+    }
+    const prompt = this.renderPrompt();
+    const highlighted = this.buffer.startsWith("/")
+      ? highlightLine(this.buffer)
+      : this.buffer;
+    process.stdout.write(prompt + highlighted);
+    // Move cursor to correct position (accounting for prompt width)
+    // We need to move back to where the cursor should be
+    const promptStr = this.renderPrompt();
+    const visibleLen = promptStr.length + this.cursor;
+    const totalLen = promptStr.length + highlighted.length;
+    if (visibleLen < totalLen) {
+      // Move cursor left by (totalLen - visibleLen)
+      process.stdout.write(`\x1b[${totalLen - visibleLen}D`);
+    }
+  }
+
+  /** Force a full re-render (called after inbound messages etc). */
+  forceRender(): void {
+    this.render();
+  }
+
+  // ─── Tab completion ───
+
+  private handleTab(): void {
+    const result: CompletionResult = getCompletions(
+      this.buffer,
+      this.completionCtx,
+    );
+    if (result.completions.length === 0) {
+      return;
+    }
+    if (result.completions.length === 1) {
+      // Single completion — replace replaceFrom with the completion
+      const completion = result.completions[0];
+      const idx = this.buffer.lastIndexOf(result.replaceFrom);
+      if (idx >= 0) {
+        this.buffer =
+          this.buffer.slice(0, idx) + completion + " " + this.buffer.slice(idx + result.replaceFrom.length);
+        this.cursor = idx + completion.length + 1;
+      }
+      return;
+    }
+    // Multiple completions — print them on a new line, then re-render
+    process.stdout.write("\n");
+    process.stdout.write(result.completions.join("  ") + "\n");
+    // cursor is now on a new line; render() will clear and re-print
+  }
+
+  // ─── Reverse search (Ctrl+R) ───
+
+  private enterSearch(): void {
+    this.searchMode = true;
+    this.searchQuery = "";
+    this.searchResults = [];
+    this.searchIndex = 0;
+    this.savedBuffer = this.buffer;
+    this.savedCursor = this.cursor;
+  }
+
+  private handleSearchKey(key: string, isCtrl: boolean): void {
+    // Enter — accept current match
+    if (key === "\r" || key === "\n") {
+      this.exitSearch(true);
+      return;
+    }
+    // Escape — cancel search, restore saved buffer
+    if (key === "\x1b" || (isCtrl && key === "g")) {
+      this.exitSearch(false);
+      return;
+    }
+    // Backspace — remove last char from query
+    if (key === "\x7f" || key === "\b") {
+      if (this.searchQuery.length > 0) {
+        this.searchQuery = this.searchQuery.slice(0, -1);
+        this.runSearch();
+      }
+      return;
+    }
+    // Regular char — add to query
+    if (key.length === 1 && !isCtrl) {
+      this.searchQuery += key;
+      this.runSearch();
+      return;
+    }
+  }
+
+  private runSearch(): void {
+    if (this.searchQuery.length === 0) {
+      this.searchResults = [];
+      this.searchIndex = 0;
+      return;
+    }
+    this.searchResults = this.history.search(this.searchQuery, 20);
+    this.searchIndex = 0;
+  }
+
+  private cycleSearch(): void {
+    if (this.searchResults.length > 0) {
+      this.searchIndex = (this.searchIndex + 1) % this.searchResults.length;
+    }
+  }
+
+  private exitSearch(accept: boolean): void {
+    if (accept && this.searchResults.length > 0) {
+      this.buffer = this.searchResults[this.searchIndex];
+      this.cursor = this.buffer.length;
+    } else {
+      this.buffer = this.savedBuffer;
+      this.cursor = this.savedCursor;
+    }
+    this.searchMode = false;
+    this.searchQuery = "";
+    this.searchResults = [];
+    this.history.resetNav();
+  }
+}
+
 // ─── Main ───
+
+let editor: LineEditor | null = null;
 
 export async function runInteractive(): Promise<void> {
   const client = getDefaultClient();
@@ -95,14 +472,13 @@ export async function runInteractive(): Promise<void> {
       completionCtx.groupStore = makeLiteGroupStore(data.groups) as never;
       completionCtx.aliasStore = makeLiteAliasStore(data.aliases) as never;
     } catch {
-      // ignore — completions will fall back to command/path only
+      // ignore
     }
   };
   void refreshCompletions();
   const completionTimer = setInterval(refreshCompletions, 30_000);
 
-  // Also poll wizard status every 2s so wizardActive stays fresh without
-  // adding a round-trip to every plain-text message
+  // Poll wizard status every 2s
   const wizardTimer = setInterval(async () => {
     try {
       const wiz = await client.wizardStatus("cli");
@@ -112,105 +488,166 @@ export async function runInteractive(): Promise<void> {
     }
   }, 2000);
 
-  // 6. Readline interface
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-    completer: (line: string) => completer(line, completionCtx),
-    historySize: 0, // we manage history ourselves via RichHistory
-    prompt: currentPrompt(),
-    // terminal: true is the default when stdout is a TTY; explicit for safety
-    terminal: true,
-  });
-
-  // Expose rl to SSE handlers so they can re-render the prompt after
-  // printing inbound messages (keeps prompt at terminal bottom).
-  rlInstance = rl;
-
-  // Sync RichHistory → readline.history for ↑↓ navigation
-  syncHistory(rl, history);
-
-  // Refresh prompt when chat mode changes
-  const refreshPrompt = () => {
-    rl.setPrompt(currentPrompt());
-    rl.prompt(true);
-  };
-
-  // 7. REPL loop
-  rl.prompt();
-
-  await new Promise<void>((resolve) => {
-    rl.on("line", async (input: string) => {
-      // 续行 (continuation): line ending with \ is extension of previous input.
-      if (input.endsWith("\\") && !input.endsWith("\\\\")) {
-        state.multilineBuffer += input.slice(0, -1) + "\n";
-        rl.setPrompt(
-          chalk.dim("... ") + " ".repeat(state.chatTarget.length + 2),
-        );
-        rl.prompt();
+  // 6. Line editor + raw mode
+  editor = new LineEditor({
+    history,
+    completionCtx,
+    renderPrompt: currentPrompt,
+    onSubmit: async (line: string) => {
+      if (!line) {
+        editor?.forceRender();
         return;
       }
-
-      const fullLine = (state.multilineBuffer + input).trim();
-      state.multilineBuffer = "";
-      refreshPrompt();
-
-      if (!fullLine) {
-        rl.prompt();
-        return;
-      }
-
-      // Re-display the committed line with syntax highlighting.
-      // readline already echoed the raw input; we move up one line, clear
-      // it, and re-print the highlighted version so the user sees colored
-      // output in their scrollback.
-      if (fullLine.startsWith("/")) {
-        process.stdout.write("\r\x1b[K"); // CR + clear current line
-        process.stdout.write(
-          `${currentPrompt()}${highlightLine(fullLine)}\n`,
-        );
-      }
-
-      // Save to history (skip sensitive commands)
-      history.add(fullLine);
-      syncHistory(rl, history);
-
-      // Process the line
-      await processLine(fullLine, client);
-
+      // Show the committed line with syntax highlighting (already rendered
+      // by the editor, but we need to move to a new line before processing)
+      process.stdout.write("\n");
+      await processLine(line, client);
       if (!state.running) {
-        rl.close();
-        resolve();
+        cleanupAndExit();
         return;
       }
-
-      refreshPrompt();
-    });
-
-    rl.on("SIGINT", () => {
-      if (state.multilineBuffer) {
-        // Cancel multi-line
-        state.multilineBuffer = "";
-        refreshPrompt();
-        rl.prompt();
-        return;
-      }
-      rl.close();
-      resolve();
-    });
-
-    rl.on("close", () => {
-      resolve();
-    });
+      editor?.forceRender();
+    },
   });
 
-  // Cleanup
-  clearInterval(completionTimer);
-  clearInterval(wizardTimer);
-  unsubscribe();
-  rlInstance = null;
+  // Switch stdin to raw mode for keystroke-by-keystroke input
+  if (process.stdin.isTTY) {
+    process.stdin.setRawMode(true);
+  }
+  process.stdin.setEncoding("utf-8");
+  process.stdin.resume();
 
-  printStatus("再见 👋");
+  // Render initial prompt
+  editor.forceRender();
+
+  // Read keystrokes
+  process.stdin.on("data", (chunk: Buffer | string) => {
+    const data = typeof chunk === "string" ? chunk : chunk.toString("utf-8");
+    // Process each key — escape sequences are multi-char but arrive together
+    // We split on escape sequences and single chars
+    const keys = parseKeys(data);
+    for (const { key, isCtrl } of keys) {
+      editor?.handleKey(key, isCtrl);
+      if (!state.running) {
+        cleanupAndExit();
+        return;
+      }
+    }
+  });
+
+  // Wait until state.running becomes false
+  await new Promise<void>((resolve) => {
+    const check = setInterval(() => {
+      if (!state.running) {
+        clearInterval(check);
+        resolve();
+      }
+    }, 100);
+  });
+
+  function cleanupAndExit(): void {
+    clearInterval(completionTimer);
+    clearInterval(wizardTimer);
+    unsubscribe();
+    if (process.stdin.isTTY) {
+      process.stdin.setRawMode(false);
+    }
+    process.stdin.pause();
+    editor = null;
+    printStatus("再见 👋");
+  }
+
+  await new Promise((r) => setTimeout(r, 0));
+  cleanupAndExit();
+}
+
+// ─── Key parsing ───
+
+/**
+ * Parse a raw stdin data chunk into individual key presses.
+ * Handles UTF-8 multibyte chars, escape sequences (arrows, Delete, Home/End),
+ * and Ctrl+letter combinations.
+ */
+function parseKeys(data: string): Array<{ key: string; isCtrl: boolean }> {
+  const keys: Array<{ key: string; isCtrl: boolean }> = [];
+  let i = 0;
+  while (i < data.length) {
+    const ch = data[i];
+    // Escape sequence
+    if (ch === "\x1b") {
+      // Try to match a known escape sequence
+      const remaining = data.slice(i);
+      const arrowMatch = remaining.match(/^\x1b([ABCD])/);
+      if (arrowMatch) {
+        keys.push({ key: `\x1b${arrowMatch[1]}`, isCtrl: false });
+        i += 2;
+        continue;
+      }
+      const delMatch = remaining.match(/^\x1b\[3~/);
+      if (delMatch) {
+        keys.push({ key: "\x1b[3~", isCtrl: false });
+        i += 3;
+        continue;
+      }
+      const homeEndMatch = remaining.match(/^\x1b\[([HF])/);
+      if (homeEndMatch) {
+        keys.push({ key: `\x1b[${homeEndMatch[1]}`, isCtrl: false });
+        i += 3;
+        continue;
+      }
+      // Plain Escape
+      keys.push({ key: "\x1b", isCtrl: false });
+      i += 1;
+      continue;
+    }
+    // Ctrl+letter (0x01-0x1a maps to Ctrl+a..Ctrl+z)
+    const code = ch.charCodeAt(0);
+    if (code >= 1 && code <= 26) {
+      const letter = String.fromCharCode(code + 96); // 1→a, 2→b, ...
+      keys.push({ key: letter, isCtrl: true });
+      i += 1;
+      continue;
+    }
+    // Backspace (0x7f) or \b (0x08)
+    if (ch === "\x7f" || ch === "\b") {
+      keys.push({ key: ch, isCtrl: false });
+      i += 1;
+      continue;
+    }
+    // Enter
+    if (ch === "\r" || ch === "\n") {
+      keys.push({ key: ch, isCtrl: false });
+      i += 1;
+      continue;
+    }
+    // Tab
+    if (ch === "\t") {
+      keys.push({ key: "\t", isCtrl: false });
+      i += 1;
+      continue;
+    }
+    // UTF-8 multibyte — collect the full codepoint
+    // (simplified: just take the char, which JS handles as a single string element
+    //  for BMP chars; surrogate pairs take 2 string elements)
+    if (code >= 0x80) {
+      // Could be start of multibyte — grab enough chars
+      // For simplicity, take 1 char (BMP) or 2 (surrogate pair)
+      const next = data[i + 1];
+      const combined = next ? ch + next : ch;
+      if (combined.length === 2 && next) {
+        keys.push({ key: combined, isCtrl: false });
+        i += 2;
+      } else {
+        keys.push({ key: ch, isCtrl: false });
+        i += 1;
+      }
+      continue;
+    }
+    // Regular printable
+    keys.push({ key: ch, isCtrl: false });
+    i += 1;
+  }
+  return keys;
 }
 
 // ─── Line processing ───
@@ -235,19 +672,14 @@ async function processSingleCommand(
   line: string,
   client: DaemonClient,
 ): Promise<void> {
-  // /exit /quit /q
   if (line === "/exit" || line === "/quit" || line === "/q") {
     state.running = false;
     return;
   }
 
-  // /chat with a target but no message → enter session mode (CLI-side)
-  // /chat with no args → exit session mode
   if (line === "/chat" || line.startsWith("/chat ")) {
     const handled = handleChatCommand(line);
     if (handled) {
-      // Session mode change handled locally — still dispatch to daemon
-      // so the bot-side context is consistent, but only if there's a message
       const parts = line.split(/\s+/);
       if (parts.length >= 3) {
         await dispatchCommand(line, client);
@@ -258,7 +690,6 @@ async function processSingleCommand(
     return;
   }
 
-  // /switch — show current mode locally + delegate
   if (line === "/switch" || line.startsWith("/switch ")) {
     printStatus(
       `当前模式: ${state.chatMode} ${state.chatTarget ? `→ ${state.chatTarget}` : ""}`,
@@ -267,18 +698,11 @@ async function processSingleCommand(
     return;
   }
 
-  // Any other /command → daemon dispatch
   await dispatchCommand(line, client);
 }
 
-/**
- * Handle /chat locally for session mode entry/exit.
- * Returns true if the command was a session-mode change (no message to send),
- * false if it should be dispatched to the daemon.
- */
 function handleChatCommand(line: string): boolean {
   const parts = line.split(/\s+/);
-  // /chat (no args) → exit session mode
   if (parts.length === 1) {
     if (state.chatMode !== "none") {
       state.chatMode = "none";
@@ -287,7 +711,6 @@ function handleChatCommand(line: string): boolean {
     }
     return true;
   }
-  // /chat <target> (no message) → enter session mode
   if (parts.length === 2) {
     const target = parts[1];
     if (GROUP_CODE_RE.test(target)) {
@@ -301,7 +724,6 @@ function handleChatCommand(line: string): boolean {
     }
     return true;
   }
-  // /chat <target> <message> → not a session change, dispatch to daemon
   return false;
 }
 
@@ -309,26 +731,22 @@ async function sendChatMessage(
   text: string,
   client: DaemonClient,
 ): Promise<void> {
-  // If a wizard session is active (cached locally), route input to it
   if (state.wizardActive) {
     try {
       const result = await client.wizardInput(text, "cli");
       if (result.handled) {
         if (result.replies.length > 0) {
-          process.stdout.write("\n");
           for (const reply of result.replies) {
             console.log(reply);
           }
-          process.stdout.write("\n");
         }
         return;
       }
     } catch {
-      // wizard check failed — fall through to normal send
+      // fall through
     }
   }
 
-  // Plain text → send to current chat target
   if (state.chatMode === "none") {
     printError("未进入会话模式，使用 /chat <目标> 进入（9位数字=群，其他=私聊）");
     return;
@@ -356,8 +774,6 @@ async function dispatchCommand(
 ): Promise<void> {
   const chatMode = state.chatMode === "group" ? "group" : "direct";
   const chatTarget = state.chatTarget || "cli";
-
-  // Check for commands that should terminate the CLI after execution
   const shouldExitAfter =
     line.startsWith("/daemon stop") || line.startsWith("/daemon reset");
 
@@ -375,40 +791,19 @@ async function dispatchCommand(
       return;
     }
     if (result.replies.length > 0) {
-      process.stdout.write("\n");
-      const { renderMarkdownAnsi } = await import("../utils/cli-format.js");
       for (const reply of result.replies) {
+        const { renderMarkdownAnsi } = await import("../utils/cli-format.js");
         console.log(await renderMarkdownAnsi(reply));
       }
-      process.stdout.write("\n");
     }
   } catch (err) {
     printError(`dispatch 失败: ${(err as Error).message}`);
   }
 
-  // After /daemon stop or /daemon reset, the daemon is gone.
   if (shouldExitAfter) {
     console.log(chalk.dim("CLI 将退出（daemon 已停止）"));
     process.exit(0);
   }
-}
-
-// ─── Tab completion ───
-
-function completer(line: string, ctx: CompletionContext): [string[], string] {
-  try {
-    const result: CompletionResult = getCompletions(line, ctx);
-    return [result.completions, result.replaceFrom];
-  } catch {
-    return [[], line];
-  }
-}
-
-// ─── History sync ───
-
-function syncHistory(rl: readline.Interface, history: RichHistory): void {
-  const all = history.getAll().slice(-500);
-  (rl as unknown as { history: string[] }).history = all.slice().reverse();
 }
 
 // ─── SSE handling ───
@@ -442,9 +837,7 @@ async function printInboundMessage(
 ): Promise<void> {
   if (msg.fromUserId === "cli") return;
 
-  // Session-mode filtering: if the user is in a group/DM session, only
-  // show messages from THAT session. Other messages are silently dropped
-  // (the user explicitly entered a focused session).
+  // Session-mode filtering
   if (state.chatMode === "group" && state.chatTarget) {
     if (!isGroup || msg.groupCode !== state.chatTarget) return;
   } else if (state.chatMode === "dm" && state.chatTarget) {
@@ -452,15 +845,10 @@ async function printInboundMessage(
   }
 
   const { formatInboundMessage } = await import("../utils/cli-format.js");
-  // Clear the current prompt line, print the message, then re-render the
-  // prompt below it — this keeps the prompt "stuck" to the bottom of the
-  // terminal instead of leaving it stranded mid-screen.
-  process.stdout.write("\r\x1b[K"); // CR + clear line
+  // Clear current line, print message, re-render prompt below
+  process.stdout.write("\r\x1b[K");
   console.log(formatInboundMessage(msg, isGroup));
-  // Re-render prompt on the new bottom line
-  if (rlInstance) {
-    rlInstance.prompt(true);
-  }
+  editor?.forceRender();
 }
 
 async function printOutboundMessage(
@@ -471,9 +859,7 @@ async function printOutboundMessage(
   const { formatOutboundMessage } = await import("../utils/cli-format.js");
   process.stdout.write("\r\x1b[K");
   console.log(formatOutboundMessage(text, to, isGroup));
-  if (rlInstance) {
-    rlInstance.prompt(true);
-  }
+  editor?.forceRender();
 }
 
 function printStateChange(s: BotState): void {
@@ -485,9 +871,7 @@ function printStateChange(s: BotState): void {
       `bot 状态变更: ${s.status}${s.lastError ? ` — ${s.lastError}` : ""}`,
     );
   }
-  if (rlInstance) {
-    rlInstance.prompt(true);
-  }
+  editor?.forceRender();
 }
 
 // ─── Prompt rendering ───
@@ -502,18 +886,14 @@ function currentPrompt(): string {
   return chalk.rgb(100, 180, 255).bold("yuanbao ❯ ");
 }
 
-// rlInstance is set after readline.createInterface so that SSE handlers
-// can re-render the prompt after printing inbound messages.
-let rlInstance: readline.Interface | null = null;
-
 function printWelcome(version: string, pid: number, port: number): void {
   printH1(`Yuanbao Lite CLI v${version}`);
   console.log(
-    `  ${COLORS.dim("shell-mode · readline + RichHistory + auto-complete + syntax-highlight")}`,
+    `  ${COLORS.dim("raw-mode · RichHistory + auto-complete + syntax-highlight + Ctrl+R search")}`,
   );
   console.log(`  ${COLORS.dim(`daemon pid=${pid} port=${port}`)}`);
   console.log(
-    `  ${COLORS.dim("/help 查看命令  ·  ↑↓ 历史  ·  Tab 补全  ·  \\ 换行  ·  Ctrl+C 退出")}`,
+    `  ${COLORS.dim("/help 查看命令  ·  ↑↓ 历史  ·  Ctrl+R 搜索  ·  Tab 补全  ·  \\ 换行  ·  Ctrl+C 退出")}`,
   );
   console.log(
     `  ${COLORS.dim("/chat <目标> 进入会话  ·  /chat 退出会话  (9位数字=群，其他=私聊)")}`,

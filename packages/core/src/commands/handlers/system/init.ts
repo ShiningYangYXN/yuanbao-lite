@@ -1,10 +1,13 @@
 /**
- * /init command handler — extracted from registry.ts (lossless split).
+ * /init command handler — interactive configuration wizard.
  * Category: system
  *
- * Handler logic is copied verbatim from the original registerBuiltinCommands()
- * method, with only `this.X` → `cmdSys.X` substitutions and relative import
- * path fixes.
+ * The wizard session state is exposed on the CommandSystem instance as
+ * `_initWizardSessions` (Map) and `_handleInitWizardInput` (function) so
+ * that YuanbaoBot.handleDispatch can intercept non-slash messages and
+ * route them to the wizard when a session is active.
+ *
+ * This mirrors the pattern used by /llm config (llm.ts).
  */
 
 import type { CommandSystem } from "../../registry.js";
@@ -13,15 +16,107 @@ import type { CommandCategory } from "../../types.js";
 export function register(cmdSys: CommandSystem): void {
   // Per-user wizard session state
   type WizardSession = {
-    step: "appkey" | "appsecret" | "token" | "done";
+    step: "auth-method" | "appkey" | "appsecret" | "token" | "done";
     authMethod: "appkey" | "token";
     appKey?: string;
     appSecret?: string;
     token?: string;
     startedAt: number;
+    lastActivity?: number;
   };
   const wizardSessions = new Map<string, WizardSession>();
   const WIZARD_TIMEOUT_MS = 5 * 60 * 1000; // 5 min
+
+  // ─── Expose wizard state on CommandSystem ───
+  // This MUST be set up so YuanbaoBot.handleDispatch can find
+  // _initWizardSessions and intercept non-slash messages for the wizard.
+  (
+    cmdSys as unknown as { _initWizardSessions: Map<string, unknown> }
+  )._initWizardSessions = wizardSessions;
+
+  (
+    cmdSys as unknown as {
+      _handleInitWizardInput: (
+        bot: unknown,
+        sessionKey: string,
+        text: string,
+        reply: (t: string) => Promise<void>,
+      ) => Promise<boolean>;
+    }
+  )._handleInitWizardInput = async (
+    _bot: unknown,
+    sessionKey: string,
+    text: string,
+    reply: (t: string) => Promise<void>,
+  ): Promise<boolean> => {
+    const session = wizardSessions.get(sessionKey);
+    if (!session) return false;
+
+    // Update lastActivity on every input
+    session.lastActivity = Date.now();
+
+    const { getGlobalConfigStore } =
+      await import("../../../shared/config.js");
+    const store = getGlobalConfigStore({ autoSave: true });
+    const input = text.trim();
+
+    // Step: auth-method — choose appkey vs token
+    if (session.step === "auth-method") {
+      const lower = input.toLowerCase();
+      if (lower === "appkey" || lower === "1" || lower === "1️⃣") {
+        session.authMethod = "appkey";
+        session.step = "appkey";
+        await reply("请发送 App Key:");
+      } else if (lower === "token" || lower === "2" || lower === "2️⃣") {
+        session.authMethod = "token";
+        session.step = "token";
+        await reply("请发送 Token:");
+      } else {
+        await reply('请回复 "appkey" 或 "token" 选择认证方式（或 /init cancel 取消）');
+      }
+      return true;
+    }
+
+    // Step: appkey — collect App Key
+    if (session.step === "appkey") {
+      session.appKey = input;
+      session.step = "appsecret";
+      await reply("✅ App Key 已收到\n请发送 App Secret:");
+      return true;
+    }
+
+    // Step: appsecret — collect App Secret, then save
+    if (session.step === "appsecret") {
+      session.appSecret = input;
+      store.set("appKey", session.appKey as never);
+      store.set("appSecret", input as never);
+      session.step = "done";
+      wizardSessions.delete(sessionKey);
+      await reply(
+        "✅ 配置完成！\n" +
+          `  App Key: ***${(session.appKey ?? "").slice(-4)}\n` +
+          `  App Secret: ***${input.slice(-4)}\n\n` +
+          "发送 /daemon restart 让新配置生效",
+      );
+      return true;
+    }
+
+    // Step: token — collect Token, then save
+    if (session.step === "token") {
+      session.token = input;
+      store.set("token", input as never);
+      session.step = "done";
+      wizardSessions.delete(sessionKey);
+      await reply(
+        "✅ 配置完成！\n" +
+          `  Token: ***${input.slice(-4)}\n\n` +
+          "发送 /daemon restart 让新配置生效",
+      );
+      return true;
+    }
+
+    return false;
+  };
 
   cmdSys.register({
     name: "init",
@@ -81,7 +176,7 @@ export function register(cmdSys: CommandSystem): void {
           await ctx.reply(
             `✅ 已设置 ${configKey} = ***${value.slice(-4)}\n` +
               `档案: ${active}\n` +
-              `配置完成。发送 /daemon restart (3次) 让新配置生效`,
+              `配置完成。发送 /daemon restart 让新配置生效`,
           );
         }
         return;
@@ -89,7 +184,7 @@ export function register(cmdSys: CommandSystem): void {
 
       // Start interactive wizard
       wizardSessions.set(sessionKey, {
-        step: "appkey",
+        step: "auth-method",
         authMethod: "appkey",
         startedAt: Date.now(),
       });
