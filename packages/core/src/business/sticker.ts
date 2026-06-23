@@ -1569,7 +1569,7 @@ export async function prepareStickerMsgBody(
   }
 
   throw new Error(
-    `Sticker not found: ${stickerId}. Use /stickers to see available stickers, or /stickers search <keyword> to search.`,
+    `Sticker not found: ${stickerId}. Use /stickers to see available stickers, or /search stickers <keyword> to search.`,
   );
 }
 

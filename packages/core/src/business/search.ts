@@ -381,3 +381,29 @@ export class SearchEngine {
     return Date.now() - cached.cachedAt < this.config.cacheTtlMs;
   }
 }
+
+// ─── Sticker search ───
+
+export type StickerSearchResult = {
+  id: string;
+  name: string;
+  description?: string;
+  type: string;
+};
+
+/**
+ * Search stickers by keyword. Delegates to business/sticker.ts.
+ */
+export async function searchStickersUnified(
+  query: string,
+  limit?: number,
+): Promise<StickerSearchResult[]> {
+  const { searchStickers } = await import("./sticker.js");
+  const results = searchStickers(query, limit);
+  return results.map((s) => ({
+    id: s.id,
+    name: s.name,
+    description: s.description,
+    type: s.type,
+  }));
+}

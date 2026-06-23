@@ -1,7 +1,11 @@
 {
   "name": "yuanbao-lite",
   "private": false,
+<<<<<<< HEAD
   "version": "12.9.1",
+=======
+  "version": "12.10.0",
+>>>>>>> b1b50d2 (refactor: v12.10.0 — merge sticker search into /search, unify search logic, fix wizard sessionKey, promote generic helpers)
   "type": "module",
   "description": "Yuanbao Lite monorepo — core library + CLI",
   "license": "MIT",

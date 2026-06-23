@@ -239,8 +239,7 @@ const DEFAULT_SYSTEM_PROMPT = `你是元宝Lite智能助手，一个友好、专
   <<sticker>>害羞<<sticker>>       — 发送"害羞"贴纸
 
 注意：贴纸直接发送到当前会话（用户所在的私聊或群聊），无需指定目标。
-如需查看可用贴纸列表，使用 <<command>>/search sticker 关键词<<command>>...
-注意：/sticker命令不是给你准备的，不要使用，群聊中一般会权限不足，无法发出贴纸。
+如需查看可用贴纸列表，使用 <<command>>/search stickers 关键词<<command>>...
 
 ## 引用回复
 
@@ -1244,7 +1243,9 @@ export class LlmTakeoverEngine {
    *   - hasBreak: whether any <<break>> tags were found (if false, caller
    *     can use the single chunk as the whole reply)
    */
-  private async handleQuoteAndBreakTriggers(text: string): Promise<{
+  private async handleQuoteAndBreakTriggers(
+    text: string,
+  ): Promise<{
     chunks: Array<{ text: string; quoteMsgId?: string }>;
     hasBreak: boolean;
   }> {
@@ -1376,12 +1377,7 @@ export class LlmTakeoverEngine {
           await this.handleQuoteAndBreakTriggers(processedText);
         if (hasBreak) {
           for (const chunk of chunks) {
-            await this.sendResponseChunk(
-              bot,
-              msg,
-              chunk.text,
-              chunk.quoteMsgId,
-            );
+            await this.sendResponseChunk(bot, msg, chunk.text, chunk.quoteMsgId);
           }
         } else {
           await this.sendResponseChunk(

@@ -1,6 +1,6 @@
 {
   "name": "@yuanbao-lite/core",
-  "version": "12.9.1",
+  "version": "12.10.0",
   "type": "module",
   "description": "Yuanbao Lite 核心库 — 同构腾讯元宝机器人客户端（Node.js + 浏览器）",
   "license": "MIT",
@@ -58,8 +58,7 @@
   "scripts": {
     "build": "tsc",
     "lint": "eslint src/",
-    "format": "prettier --write .",
-    "test": "node --test --import tsx test/unit/*.test.ts || echo No tests found.",
+    "test": "node --test --import tsx test/unit/*.test.ts || true",
     "test:e2e": "tsx test/e2e/smoke-test.ts"
   },
   "dependencies": {
