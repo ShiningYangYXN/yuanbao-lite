@@ -2,7 +2,11 @@
  * Standalone logger module — no OpenClaw dependency.
  *
  * Provides structured logging with module prefix, log level control,
- * and optional sensitive data masking.
+ * optional sensitive data masking, and unified file output.
+ *
+ * All log output is mirrored to a single log file (~/.yuanbao-lite/daemon.log)
+ * when running under Node.js, so daemon logs are persisted across restarts.
+ * Console output is also preserved for interactive debugging.
  */
 
 export interface PluginLogger {
@@ -42,10 +46,62 @@ function formatMessage(
   data?: Record<string, unknown>,
 ): string {
   const prefix = module ? `${logPrefix}[${module}]` : logPrefix;
+  const ts = new Date().toISOString();
   if (data === undefined) {
-    return `${prefix} ${msg}`;
+    return `${ts} ${prefix} ${msg}`;
   }
-  return `${prefix} ${msg} ${sanitize(data)}`;
+  return `${ts} ${prefix} ${msg} ${sanitize(data)}`;
+}
+
+// ─── Unified file sink ───
+
+import { join } from "node:path";
+import { homedir } from "node:os";
+
+let fileSinkInitialized = false;
+let fileWriteStream: import("node:fs").WriteStream | null = null;
+
+/**
+ * Initialize the unified file sink. All log messages are appended to
+ * ~/.yuanbao-lite/daemon.log. Called once at daemon startup.
+ *
+ * This is lazy and guarded so browser/edge runtimes that don't have
+ * node:fs won't crash — they just skip file logging.
+ */
+export async function initFileSink(): Promise<void> {
+  if (fileSinkInitialized) return;
+  fileSinkInitialized = true;
+  try {
+    const fs = await import("node:fs");
+    const logDir = join(homedir(), ".yuanbao-lite");
+    if (!fs.existsSync(logDir)) {
+      fs.mkdirSync(logDir, { recursive: true });
+    }
+    const logPath = join(logDir, "daemon.log");
+    fileWriteStream = fs.createWriteStream(logPath, {
+      flags: "a", // append
+      encoding: "utf-8",
+    });
+    fileWriteStream.on("error", () => {
+      // If the file sink fails, silently disable it
+      fileWriteStream = null;
+    });
+  } catch {
+    // node:fs not available (browser/edge) — skip file logging
+  }
+}
+
+/**
+ * Write a formatted log line to the file sink (if initialized).
+ */
+function writeToFile(line: string): void {
+  if (fileWriteStream) {
+    try {
+      fileWriteStream.write(line + "\n");
+    } catch {
+      // ignore write errors
+    }
+  }
 }
 
 // ─── Sensitive data masking ───
@@ -142,14 +198,34 @@ export function createLog(
   };
 
   return {
-    info: (msg, data) =>
-      shouldLog("info") && target.info(formatMessage(module, msg, data)),
-    warn: (msg, data) =>
-      shouldLog("warn") && target.warn(formatMessage(module, msg, data)),
-    error: (msg, data) =>
-      shouldLog("error") && target.error(formatMessage(module, msg, data)),
-    debug: (msg, data) =>
-      shouldLog("debug") && target.debug(formatMessage(module, msg, data)),
+    info: (msg, data) => {
+      if (shouldLog("info")) {
+        const formatted = formatMessage(module, msg, data);
+        target.info(formatted);
+        writeToFile(formatted);
+      }
+    },
+    warn: (msg, data) => {
+      if (shouldLog("warn")) {
+        const formatted = formatMessage(module, msg, data);
+        target.warn(formatted);
+        writeToFile(formatted);
+      }
+    },
+    error: (msg, data) => {
+      if (shouldLog("error")) {
+        const formatted = formatMessage(module, msg, data);
+        target.error(formatted);
+        writeToFile(formatted);
+      }
+    },
+    debug: (msg, data) => {
+      if (shouldLog("debug")) {
+        const formatted = formatMessage(module, msg, data);
+        target.debug(formatted);
+        writeToFile(formatted);
+      }
+    },
   };
 }
 

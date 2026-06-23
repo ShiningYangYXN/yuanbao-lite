@@ -148,19 +148,27 @@ function colorizeMentions(text: string): string {
 }
 
 /**
- * Format an inbound message for CLI display.
- * Two-line layout (header + body).
+ * Format a message for CLI display.
+ *
+ * Unified for both inbound and outbound messages — the only difference is
+ * the direction icon (📨 inbound vs 📤 outbound) and the sender (the remote
+ * user for inbound, the bot itself for outbound).
  *
  * Format:
- *   私  昵称 👤 类型 · 11:45:14
+ *   📨  群名 / 昵称 👤 类型 @我 ⚡命令 · 11:45:14   (inbound)
  *       消息文本
  *
- *   群  群名 / 昵称 👤 类型 @我 · 11:45:14
+ *   📤  群名 / bot 👤 类型 · 11:45:14               (outbound)
  *       消息文本
+ *
+ * @param msg - The chat message (inbound from remote user, or outbound from bot)
+ * @param isGroup - Whether this is a group message
+ * @param direction - "inbound" or "outbound"
  */
-export function formatInboundMessage(
+export function formatMessage(
   msg: ChatMessage,
   isGroup: boolean,
+  direction: "inbound" | "outbound" = "inbound",
 ): string {
   const time = chalk.dim(formatTime(msg.timestamp));
   const name = msg.fromNickname || msg.fromUserId;
@@ -173,7 +181,14 @@ export function formatInboundMessage(
     // Trust store not initialized — use plain names
     nick = chalk.yellow(name);
   }
-  const mentionMark = msg.isMentioned ? chalk.yellow(" @我") : "";
+
+  // Direction icon
+  const icon = direction === "outbound" ? chalk.magenta("📤") : "";
+  const dirLabel = direction === "outbound" ? chalk.magenta("出站") : "";
+
+  // Inbound-only marks (outbound messages don't have @mention or command tags)
+  const mentionMark =
+    direction === "inbound" && msg.isMentioned ? chalk.yellow(" @我") : "";
 
   const hasAttachment =
     msg.text &&
@@ -189,52 +204,71 @@ export function formatInboundMessage(
 
   // Detect inbound slash commands — show with a ⚡ 命令 tag (yellow),
   // placed AFTER the @mention tag so the order is: type · @我 · ⚡ 命令
-  const isCommand = msg.text && msg.text.trim().startsWith("/");
+  const isCommand =
+    direction === "inbound" && msg.text && msg.text.trim().startsWith("/");
   const commandMark = isCommand ? chalk.yellow(" ⚡ 命令") : "";
 
   let header: string;
   if (isGroup) {
     const group = chalk.cyan(msg.groupName || msg.groupCode || "?");
-    header = `  ${chalk.green("群")}  ${group} ${chalk.dim("/")} ${nick}${typeLabel}${mentionMark}${commandMark}${attachMark}${contentMark} ${chalk.dim("·")} ${time}`;
+    if (direction === "outbound") {
+      header = `  ${icon} ${dirLabel}  ${chalk.dim("→")}  ${group} ${chalk.dim("/")} ${nick} ${chalk.dim("·")} ${time}`;
+    } else {
+      header = `  ${chalk.green("群")}  ${group} ${chalk.dim("/")} ${nick}${typeLabel}${mentionMark}${commandMark}${attachMark}${contentMark} ${chalk.dim("·")} ${time}`;
+    }
   } else {
-    header = `  ${chalk.cyan("私")}  ${nick}${typeLabel}${commandMark}${attachMark}${contentMark} ${chalk.dim("·")} ${time}`;
+    if (direction === "outbound") {
+      header = `  ${icon} ${dirLabel}  ${chalk.dim("→")}  ${chalk.dim("私聊")} ${nick} ${chalk.dim("·")} ${time}`;
+    } else {
+      header = `  ${chalk.cyan("私")}  ${nick}${typeLabel}${commandMark}${attachMark}${contentMark} ${chalk.dim("·")} ${time}`;
+    }
   }
   const body = `      ${msg.text || "(非文本)"}`;
   return `${header}\n${body}`;
 }
 
 /**
+ * Format an inbound message for CLI display.
+ * (Backward-compat wrapper around formatMessage.)
+ */
+export function formatInboundMessage(
+  msg: ChatMessage,
+  isGroup: boolean,
+): string {
+  return formatMessage(msg, isGroup, "inbound");
+}
+
+/**
  * Format a bot outbound message for CLI display.
- * Resolves the target to a group name or user name (via the provided stores)
- * instead of showing a raw group code or user ID.
- *
- * Format:
- *   📤  出站  →  群名/昵称 · 11:45:14
- *       消息文本
- *
- * @param text - Message text
- * @param to - Target (group code or user ID)
- * @param isGroup - Whether this is a group message
- * @param nameResolver - Optional resolver that returns a display name for the target
+ * (Backward-compat wrapper around formatMessage.)
+ * Accepts a ChatMessage directly (unified with inbound), or the legacy
+ * {text, to, isGroup} shape via the nameResolver overload.
  */
 export function formatOutboundMessage(
-  text: string,
-  to: string,
-  isGroup: boolean,
+  msgOrText: ChatMessage | string,
+  to?: string,
+  isGroup?: boolean,
   nameResolver?: (to: string, isGroup: boolean) => string | undefined,
 ): string {
-  const time = chalk.dim(formatTime(Date.now()));
-  // Try to resolve a friendly name; fall back to the raw target.
-  const resolvedName = nameResolver?.(to, isGroup);
-  const displayTarget = resolvedName ?? to;
-  const scope = isGroup
-    ? chalk.cyan(`群 ${displayTarget}`)
-    : chalk.dim(`私聊 ${displayTarget}`);
-  const header = `  ${chalk.magenta("📤  出站")}  ${chalk.dim("→")}  ${scope} ${chalk.dim("·")} ${time}`;
-  const displayText =
-    text.length > 500 ? text.substring(0, 500) + chalk.dim("...") : text;
-  const body = `      ${displayText}`;
-  return `${header}\n${body}`;
+  // If first arg is a ChatMessage, use the unified path
+  if (typeof msgOrText === "object" && msgOrText !== null) {
+    return formatMessage(msgOrText, msgOrText.chatType === "group", "outbound");
+  }
+  // Legacy {text, to, isGroup} shape — build a synthetic ChatMessage
+  const text = msgOrText as string;
+  const target = to ?? "";
+  const group = isGroup ?? false;
+  const resolvedName = nameResolver?.(target, group);
+  const syntheticMsg: ChatMessage = {
+    id: `bot-outbound-${Date.now()}`,
+    fromUserId: "bot",
+    fromNickname: resolvedName ?? target,
+    chatType: group ? "group" : "direct",
+    ...(group ? { groupCode: target, groupName: resolvedName } : {}),
+    text,
+    timestamp: Date.now(),
+  };
+  return formatMessage(syntheticMsg, group, "outbound");
 }
 
 function formatTime(ts: number): string {

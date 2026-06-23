@@ -33,7 +33,7 @@ import { YuanbaoBot } from "@yuanbao-lite/core";
 import type { BotState } from "@yuanbao-lite/core/types";
 import type { ChatMessage } from "@yuanbao-lite/core/types";
 import { getGlobalConfigStore } from "@yuanbao-lite/core/shared/config";
-import { createLog, setLogLevel } from "@yuanbao-lite/core/logger";
+import { createLog, setLogLevel, initFileSink } from "@yuanbao-lite/core/logger";
 import { getVersion } from "@yuanbao-lite/core/version";
 import { acquirePidFile, releasePidFile, getPidFilePath } from "./pid-file.js";
 import { handleRoute } from "./routes.js";
@@ -96,6 +96,11 @@ export class Daemon {
       | "error";
     setLogLevel(logLevel);
 
+    // Initialize the unified file sink so all daemon logs are persisted to
+    // ~/.yuanbao-lite/daemon.log (mirrored to console as well).
+    await initFileSink();
+    log.info(`daemon log file: ~/.yuanbao-lite/daemon.log`);
+
     if (!store.hasCredentials()) {
       log.error("no credentials configured — run `yb-cli config init` first");
       process.exit(1);
@@ -134,13 +139,11 @@ export class Daemon {
     this.bot.on("stateChange", (state: BotState) =>
       this.broadcastSse("stateChange", state),
     );
-    // Forward outbound messages (bot's own replies) for CLI echo
-    this.bot.on(
-      "outboundMessage",
-      (data: { text: string; to: string; isGroup: boolean }) => {
-        this.broadcastSse("outboundMessage", data);
-      },
-    );
+    // Forward outbound messages (bot's own replies) for CLI echo.
+    // OutboundMessageData is now a full ChatMessage (unified with inbound).
+    this.bot.on("outboundMessage", (data: ChatMessage) => {
+      this.broadcastSse("outboundMessage", data);
+    });
 
     // 3. Connect bot (fire-and-forget; HTTP server starts regardless so the
     //    client can poll /health for connection progress)

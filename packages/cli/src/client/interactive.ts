@@ -1178,8 +1178,9 @@ function handleSseEvent(event: string, data: unknown): void {
       void printInboundMessage(data as ChatMessage, true);
       break;
     case "outboundMessage": {
-      const d = data as { text: string; to: string; isGroup: boolean };
-      void printOutboundMessage(d.text, d.to, d.isGroup);
+      // Outbound now carries a full ChatMessage (unified with inbound)
+      const msg = data as ChatMessage;
+      void printOutboundMessage(msg);
       break;
     }
     case "stateChange":
@@ -1210,14 +1211,10 @@ async function printInboundMessage(
   editor?.forceRender();
 }
 
-async function printOutboundMessage(
-  text: string,
-  to: string,
-  isGroup: boolean,
-): Promise<void> {
+async function printOutboundMessage(msg: ChatMessage): Promise<void> {
   const { formatOutboundMessage } = await import("../utils/cli-format.js");
   process.stdout.write("\r\x1b[K");
-  console.log(formatOutboundMessage(text, to, isGroup, resolveTargetName));
+  console.log(formatOutboundMessage(msg));
   editor?.forceRender();
 }
 

@@ -147,11 +147,7 @@ export type BotEventType =
   | "close"
   | "kickout";
 
-export type OutboundMessageData = {
-  text: string;
-  to: string;
-  isGroup: boolean;
-};
+export type OutboundMessageData = ChatMessage;
 
 export type BotEventHandler<T extends BotEventType> = T extends "message"
   ? (msg: ChatMessage) => void
@@ -877,7 +873,7 @@ export class YuanbaoBot {
    */
   async sendDirectMessage(userId: string, text: string): Promise<void> {
     await this.sendText({ to: userId, text, isGroup: false });
-    this.emit("outboundMessage", { text, to: userId, isGroup: false });
+    this.emitOutboundMessage(text, userId, false);
   }
 
   /**
@@ -885,7 +881,38 @@ export class YuanbaoBot {
    */
   async sendGroupMessage(groupCode: string, text: string): Promise<void> {
     await this.sendText({ to: groupCode, text, isGroup: true });
-    this.emit("outboundMessage", { text, to: groupCode, isGroup: true });
+    this.emitOutboundMessage(text, groupCode, true);
+  }
+
+  /**
+   * Emit an outbound message event with a unified ChatMessage-shaped payload.
+   *
+   * This mirrors the inbound message structure so the CLI can use a single
+   * display path for both inbound and outbound messages. The `fromUserId`
+   * is set to the bot's ID, `fromNickname` to "bot", and the direction is
+   * indicated by the event name ("outboundMessage").
+   */
+  private emitOutboundMessage(
+    text: string,
+    to: string,
+    isGroup: boolean,
+  ): void {
+    const msg: ChatMessage = {
+      id: `bot-outbound-${Date.now()}`,
+      fromUserId: this.account.botId || "bot",
+      fromNickname: "bot",
+      chatType: isGroup ? "group" : "direct",
+      ...(isGroup ? { groupCode: to } : {}),
+      text,
+      timestamp: Date.now(),
+    };
+    // Log outbound message (unified with inbound logging)
+    const scope = isGroup ? `GR:${to}` : "DM";
+    this.log.info(
+      `[outbound] ${this.account.botId || "bot"} @${scope}: ${text.substring(0, 100)}`,
+    );
+    // Emit both the unified event and the legacy shape for backward compat
+    this.emit("outboundMessage", msg);
   }
 
   /**
