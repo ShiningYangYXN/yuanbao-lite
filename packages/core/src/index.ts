@@ -2247,6 +2247,10 @@ export class YuanbaoBot {
           `multi-command execution error: ${(err as Error).message}`,
         );
       });
+      // Emit the inbound slash command message so CLI/SSE subscribers can
+      // see it (with the ⚡ 命令 tag). Previously this returned early without
+      // emitting, so inbound commands were invisible in the CLI.
+      this.emitMessageEvents(chatMessage, chatType);
       return; // Don't fall through to LLM for slash commands
     }
 

@@ -72,6 +72,19 @@ const GROUP_CODE_RE = /^\d{9}$/;
 
 // ─── Line editor (raw mode) ───
 
+/** Find the longest common prefix of an array of strings. */
+function longestCommonPrefix(strings: string[]): string {
+  if (strings.length === 0) return "";
+  let prefix = strings[0];
+  for (let i = 1; i < strings.length; i++) {
+    while (strings[i].indexOf(prefix) !== 0) {
+      prefix = prefix.slice(0, -1);
+      if (prefix.length === 0) return "";
+    }
+  }
+  return prefix;
+}
+
 class LineEditor {
   private buffer = "";
   private cursor = 0;
@@ -344,21 +357,52 @@ class LineEditor {
     if (result.completions.length === 0) {
       return;
     }
+
     if (result.completions.length === 1) {
-      // Single completion — replace replaceFrom with the completion
+      // Single completion — replace the partial with the full completion
       const completion = result.completions[0];
-      const idx = this.buffer.lastIndexOf(result.replaceFrom);
-      if (idx >= 0) {
-        this.buffer =
-          this.buffer.slice(0, idx) + completion + " " + this.buffer.slice(idx + result.replaceFrom.length);
-        this.cursor = idx + completion.length + 1;
+      if (result.replaceFrom) {
+        // Find the last occurrence of replaceFrom in the buffer
+        const idx = this.buffer.lastIndexOf(result.replaceFrom);
+        if (idx >= 0) {
+          this.buffer =
+            this.buffer.slice(0, idx) +
+            completion +
+            " " +
+            this.buffer.slice(idx + result.replaceFrom.length);
+          this.cursor = idx + completion.length + 1;
+        } else {
+          // replaceFrom not found — append the completion
+          this.buffer = completion + " ";
+          this.cursor = this.buffer.length;
+        }
+      } else {
+        // Empty replaceFrom (e.g. empty line) — just set the completion
+        this.buffer = completion + " ";
+        this.cursor = this.buffer.length;
       }
       return;
     }
-    // Multiple completions — print them on a new line, then re-render
+
+    // Multiple completions — find the common prefix and complete up to it,
+    // then print the full list on a new line so the user can see options.
+    const commonPrefix = longestCommonPrefix(result.completions);
+    if (commonPrefix && commonPrefix.length > result.replaceFrom.length) {
+      // Extend the buffer with the common prefix
+      const idx = this.buffer.lastIndexOf(result.replaceFrom);
+      if (idx >= 0) {
+        this.buffer =
+          this.buffer.slice(0, idx) +
+          commonPrefix +
+          this.buffer.slice(idx + result.replaceFrom.length);
+        this.cursor = idx + commonPrefix.length;
+      }
+    }
+    // Print the completion options on a new line
     process.stdout.write("\n");
     process.stdout.write(result.completions.join("  ") + "\n");
-    // cursor is now on a new line; render() will clear and re-print
+    // render() will be called by handleKey after this returns, which will
+    // clear the current line and re-print the prompt + updated buffer.
   }
 
   // ─── Reverse search (Ctrl+R) ───
@@ -936,10 +980,14 @@ async function dispatchCommand(
       return;
     }
     if (result.replies.length > 0) {
+      const { renderMarkdownAnsi } = await import("../utils/cli-format.js");
+      const rendered: string[] = [];
       for (const reply of result.replies) {
-        const { renderMarkdownAnsi } = await import("../utils/cli-format.js");
-        console.log(await renderMarkdownAnsi(reply));
+        rendered.push(await renderMarkdownAnsi(reply));
       }
+      const fullOutput = rendered.join("\n");
+      // Route through pager if the output is longer than the terminal height
+      await paginate(fullOutput);
     }
   } catch (err) {
     printError(`dispatch 失败: ${(err as Error).message}`);
@@ -949,6 +997,157 @@ async function dispatchCommand(
     console.log(chalk.dim("CLI 将退出（daemon 已停止）"));
     process.exit(0);
   }
+}
+
+// ─── Pager ───
+
+/**
+ * Display text through a simple built-in pager.
+ *
+ * If the text fits within the terminal height (minus 1 line for the prompt),
+ * it's printed directly. Otherwise, a less-style pager is activated:
+ *   - Space/PageDown: next page
+ *   - b/PageUp: previous page
+ *   - q: quit
+ *   - Enter/↓: scroll down one line
+ *   - ↑: scroll up one line
+ *   - g: go to start
+ *   - G: go to end
+ *
+ * The pager runs in the alt screen buffer's raw mode (stdin is already raw).
+ */
+async function paginate(text: string): Promise<void> {
+  const lines = text.split("\n");
+  const termHeight = process.stdout.rows || 24;
+  const termWidth = process.stdout.columns || 80;
+
+  // If output fits on screen (leaving 1 line for prompt), print directly
+  if (lines.length <= termHeight - 1) {
+    process.stdout.write(text + "\n");
+    return;
+  }
+
+  // Wrap long lines to terminal width
+  const wrappedLines: string[] = [];
+  for (const line of lines) {
+    if (line.length === 0) {
+      wrappedLines.push("");
+      continue;
+    }
+    // Strip ANSI codes for width calculation
+    const visibleLen = line.replace(/\x1b\[[0-9;]*m/g, "").length;
+    if (visibleLen <= termWidth) {
+      wrappedLines.push(line);
+    } else {
+      // Simple char-by-char wrap (preserving ANSI)
+      let current = "";
+      let currentLen = 0;
+      let i = 0;
+      while (i < line.length) {
+        const ch = line[i];
+        // Skip ANSI escape sequences (don't count toward width)
+        if (ch === "\x1b") {
+          const seqEnd = line.indexOf("m", i);
+          if (seqEnd >= 0) {
+            current += line.slice(i, seqEnd + 1);
+            i = seqEnd + 1;
+            continue;
+          }
+        }
+        if (currentLen >= termWidth) {
+          wrappedLines.push(current);
+          current = "";
+          currentLen = 0;
+        }
+        current += ch;
+        currentLen++;
+        i++;
+      }
+      if (current) wrappedLines.push(current);
+    }
+  }
+
+  // Pager state
+  let topLine = 0;
+  const visibleRows = termHeight - 2; // leave 2 lines for status bar
+  const totalLines = wrappedLines.length;
+
+  const renderPage = () => {
+    // Clear screen and move cursor home
+    process.stdout.write("\x1b[2J\x1b[H");
+    const endLine = Math.min(topLine + visibleRows, totalLines);
+    for (let i = topLine; i < endLine; i++) {
+      process.stdout.write(wrappedLines[i] + "\n");
+    }
+    // Status bar at the bottom
+    const pct = Math.round((endLine / totalLines) * 100);
+    process.stdout.write(
+      chalk.dim(
+        `行 ${endLine}/${totalLines} (${pct}%)  q退出  Space下页  b上页  ↑↓滚动  g/G首尾`,
+      ) + "\n",
+    );
+  };
+
+  renderPage();
+
+  // Pager key loop — reads from stdin (already in raw mode)
+  await new Promise<void>((resolve) => {
+    const onData = (chunk: Buffer | string) => {
+      const data = typeof chunk === "string" ? chunk : chunk.toString("utf-8");
+      const keys = parseKeys(data);
+      for (const { key } of keys) {
+        if (key === "q" || key === "\x1b") {
+          // Quit pager
+          process.stdout.write("\x1b[2J\x1b[H");
+          process.stdin.removeListener("data", onData);
+          resolve();
+          return;
+        }
+        if (key === " " || key === "\x1b[6~") {
+          // Page down
+          topLine = Math.min(topLine + visibleRows, totalLines - visibleRows);
+          if (topLine < 0) topLine = 0;
+          renderPage();
+          continue;
+        }
+        if (key === "b" || key === "\x1b[5~") {
+          // Page up
+          topLine = Math.max(topLine - visibleRows, 0);
+          renderPage();
+          continue;
+        }
+        if (key === "\r" || key === "\x1b[B") {
+          // Scroll down one line (Enter or Down arrow)
+          if (topLine < totalLines - visibleRows) {
+            topLine++;
+            renderPage();
+          }
+          continue;
+        }
+        if (key === "\x1b[A") {
+          // Scroll up one line (Up arrow)
+          if (topLine > 0) {
+            topLine--;
+            renderPage();
+          }
+          continue;
+        }
+        if (key === "g") {
+          // Go to start
+          topLine = 0;
+          renderPage();
+          continue;
+        }
+        if (key === "G") {
+          // Go to end
+          topLine = Math.max(totalLines - visibleRows, 0);
+          renderPage();
+          continue;
+        }
+      }
+    };
+    process.stdin.on("data", onData);
+  });
 }
 
 // ─── SSE handling ───

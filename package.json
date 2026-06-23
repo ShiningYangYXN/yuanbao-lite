@@ -1,7 +1,7 @@
 {
   "name": "yuanbao-lite",
   "private": false,
-  "version": "12.6.1",
+  "version": "12.6.2",
   "type": "module",
   "description": "Yuanbao Lite monorepo — core library + CLI",
   "license": "MIT",
