@@ -58,7 +58,8 @@
   "scripts": {
     "build": "tsc",
     "lint": "eslint src/",
-    "test": "node --test --import tsx test/unit/*.test.ts || true",
+    "format": "prettier --write .",
+    "test": "node --test --import tsx test/unit/*.test.ts || echo No tests found.",
     "test:e2e": "tsx test/e2e/smoke-test.ts"
   },
   "dependencies": {

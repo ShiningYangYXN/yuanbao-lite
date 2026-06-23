@@ -139,9 +139,6 @@ export class Daemon {
       "outboundMessage",
       (data: { text: string; to: string; isGroup: boolean }) => {
         this.broadcastSse("outboundMessage", data);
-        log.info(
-          `[出站] → ${data.isGroup ? `群${data.to}` : `私聊`}: ${data.text.substring(0, 100)}`,
-        );
       },
     );
 

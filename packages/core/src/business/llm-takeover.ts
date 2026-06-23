@@ -1243,9 +1243,7 @@ export class LlmTakeoverEngine {
    *   - hasBreak: whether any <<break>> tags were found (if false, caller
    *     can use the single chunk as the whole reply)
    */
-  private async handleQuoteAndBreakTriggers(
-    text: string,
-  ): Promise<{
+  private async handleQuoteAndBreakTriggers(text: string): Promise<{
     chunks: Array<{ text: string; quoteMsgId?: string }>;
     hasBreak: boolean;
   }> {
@@ -1377,7 +1375,12 @@ export class LlmTakeoverEngine {
           await this.handleQuoteAndBreakTriggers(processedText);
         if (hasBreak) {
           for (const chunk of chunks) {
-            await this.sendResponseChunk(bot, msg, chunk.text, chunk.quoteMsgId);
+            await this.sendResponseChunk(
+              bot,
+              msg,
+              chunk.text,
+              chunk.quoteMsgId,
+            );
           }
         } else {
           await this.sendResponseChunk(

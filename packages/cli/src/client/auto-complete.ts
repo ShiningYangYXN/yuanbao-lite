@@ -175,7 +175,17 @@ const SUB_COMMANDS: Record<string, string[]> = {
     "user",
     "group",
   ],
-  "/search": ["groups", "群", "群组", "members", "member", "成员", "history", "hist", "历史"],
+  "/search": [
+    "groups",
+    "群",
+    "群组",
+    "members",
+    "member",
+    "成员",
+    "history",
+    "hist",
+    "历史",
+  ],
   "/batch": ["text", "sticker", "image", "file", "stop", "status", "list"],
   "/account": ["add", "remove", "rm", "list", "ls", "switch", "start", "stop"],
   "/llm": [
@@ -301,7 +311,10 @@ export function getCompletions(
 
 // ─── Command completion ───
 
-function completeCommand(partial: string, ctx?: CompletionContext): CompletionResult {
+function completeCommand(
+  partial: string,
+  ctx?: CompletionContext,
+): CompletionResult {
   const matches: string[] = [];
 
   for (const entry of getTopLevelCommands(ctx)) {

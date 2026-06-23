@@ -140,12 +140,12 @@ export type BotEventType =
   | "message"
   | "directMessage"
   | "groupMessage"
+  | "outboundMessage"
   | "stateChange"
   | "error"
   | "ready"
   | "close"
-  | "kickout"
-  | "outboundMessage";
+  | "kickout";
 
 export type OutboundMessageData = {
   text: string;
@@ -1715,25 +1715,9 @@ export class YuanbaoBot {
     }
 
     const chatMessage = toChatMessage(msg);
-
-    // ─── Skip-self guard (for dispatch) + history storage for bot's own messages ───
-    // Prevents infinite echo when the bot's own outgoing messages arrive
-    // via Group.CallbackAfterSendMsg / C2C.CallbackAfterSendMsg callbacks.
-    // We store the bot's message in history (so /inspect can find it),
-    // but we DON'T inject it into LLM context here — that's handled by
-    // ctx.reply() in the command system, which injects ASSISTANT context
-    // at the moment of sending. This avoids double-injection.
-    //
-    // IMPORTANT: Tencent uses DIFFERENT bot IDs for the same bot across
-    // different contexts (sign-token ID vs group member ID vs callback ID).
-    // We only trust IDs from sign-token and QueryBotInfo (stored in
-    // botPublicIds). We do NOT auto-learn from callbacks — other bot
-    // instances in the same group could send callbacks that reach us.
-    // For CallbackAfterSendMsg, we check if the callback is for OUR bot
-    // by verifying from_account matches a known self ID.
     if (this.isSelfUserId(chatMessage.fromUserId)) {
-      this.log.debug(
-        `self-message detected (fromUserId=${chatMessage.fromUserId}), storing in history but skipping dispatch`,
+      this.log.info(
+        `[outbound] to ${chatMessage.chatType === "group" ? `GR:${chatMessage.groupCode}` : `DM`}: ${chatMessage.text.substring(0, 100)}`,
       );
 
       // Store in history (so /inspect can find bot's own messages)
@@ -2116,18 +2100,6 @@ export class YuanbaoBot {
     }
 
     // ─── Step 2: Try command dispatch ───
-    // Dispatch rules (apply to each line of an incoming message):
-    //   1. 未续行 (standalone line, not preceded by \) → independent content,
-    //      recognize slash independently (line starting with / is a slash command).
-    //   2. 续行 (continuation line, preceded by \) → extension of previous input,
-    //      but the joined text preserves \n so each line is dispatched independently
-    //      (续行本来就要拆行 — the \ just lets the user span multiple terminal lines).
-    //   3. 不符合任何一条规则 (standalone plain text — no slash, not continuation):
-    //      - 私聊 (DM / chatType=direct): MUST auto-reply via LLM (user expects
-    //        a response to every DM). Use /llm off to disable if needed.
-    //      - 群聊 (group): try LLM auto-reply (engine requires @mention by default
-    //        to prevent spam — plain text without @ is silently ignored).
-    //      - CLI: send directly as chat (handled by cli/client/interactive.ts).
     let dispatchText = chatMessage.text.trim();
     if (chatMessage.chatType === "group") {
       // Strip leading @-components, [custom:...] placeholders, and whitespace
@@ -2216,6 +2188,10 @@ export class YuanbaoBot {
       // Execute each slash command line sequentially.
       // Any plain text lines in the same multi-line message are silently skipped
       // (per dispatch rule 3 — DM would skip them anyway, group only auto-replies
+      // Emit the inbound slash command message so CLI/SSE subscribers can
+      // see it (with the ⚡ 命令 tag). Previously this returned early without
+      // emitting, so inbound commands were invisible in the CLI.
+      this.emitMessageEvents(chatMessage, chatType);
       // on @mention so multi-line plain text is also skipped here).
       const executeCommands = async () => {
         for (const cmdLine of commandLines) {
@@ -2247,10 +2223,6 @@ export class YuanbaoBot {
           `multi-command execution error: ${(err as Error).message}`,
         );
       });
-      // Emit the inbound slash command message so CLI/SSE subscribers can
-      // see it (with the ⚡ 命令 tag). Previously this returned early without
-      // emitting, so inbound commands were invisible in the CLI.
-      this.emitMessageEvents(chatMessage, chatType);
       return; // Don't fall through to LLM for slash commands
     }
 
@@ -2429,10 +2401,14 @@ export class YuanbaoBot {
   ): void {
     // Log inbound message with user type
     const uid = chatMessage.fromUserId;
-    const userType = uid.startsWith("bot_") ? "BOT" : "USER";
-    const scope = chatType === "group" ? `群${chatMessage.groupCode}` : "私聊";
+    const userType = uid.startsWith("bot_")
+      ? "BOT"
+      : uid === "szUvRH8s4ekettawNjDREmAG4W7h+Lhb8Sy9tq/otZU="
+        ? "YUANBAO"
+        : "HUMAN";
+    const scope = chatType === "group" ? `GR:${chatMessage.groupCode}` : `DM`;
     this.log.info(
-      `[入站] [${userType}] ${chatMessage.fromNickname || uid} @${scope}: ${chatMessage.text?.substring(0, 100) ?? "(非文本)"}`,
+      `[inbound] [${userType}] ${chatMessage.fromNickname || uid} @${scope}: ${chatMessage.text?.substring(0, 100) ?? "(non-text)"}`,
     );
 
     // Emit generic message event

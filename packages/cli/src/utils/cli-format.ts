@@ -209,7 +209,7 @@ export function formatInboundMessage(
  * instead of showing a raw group code or user ID.
  *
  * Format:
- *   📤出站  →  群名/昵称 · 11:45:14
+ *   📤  出站  →  群名/昵称 · 11:45:14
  *       消息文本
  *
  * @param text - Message text
@@ -230,7 +230,7 @@ export function formatOutboundMessage(
   const scope = isGroup
     ? chalk.cyan(`群 ${displayTarget}`)
     : chalk.dim(`私聊 ${displayTarget}`);
-  const header = `  ${chalk.magenta("📤 出站")}  ${chalk.dim("→")}  ${scope} ${chalk.dim("·")} ${time}`;
+  const header = `  ${chalk.magenta("📤  出站")}  ${chalk.dim("→")}  ${scope} ${chalk.dim("·")} ${time}`;
   const displayText =
     text.length > 500 ? text.substring(0, 500) + chalk.dim("...") : text;
   const body = `      ${displayText}`;

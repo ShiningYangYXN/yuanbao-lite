@@ -20,6 +20,7 @@
     "daemon:status": "node packages/cli/dist/index.js daemon status",
     "daemon:restart": "node packages/cli/dist/index.js daemon restart",
     "lint": "eslint packages/",
+    "format": "prettier --write .",
     "test": "pnpm run test packages/core",
     "test:e2e": "pnpm run test:e2e packages/core"
   },

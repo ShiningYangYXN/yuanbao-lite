@@ -286,7 +286,8 @@ class LineEditor {
     if (key === "\x7f" || key === "\b") {
       if (this.cursor > 0) {
         this.buffer =
-          this.buffer.slice(0, this.cursor - 1) + this.buffer.slice(this.cursor);
+          this.buffer.slice(0, this.cursor - 1) +
+          this.buffer.slice(this.cursor);
         this.cursor--;
       }
       this.render();
@@ -297,7 +298,8 @@ class LineEditor {
     if (key === "\x1b[3~") {
       if (this.cursor < this.buffer.length) {
         this.buffer =
-          this.buffer.slice(0, this.cursor) + this.buffer.slice(this.cursor + 1);
+          this.buffer.slice(0, this.cursor) +
+          this.buffer.slice(this.cursor + 1);
       }
       this.render();
       return;
@@ -306,7 +308,9 @@ class LineEditor {
     // Regular printable character
     if (key.length === 1 && !isCtrl) {
       this.buffer =
-        this.buffer.slice(0, this.cursor) + key + this.buffer.slice(this.cursor);
+        this.buffer.slice(0, this.cursor) +
+        key +
+        this.buffer.slice(this.cursor);
       this.cursor++;
       this.render();
       return;
@@ -321,8 +325,10 @@ class LineEditor {
     if (this.searchMode) {
       const match = this.searchResults[this.searchIndex] ?? "";
       process.stdout.write(
-        chalk.dim("(reverse-search)`") + this.searchQuery + chalk.dim("' ") +
-        chalk.cyan(match),
+        chalk.dim("(reverse-search)`") +
+          this.searchQuery +
+          chalk.dim("' ") +
+          chalk.cyan(match),
       );
       return;
     }
@@ -584,7 +590,10 @@ export async function runInteractive(): Promise<void> {
       if (!reconnecting) {
         reconnecting = true;
         const delay = reconnectDelayMs;
-        reconnectDelayMs = Math.min(reconnectDelayMs * 2, MAX_RECONNECT_DELAY_MS);
+        reconnectDelayMs = Math.min(
+          reconnectDelayMs * 2,
+          MAX_RECONNECT_DELAY_MS,
+        );
         // Attempt to re-ensure daemon after the backoff delay
         setTimeout(() => {
           client
@@ -830,7 +839,11 @@ function parseKeys(data: string): Array<{ key: string; isCtrl: boolean }> {
     if (code >= 0x80) {
       // Check for surrogate pair (code points U+10000 and above)
       const next = data[i + 1];
-      if (next && next.charCodeAt(0) >= 0xdc00 && next.charCodeAt(0) <= 0xdfff) {
+      if (
+        next &&
+        next.charCodeAt(0) >= 0xdc00 &&
+        next.charCodeAt(0) <= 0xdfff
+      ) {
         keys.push({ key: ch + next, isCtrl: false });
         i += 2;
       } else {
@@ -937,7 +950,9 @@ async function sendChatMessage(
   }
 
   if (state.chatMode === "none") {
-    printError("未进入会话模式，使用 /chat <目标> 进入（9位数字=群，其他=私聊）");
+    printError(
+      "未进入会话模式，使用 /chat <目标> 进入（9位数字=群，其他=私聊）",
+    );
     return;
   }
   if (state.chatMode === "dm") {

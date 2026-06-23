@@ -196,9 +196,7 @@ async function runMembersSearch(ctx: SearchContext): Promise<void> {
               : "";
       return `  ${r.userId} — ${r.nickName} ${typeLabel} [${r.matchType}]`;
     });
-    await ctx.reply(
-      `🔍 成员搜索结果 (${groupCode}):\n${lines.join("\n")}`,
-    );
+    await ctx.reply(`🔍 成员搜索结果 (${groupCode}):\n${lines.join("\n")}`);
   }
 }
 
@@ -209,7 +207,9 @@ async function runHistorySearch(
   keywordArgs: string[],
 ): Promise<void> {
   if (keywordArgs.length === 0) {
-    await ctx.reply("用法: /search history <关键词>   (用 --all 显示全部及完整文本)");
+    await ctx.reply(
+      "用法: /search history <关键词>   (用 --all 显示全部及完整文本)",
+    );
     return;
   }
 
@@ -247,7 +247,9 @@ async function runHistorySearch(
       const sender = msg.fromNickname || msg.fromUserId;
       const short = shortId(msg);
       // --all disables the 50-char truncation in plain mode too.
-      const text = ctx.showAll ? textOrDefault(msg.text) : truncate(textOrDefault(msg.text), 50);
+      const text = ctx.showAll
+        ? textOrDefault(msg.text)
+        : truncate(textOrDefault(msg.text), 50);
       return `  [${time}] ${sender}(${msg.fromUserId}) #${short}: ${text}`;
     });
     const suffix =

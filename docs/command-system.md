@@ -143,11 +143,11 @@ export function registerAll(cmdSys: CommandSystem): void {
 
 以下命令进入阻塞模式，5 分钟无操作自动退出：
 
-| 命令                   | 用途           | 退出方式                    |
-| ---------------------- | -------------- | --------------------------- |
-| `/init`                | 配置向导       | 完成或 `/init cancel`       |
-| `/llm config`          | LLM 配置向导   | 完成或 `/llm config cancel` |
-| `/term`                | 交互式终端     | `/term exit` 或 `exit`      |
+| 命令          | 用途         | 退出方式                    |
+| ------------- | ------------ | --------------------------- |
+| `/init`       | 配置向导     | 完成或 `/init cancel`       |
+| `/llm config` | LLM 配置向导 | 完成或 `/llm config cancel` |
+| `/term`       | 交互式终端   | `/term exit` 或 `exit`      |
 
 阻塞式会话使用 session-scoped 隔离（同一用户 + 同一会话才捕获）。
 
@@ -155,11 +155,11 @@ export function registerAll(cmdSys: CommandSystem): void {
 
 以下命令依赖 Node.js 运行时，在浏览器中调用会返回错误信息：
 
-| 命令        | 依赖                 | 浏览器行为                      |
-| ----------- | -------------------- | ------------------------------- |
-| `/shell`    | `node:child_process` | 返回"需要 Node.js 运行时"       |
-| `/term`     | `node:child_process` | 同上                            |
-| `/myip`     | `node:os`（部分）    | 跳过本地接口检测，仅显示公网 IP |
+| 命令     | 依赖                 | 浏览器行为                      |
+| -------- | -------------------- | ------------------------------- |
+| `/shell` | `node:child_process` | 返回"需要 Node.js 运行时"       |
+| `/term`  | `node:child_process` | 同上                            |
+| `/myip`  | `node:os`（部分）    | 跳过本地接口检测，仅显示公网 IP |
 
 ## 命令帮助
 

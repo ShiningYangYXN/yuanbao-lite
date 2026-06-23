@@ -55,8 +55,7 @@ export function register(cmdSys: CommandSystem): void {
     // Update lastActivity on every input
     session.lastActivity = Date.now();
 
-    const { getGlobalConfigStore } =
-      await import("../../../shared/config.js");
+    const { getGlobalConfigStore } = await import("../../../shared/config.js");
     const store = getGlobalConfigStore({ autoSave: true });
     const input = text.trim();
 
@@ -72,7 +71,9 @@ export function register(cmdSys: CommandSystem): void {
         session.step = "token";
         await reply("请发送 Token:");
       } else {
-        await reply('请回复 "appkey" 或 "token" 选择认证方式（或 /init cancel 取消）');
+        await reply(
+          '请回复 "appkey" 或 "token" 选择认证方式（或 /init cancel 取消）',
+        );
       }
       return true;
     }

@@ -40,8 +40,7 @@ export function register(cmdSys: CommandSystem): void {
   cmdSys.register({
     name: "chat",
     aliases: ["聊天", "dm", "私聊", "group", "群发"],
-    description:
-      "发送消息（自动识别群聊/私聊：9位纯数字=群，其他=私聊）",
+    description: "发送消息（自动识别群聊/私聊：9位纯数字=群，其他=私聊）",
     usage: USAGE,
     category: "chat" as CommandCategory,
     requireConnected: true,
