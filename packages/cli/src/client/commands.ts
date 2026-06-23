@@ -242,6 +242,7 @@ export function buildProgram(): Command {
             "llmEnabled",
             "defaultTarget",
             "defaultChatMode",
+            "atAllExcludeYuanbao",
           ];
           if (!validKeys.includes(key)) {
             printError(`无效配置键: ${key}\n可选: ${validKeys.join(", ")}`);

@@ -111,12 +111,29 @@ export type GroupAtInfo = {
  * The returned `atAll` flag is also set to true so the caller can attach the
  * "ALL" groupAtInfo flag for the IM protocol's @all notification.
  */
+/**
+ * Options for parseMentions.
+ */
+export type ParseMentionsOptions = {
+  /**
+   * When true, @[所有人]() / @[](all) skips the Yuanbao platform bot
+   * (userID "szUvRH8s4ekettawNjDREmAG4W7h+Lhb8Sy9tq/otZU=").
+   * This prevents the bot from @mentioning itself when doing @all.
+   * Default: false.
+   */
+  atAllExcludeYuanbao?: boolean;
+};
+
+/** Yuanbao platform bot's user ID (used for atAllExcludeYuanbao filtering). */
+const YUANBAO_USER_ID = "szUvRH8s4ekettawNjDREmAG4W7h+Lhb8Sy9tq/otZU=";
+
 export async function parseMentions(
   text: string,
   aliasStore?: AliasStore,
   nicknameResolver?: NicknameResolver,
   allMembersResolver?: AllMembersResolver,
   userIdResolver?: UserIdResolver,
+  options?: ParseMentionsOptions,
 ): Promise<ParsedMentions> {
   const store = aliasStore ?? getGlobalAliasStore();
   const mentions: MentionInfo[] = [];
@@ -202,6 +219,10 @@ export async function parseMentions(
               ut !== undefined ? ut === 2 || ut === 3 : uid.startsWith("bot_");
             const isLobster =
               ut !== undefined ? ut === 3 : uid.startsWith("bot_");
+            // atAllExcludeYuanbao: skip the Yuanbao platform bot when doing @all
+            if (options?.atAllExcludeYuanbao && uid === YUANBAO_USER_ID) {
+              return false;
+            }
             if (atAllScope === "all") return true; // include everyone
             if (atAllScope === "humans") return !isBot;
             if (atAllScope === "bots") return isBot;

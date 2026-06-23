@@ -1,6 +1,6 @@
 {
   "name": "@yuanbao-lite/cli",
-  "version": "12.7.2",
+  "version": "12.8.0",
   "type": "module",
   "description": "Yuanbao Lite CLI — daemon-first 交互式命令行工具",
   "license": "MIT",

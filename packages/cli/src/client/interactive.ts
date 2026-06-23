@@ -72,6 +72,15 @@ const GROUP_CODE_RE = /^\d{9}$/;
 
 // ─── Line editor (raw mode) ───
 
+/**
+ * Strip ANSI escape codes from a string (for visible-width calculation).
+ * Matches: CSI sequences (\x1b[...m), OSC sequences, and other ESC chars.
+ */
+function stripAnsi(str: string): string {
+  // eslint-disable-next-line no-control-regex
+  return str.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "");
+}
+
 /** Find the longest common prefix of an array of strings. */
 function longestCommonPrefix(strings: string[]): string {
   if (strings.length === 0) return "";
@@ -337,15 +346,28 @@ class LineEditor {
       ? highlightLine(this.buffer)
       : this.buffer;
     process.stdout.write(prompt + highlighted);
-    // Move cursor to correct position (accounting for prompt width)
-    // We need to move back to where the cursor should be
-    const promptStr = this.renderPrompt();
-    const visibleLen = promptStr.length + this.cursor;
-    const totalLen = promptStr.length + highlighted.length;
-    if (visibleLen < totalLen) {
-      // Move cursor left by (totalLen - visibleLen)
-      process.stdout.write(`\x1b[${totalLen - visibleLen}D`);
+
+    // Move cursor to the correct position.
+    //
+    // CRITICAL: prompt and highlighted contain ANSI escape codes (color,
+    // bold, etc.) which are NOT visible characters. We must strip ANSI
+    // codes before calculating lengths, otherwise the cursor ends up in
+    // the wrong position (too far right, because the invisible escape
+    // codes are counted as visible width).
+    const promptVisibleLen = stripAnsi(prompt).length;
+    const highlightedVisibleLen = stripAnsi(highlighted).length;
+    const cursorTarget = promptVisibleLen + this.cursor; // visible column where cursor should be
+    const lineEnd = promptVisibleLen + highlightedVisibleLen; // visible column at end of line
+
+    if (cursorTarget < lineEnd) {
+      // Move cursor left by the difference (visible columns only)
+      const moveLeft = lineEnd - cursorTarget;
+      if (moveLeft > 0) {
+        process.stdout.write(`\x1b[${moveLeft}D`);
+      }
     }
+    // If cursorTarget === lineEnd, cursor is already at the right position
+    // (writeStream leaves it at the end of the written text).
   }
 
   /** Force a full re-render (called after inbound messages etc). */

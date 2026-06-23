@@ -113,6 +113,7 @@ export class Daemon {
       apiDomain: profile.apiDomain,
       wsUrl: profile.wsUrl,
       logLevel,
+      atAllExcludeYuanbao: profile.atAllExcludeYuanbao ?? false,
     };
 
     this.bot = new YuanbaoBot(botConfig);

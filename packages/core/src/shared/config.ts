@@ -65,6 +65,13 @@ export type CliProfile = {
   defaultTarget?: string;
   /** Default chat mode: dm | group */
   defaultChatMode?: "dm" | "group";
+  /**
+   * When true, @[所有人]() / @[](all) skips the Yuanbao platform bot
+   * (userID "szUvRH8s4ekettawNjDREmAG4W7h+Lhb8Sy9tq/otZU=").
+   * This prevents the bot from @mentioning itself when doing @all.
+   * Default: false (Yuanbao is included in @all).
+   */
+  atAllExcludeYuanbao?: boolean;
 };
 
 export type CliConfigData = {

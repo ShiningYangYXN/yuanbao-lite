@@ -187,6 +187,12 @@ export type YuanbaoBotConfig = YuanbaoAccountConfig & {
   /** Whether non-slash messages should trigger LLM auto-reply (default: true) */
   llmAutoReply?: boolean;
   /**
+   * When true, @[所有人]() / @[](all) skips the Yuanbao platform bot.
+   * This prevents the bot from @mentioning itself when doing @all.
+   * Default: false.
+   */
+  atAllExcludeYuanbao?: boolean;
+  /**
    * Persistence configuration. Controls how the bot's internal stores
    * (alias, contacts, groups, history, trust, block, reminders, llm-config,
    * sticker-cache, runtime-prefs) are persisted.
@@ -1100,6 +1106,10 @@ export class YuanbaoBot {
       const mentionResult = await parseMentions(
         interpolatedMentions,
         this.aliasStore!,
+        undefined,
+        undefined,
+        undefined,
+        { atAllExcludeYuanbao: this.config.atAllExcludeYuanbao },
       );
       if (mentionResult.mentionedUserIds.length > 0) {
         cloudCustomData = buildCloudCustomDataWithMentions(
@@ -1165,6 +1175,10 @@ export class YuanbaoBot {
       const mentionResult = await parseMentions(
         interpolatedMentions,
         this.aliasStore!,
+        undefined,
+        undefined,
+        undefined,
+        { atAllExcludeYuanbao: this.config.atAllExcludeYuanbao },
       );
       if (mentionResult.mentionedUserIds.length > 0) {
         cloudCustomData = buildCloudCustomDataWithMentions(
