@@ -43,14 +43,15 @@ function shouldLog(level: LogLevel): boolean {
 function formatMessage(
   module: string,
   msg: string,
+  level: LogLevel,
   data?: Record<string, unknown>,
 ): string {
   const prefix = module ? `${logPrefix}[${module}]` : logPrefix;
   const ts = new Date().toISOString();
   if (data === undefined) {
-    return `${ts} ${prefix} ${msg}`;
+    return `${ts} [${level}] ${prefix} ${msg}`;
   }
-  return `${ts} ${prefix} ${msg} ${sanitize(data)}`;
+  return `${ts} [${level}] ${prefix} ${msg} ${sanitize(data)}`;
 }
 
 // ─── Unified file sink with rotation ───
@@ -306,28 +307,28 @@ export function createLog(
   return {
     info: (msg, data) => {
       if (shouldLog("info")) {
-        const formatted = formatMessage(module, msg, data);
+        const formatted = formatMessage(module, msg, "info", data);
         target.info(formatted);
         writeToFile(formatted);
       }
     },
     warn: (msg, data) => {
       if (shouldLog("warn")) {
-        const formatted = formatMessage(module, msg, data);
+        const formatted = formatMessage(module, msg, "warn", data);
         target.warn(formatted);
         writeToFile(formatted);
       }
     },
     error: (msg, data) => {
       if (shouldLog("error")) {
-        const formatted = formatMessage(module, msg, data);
+        const formatted = formatMessage(module, msg, "error", data);
         target.error(formatted);
         writeToFile(formatted);
       }
     },
     debug: (msg, data) => {
       if (shouldLog("debug")) {
-        const formatted = formatMessage(module, msg, data);
+        const formatted = formatMessage(module, msg, "debug", data);
         target.debug(formatted);
         writeToFile(formatted);
       }

@@ -1115,7 +1115,11 @@ async function paginate(text: string): Promise<void> {
     // Status bar at the bottom
     const pct = Math.round((endLine / totalLines) * 100);
     const hScroll =
-      leftCol > 0 ? `  ←${leftCol}` : leftCol + termWidth < maxLineWidth ? "  →" : "";
+      leftCol > 0
+        ? `  ←${leftCol}`
+        : leftCol + termWidth < maxLineWidth
+          ? "  →"
+          : "";
     process.stdout.write(
       chalk.dim(
         `行 ${endLine}/${totalLines} (${pct}%)  q退出  Space下页  b上页  ↑↓滚动  ←/→水平  g/G首尾${hScroll}`,

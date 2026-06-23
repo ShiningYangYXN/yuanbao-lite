@@ -204,17 +204,11 @@ export function formatMessage(
 
   // Detect inbound slash commands — show with a ⚡ 命令 tag (yellow),
   // placed AFTER the @mention tag so the order is: type · @我 · ⚡ 命令
-  //
-  // IMPORTANT: strip trigger tags (<<command>>...<<command>>, <<sticker>>...,
-  // <<quote>>..., <<break>>) before checking for /. These tags are LLM
-  // output markers, not commands — a message like "<<sticker>>狗头<<sticker>>"
-  // should NOT be tagged as a command. The rule mirrors the dispatch logic
-  // in llm-takeover.ts which strips these tags before processing.
   const cleanText = (msg.text ?? "")
-    .replace(/<<command>>.*?<<command>>\.\.\.?/g, "")
-    .replace(/<<sticker>>.*?<<sticker>>/g, "")
-    .replace(/<<quote>>.*?<<quote>>/g, "")
-    .replace(/<<break>>/g, "")
+    .replace(
+      /^(?:@(?:\[[^\]]*\]\([^)]*\)|\S+)|\[custom:[^\]]*\]|\[link card\]|\[forwarded records\])[\s\u3000]*/g,
+      "",
+    )
     .trim();
   const isCommand = direction === "inbound" && cleanText.startsWith("/");
   const commandMark = isCommand ? chalk.yellow(" ⚡ 命令") : "";
@@ -223,13 +217,13 @@ export function formatMessage(
   if (isGroup) {
     const group = chalk.cyan(msg.groupName || msg.groupCode || "?");
     if (direction === "outbound") {
-      header = `  ${icon} ${dirLabel}  ${chalk.dim("→")}  ${group} ${chalk.dim("/")} ${nick} ${chalk.dim("·")} ${time}`;
+      header = `  ${icon}  ${dirLabel}  ${chalk.dim("→")}  ${group} ${chalk.dim("·")} ${time}`;
     } else {
-      header = `  ${chalk.green("群")}  ${group} ${chalk.dim("/")} ${nick}${typeLabel}${mentionMark}${commandMark}${attachMark}${contentMark} ${chalk.dim("·")} ${time}`;
+      header = `  ${chalk.green("派")}  ${group} ${chalk.dim("/")} ${nick}${typeLabel}${mentionMark}${commandMark}${attachMark}${contentMark} ${chalk.dim("·")} ${time}`;
     }
   } else {
     if (direction === "outbound") {
-      header = `  ${icon} ${dirLabel}  ${chalk.dim("→")}  ${chalk.dim("私聊")} ${nick} ${chalk.dim("·")} ${time}`;
+      header = `  ${icon}  ${dirLabel}  ${chalk.dim("→")}  ${chalk.dim("私聊")} ${chalk.dim("·")} ${time}`;
     } else {
       header = `  ${chalk.cyan("私")}  ${nick}${typeLabel}${commandMark}${attachMark}${contentMark} ${chalk.dim("·")} ${time}`;
     }

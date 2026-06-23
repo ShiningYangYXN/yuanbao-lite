@@ -931,17 +931,15 @@ export class YuanbaoBot {
       fromUserId: this.account.botId || "bot",
       fromNickname: "当前实例",
       chatType: isGroup ? "group" : "direct",
-      ...(isGroup
-        ? { groupCode: to, groupName: groupName ?? to }
-        : {}),
+      ...(isGroup ? { groupCode: to, groupName: groupName ?? to } : {}),
       text,
       timestamp: Date.now(),
     };
     // Log outbound message (unified with inbound logging)
-    const scope = isGroup ? `GR:${groupName ?? to}` : `DM:${targetNickname ?? to}`;
-    this.log.info(
-      `[outbound] 当前实例 @${scope}: ${text.substring(0, 100)}`,
-    );
+    const scope = isGroup
+      ? `GR:${groupName ?? to}`
+      : `DM:${targetNickname ?? to}`;
+    this.log.info(`[outbound] 当前实例 @${scope}: ${text.substring(0, 100)}`);
     this.emit("outboundMessage", msg);
   }
 

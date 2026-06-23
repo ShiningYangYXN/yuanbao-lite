@@ -7,7 +7,7 @@
 [![OctoCounts](https://api.octocounts.com/badge/YuanbaoTeam/yuanbao-openclaw-plugin/branch/main)](https://octocounts.com/github/YuanbaoTeam/yuanbao-openclaw-plugin/tree/main)
 
 > 📖 完整开发文档请查看 [docs/](docs/README.md)
-> 
+>
 > 🦞 OpenClaw实例请查看 [CLAW.md](CLAW.md)
 
 ## 特性

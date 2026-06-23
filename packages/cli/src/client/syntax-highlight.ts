@@ -69,7 +69,10 @@ export function highlightLine(line: string): string {
     }
 
     // Mention: @[nick](id) or @nick or @all
-    if (/^@\[.*\]\(.*\)$/.test(part) || /^@[][A-Za-z\u4e00-\u9fff]+$/.test(part)) {
+    if (
+      /^@\[.*\]\(.*\)$/.test(part) ||
+      /^@[][A-Za-z\u4e00-\u9fff]+$/.test(part)
+    ) {
       return chalk.rgb(255, 140, 200)(part);
     }
 
@@ -120,7 +123,10 @@ export function highlightLine(line: string): string {
  */
 function highlightArgs(arg: string): string {
   // Flags: --flag or -f
-  if (arg.startsWith("--") || (arg.startsWith("-") && arg.length > 1 && !arg.startsWith("--"))) {
+  if (
+    arg.startsWith("--") ||
+    (arg.startsWith("-") && arg.length > 1 && !arg.startsWith("--"))
+  ) {
     return chalk.magenta(arg);
   }
   // Mention syntax @[nick](id)
