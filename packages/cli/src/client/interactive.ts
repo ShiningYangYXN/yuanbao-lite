@@ -199,6 +199,21 @@ class LineEditor {
       return;
     }
 
+    // Shift+Up — scroll terminal up (show older output)
+    // Uses the terminal's scrollback buffer — sends the scroll command
+    // directly to the terminal without affecting the input buffer.
+    if (key === "\x1b[1;2A") {
+      // Scroll up by 1 line using terminal escape sequence
+      process.stdout.write("\x1b[1S"); // scroll up 1 line
+      return;
+    }
+
+    // Shift+Down — scroll terminal down (show newer output)
+    if (key === "\x1b[1;2B") {
+      process.stdout.write("\x1b[1T"); // scroll down 1 line
+      return;
+    }
+
     // Up arrow — history previous
     if (key === "\x1b[A") {
       const prev = this.history.prev();
@@ -781,6 +796,16 @@ function parseKeys(data: string): Array<{ key: string; isCtrl: boolean }> {
     if (ch === "\x1b") {
       const remaining = data.slice(i);
 
+      // Shift+Arrow keys: \x1b[1;2A (Shift+Up), \x1b[1;2B (Shift+Down), etc.
+      // Format: ESC [ 1 ; 2 <letter>  (6 chars)
+      // Used for CLI scrolling (Shift+Up/Down scrolls the terminal buffer)
+      const shiftArrowMatch = remaining.match(/^\x1b\[1;2([ABCD])/);
+      if (shiftArrowMatch) {
+        keys.push({ key: `\x1b[1;2${shiftArrowMatch[1]}`, isCtrl: false });
+        i += 6;
+        continue;
+      }
+
       // Arrow keys: \x1b[A \x1b[B \x1b[C \x1b[D (3 chars each)
       const arrowMatch = remaining.match(/^\x1b\[([ABCD])/);
       if (arrowMatch) {
@@ -1137,14 +1162,15 @@ async function paginate(text: string): Promise<void> {
     const onData = (chunk: Buffer | string) => {
       const data = typeof chunk === "string" ? chunk : chunk.toString("utf-8");
       const keys = parseKeys(data);
+      let shouldQuit = false;
       for (const { key } of keys) {
         if (key === "q" || key === "\x1b") {
-          // Quit pager
-          process.stdout.write("\x1b[2J\x1b[H");
-          pagerActive = false;
-          process.stdin.removeListener("data", onData);
-          resolve();
-          return;
+          // Quit pager — set flag and break out of the loop.
+          // We do NOT process any remaining keys in this chunk — they
+          // would leak to the editor's buffer. By breaking here, any
+          // keys after 'q' in the same chunk are silently dropped.
+          shouldQuit = true;
+          break;
         }
         if (key === " " || key === "\x1b[6~") {
           // Page down
@@ -1204,9 +1230,22 @@ async function paginate(text: string): Promise<void> {
           continue;
         }
       }
+      if (shouldQuit) {
+        process.stdout.write("\x1b[2J\x1b[H");
+        pagerActive = false;
+        process.stdin.removeListener("data", onData);
+        // Drain any pending stdin data that arrived during the pager's
+        // last render cycle — this prevents leftover keystrokes from
+        // leaking into the editor's buffer.
+        resolve();
+      }
     };
     process.stdin.on("data", onData);
   });
+  // Small delay to let any in-flight stdin events settle before the
+  // editor resumes processing. This prevents the 'q' key's release event
+  // or any trailing bytes from leaking to the editor.
+  await new Promise((r) => setTimeout(r, 10));
 }
 
 /**
@@ -1295,21 +1334,38 @@ async function printInboundMessage(
   const { formatInboundMessage, renderMarkdownAnsi } = await import("../utils/cli-format.js");
   // Clear current line, print message, re-render prompt below
   process.stdout.write("\r\x1b[K");
-  // Render the message body through the Markdown→ANSI renderer so that
-  // Markdown in inbound messages (bold, code, tables, lists) is properly
-  // formatted in the CLI — not dumped as raw Markdown syntax.
+  // The formatted message is "header\n      body". We must NOT run the
+  // header through renderMarkdownAnsi — it contains ANSI color codes and
+  // layout characters that Markdown would mangle. Only the body (message
+  // text) should be Markdown-rendered.
   const formatted = formatInboundMessage(msg, isGroup);
-  const rendered = await renderMarkdownAnsi(formatted);
-  console.log(rendered);
+  const newlineIdx = formatted.indexOf("\n");
+  if (newlineIdx >= 0) {
+    const header = formatted.slice(0, newlineIdx);
+    const body = formatted.slice(newlineIdx + 1);
+    const renderedBody = await renderMarkdownAnsi(body);
+    console.log(header + "\n" + renderedBody);
+  } else {
+    console.log(formatted);
+  }
   editor?.forceRender();
 }
 
 async function printOutboundMessage(msg: ChatMessage): Promise<void> {
   const { formatOutboundMessage, renderMarkdownAnsi } = await import("../utils/cli-format.js");
   process.stdout.write("\r\x1b[K");
+  // Same split-render approach: header is printed as-is (contains ANSI),
+  // body is Markdown-rendered.
   const formatted = formatOutboundMessage(msg);
-  const rendered = await renderMarkdownAnsi(formatted);
-  console.log(rendered);
+  const newlineIdx = formatted.indexOf("\n");
+  if (newlineIdx >= 0) {
+    const header = formatted.slice(0, newlineIdx);
+    const body = formatted.slice(newlineIdx + 1);
+    const renderedBody = await renderMarkdownAnsi(body);
+    console.log(header + "\n" + renderedBody);
+  } else {
+    console.log(formatted);
+  }
   editor?.forceRender();
 }
 
@@ -1344,7 +1400,7 @@ function printWelcome(version: string, pid: number, port: number): void {
   );
   console.log(`  ${COLORS.dim(`daemon pid=${pid} port=${port}`)}`);
   console.log(
-    `  ${COLORS.dim("/help 查看命令  ·  ↑↓ 历史  ·  Ctrl+R 搜索  ·  Tab 补全  ·  \\ 换行  ·  Ctrl+C 退出")}`,
+    `  ${COLORS.dim("/help 查看命令  ·  ↑↓ 历史  ·  Shift+↑↓ 滚动  ·  Ctrl+R 搜索  ·  Tab 补全  ·  \\ 换行  ·  Ctrl+C 退出")}`,
   );
   console.log(
     `  ${COLORS.dim("/chat <目标> 切换会话  ·  /chat 退出会话  ·  /chat <目标> <消息> 仅发送不切换  (9位数字=群)")}`,
