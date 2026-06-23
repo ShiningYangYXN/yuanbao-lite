@@ -14,9 +14,10 @@ export function register(cmdSys: CommandSystem): void {
   cmdSys.register({
     name: "history",
     aliases: ["hist", "历史"],
-    description: "查看和搜索消息历史（search子命令默认20条，--all显示全部）",
+    description:
+      "查看消息历史（stats/recent/user/group，搜索请用 /search history）",
     usage:
-      "/history [search|stats|recent|user|group] [--all] [参数]   (search+--all/-a 显示全部)",
+      "/history [stats|recent|user|group] [--all] [参数]   (搜索请用 /search history)",
     category: "history" as CommandCategory,
     handler: async (ctx) => {
       const subCmd = ctx.args[0]?.toLowerCase();
@@ -31,44 +32,10 @@ export function register(cmdSys: CommandSystem): void {
         case "search":
         case "find":
         case "搜索": {
-          if (ctx.args.length < 2) {
-            await ctx.reply("用法: /history search <关键词> [数量]");
-            return;
-          }
-          const keyword = ctx.args[1];
-          const limit = parseInt(ctx.args[2] || "20", 10);
-          const results = store.searchByKeyword(keyword, {
-            searchNickname: true,
-            limit,
-          });
-          if (results.length === 0) {
-            await ctx.reply(`未找到包含 "${keyword}" 的消息`);
-            return;
-          }
-          const display = ctx.useTable
-            ? results
-            : ctx.showAll
-              ? results
-              : results.slice(-20);
-          if (ctx.useTable) {
-            const rows = display.map((m) => [
-              new Date(m.timestamp).toLocaleString("zh-CN"),
-              m.fromNickname || m.fromUserId,
-              m.chatType === "group" ? m.groupCode || "" : "DM",
-              (m.text || "(非文本)").substring(0, 50),
-            ]);
-            await ctx.reply(
-              `搜索结果 (${results.length}条)\n${await ctx.formatTable(["时间", "发送者", "群号", "内容"], rows)}`,
-            );
-          } else {
-            const output = formatHistoryList(display, {
-              botId,
-              colorize: false,
-              title: `搜索结果 (${results.length}条)`,
-            });
-            await ctx.reply(output);
-          }
-          break;
+          await ctx.reply(
+            "💡 历史搜索已合并到 /search\n请使用: /search history <关键词>",
+          );
+          return;
         }
         case "stats":
         case "统计": {

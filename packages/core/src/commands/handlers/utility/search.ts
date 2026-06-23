@@ -3,17 +3,19 @@
  * Category: group
  *
  * Sub-commands:
- *   - /search groups   <关键词> [群号1,群号2,...]  — 模糊搜索群组
- *   - /search members  <关键词> [群号]              — 模糊搜索群成员
- *   - /search history  <关键词>                     — 搜索消息历史（原 /hsearch）
+ *   - /search groups   <关键词> [群号1,群号2,...]  — 模糊搜索群组（远程 API）
+ *   - /search members  <关键词> [群号]              — 模糊搜索群成员（远程 API）
+ *   - /search history  <关键词>                     — 搜索消息历史（原 /hsearch, /history search）
  *   - /search stickers <关键词>                     — 搜索贴纸（原 /stickers search）
+ *   - /search contacts <关键词>                     — 搜索已保存的联系人（原 /contacts search）
+ *   - /search savedgroups <关键词>                  — 搜索已保存的群聊（原 /groups search）
  *
  * Back-compat aliases:
  *   /hsearch, /搜索历史, /histsearch → 等价于 /search history
  *
- * The history and stickers sub-commands do not require an active connection,
- * so `requireConnected` is NOT set on this command. The groups/members
- * sub-commands perform their own connection check.
+ * The history, stickers, contacts, and savedgroups sub-commands do not
+ * require an active connection. The groups/members sub-commands perform
+ * their own connection check.
  */
 
 import type { CommandSystem } from "../../registry.js";
@@ -24,14 +26,15 @@ export function register(cmdSys: CommandSystem): void {
   cmdSys.register({
     name: "search",
     aliases: ["搜索", "查找", "hsearch", "搜索历史", "histsearch"],
-    description:
-      "统一搜索：群组 / 群成员 / 消息历史 / 贴纸",
+    description: "统一搜索：群组 / 群成员 / 消息历史 / 贴纸",
     usage:
-      "/search <groups|members|history|stickers> <关键词> [参数]\n" +
-      "  /search groups <关键词> [群号1,群号2,...]\n" +
-      "  /search members <关键词> [群号]\n" +
-      "  /search history [--all] <关键词>   (--all/-a 显示全部结果及完整文本)\n" +
-      "  /search stickers <关键词>",
+      "/search <groups|members|history|stickers|contacts|savedgroups> <关键词> [参数]\n" +
+      "  /search groups <关键词> [群号1,群号2,...]  — 远程群组\n" +
+      "  /search members <关键词> [群号]             — 远程群成员\n" +
+      "  /search history [--all] <关键词>            — 消息历史\n" +
+      "  /search stickers <关键词>                   — 贴纸\n" +
+      "  /search contacts <关键词>                   — 已保存的联系人\n" +
+      "  /search savedgroups <关键词>                — 已保存的群聊",
     category: "group" as CommandCategory,
     handler: async (ctx) => {
       // Back-compat: when invoked via /hsearch alias (or its Chinese aliases),
@@ -76,13 +79,28 @@ export function register(cmdSys: CommandSystem): void {
           await runStickersSearch(ctx, ctx.args.slice(1));
           break;
         }
+        case "contacts":
+        case "contact":
+        case "联系人": {
+          await runContactsSearch(ctx, ctx.args.slice(1));
+          break;
+        }
+        case "savedgroups":
+        case "savedgroup":
+        case "saved群":
+        case "已存群": {
+          await runSavedGroupsSearch(ctx, ctx.args.slice(1));
+          break;
+        }
         default:
           await ctx.reply(
-            "用法: /search <groups|members|history|stickers> <关键词> [参数]\n" +
-              "  /search groups <关键词> [群号1,群号2,...]\n" +
-              "  /search members <关键词> [群号]\n" +
-              "  /search history [--all] <关键词>\n" +
-              "  /search stickers <关键词>",
+            "用法: /search <groups|members|history|stickers|contacts|savedgroups> <关键词> [参数]\n" +
+              "  /search groups <关键词> [群号1,群号2,...]  — 远程群组\n" +
+              "  /search members <关键词> [群号]             — 远程群成员\n" +
+              "  /search history [--all] <关键词>            — 消息历史\n" +
+              "  /search stickers <关键词>                   — 贴纸\n" +
+              "  /search contacts <关键词>                   — 已保存的联系人\n" +
+              "  /search savedgroups <关键词>                — 已保存的群聊",
           );
       }
     },
@@ -166,7 +184,13 @@ async function runMembersSearch(ctx: SearchContext): Promise<void> {
     const rows = results.map((r) => [
       r.userId,
       r.nickName,
-      r.userType === 1 ? "人类" : r.userType === 2 ? "元宝" : r.userType === 3 ? "龙虾" : "?",
+      r.userType === 1
+        ? "人类"
+        : r.userType === 2
+          ? "元宝"
+          : r.userType === 3
+            ? "龙虾"
+            : "?",
       r.matchType,
     ]);
     await ctx.reply(
@@ -175,7 +199,13 @@ async function runMembersSearch(ctx: SearchContext): Promise<void> {
   } else {
     const lines = results.map((r) => {
       const typeLabel =
-        r.userType === 1 ? "[人类]" : r.userType === 2 ? "[元宝]" : r.userType === 3 ? "[龙虾]" : "";
+        r.userType === 1
+          ? "[人类]"
+          : r.userType === 2
+            ? "[元宝]"
+            : r.userType === 3
+              ? "[龙虾]"
+              : "";
       return `  ${r.userId} — ${r.nickName} ${typeLabel} [${r.matchType}]`;
     });
     await ctx.reply(`🔍 成员搜索结果 (${groupCode}):\n${lines.join("\n")}`);
@@ -189,7 +219,9 @@ async function runHistorySearch(
   keywordArgs: string[],
 ): Promise<void> {
   if (keywordArgs.length === 0) {
-    await ctx.reply("用法: /search history <关键词>   (用 --all 显示全部及完整文本)");
+    await ctx.reply(
+      "用法: /search history <关键词>   (用 --all 显示全部及完整文本)",
+    );
     return;
   }
 
@@ -225,7 +257,9 @@ async function runHistorySearch(
       const time = new Date(msg.timestamp).toLocaleString("zh-CN");
       const sender = msg.fromNickname || msg.fromUserId;
       const short = shortId(msg);
-      const text = ctx.showAll ? textOrDefault(msg.text) : truncate(textOrDefault(msg.text), 50);
+      const text = ctx.showAll
+        ? textOrDefault(msg.text)
+        : truncate(textOrDefault(msg.text), 50);
       return `  [${time}] ${sender}(${msg.fromUserId}) #${short}: ${text}`;
     });
     const suffix =
@@ -281,6 +315,55 @@ async function runStickersSearch(
         : "";
     await ctx.reply(`🎨 贴纸搜索结果:\n${lines.join("\n")}${suffix}`);
   }
+}
+
+// ─── contacts (merged from /contacts search) ───
+
+async function runContactsSearch(
+  ctx: SearchContext,
+  keywordArgs: string[],
+): Promise<void> {
+  if (keywordArgs.length === 0) {
+    await ctx.reply("用法: /search contacts <关键词>");
+    return;
+  }
+  const query = keywordArgs.join(" ");
+  const store = ctx.bot.getContactStore();
+  const results = store.search(query);
+  if (results.length === 0) {
+    await ctx.reply("未找到匹配的联系人");
+    return;
+  }
+  const lines = results.map((c) => {
+    const fav = c.favorite ? "⭐" : " ";
+    return `  ${fav} ${c.name} -> ${c.id.substring(0, 30)}${c.tag ? ` [${c.tag}]` : ""}`;
+  });
+  await ctx.reply(`📇 联系人搜索结果:\n${lines.join("\n")}`);
+}
+
+// ─── savedgroups (merged from /groups search) ───
+
+async function runSavedGroupsSearch(
+  ctx: SearchContext,
+  keywordArgs: string[],
+): Promise<void> {
+  if (keywordArgs.length === 0) {
+    await ctx.reply("用法: /search savedgroups <关键词>");
+    return;
+  }
+  const query = keywordArgs.join(" ");
+  const store = ctx.bot.getGroupStore();
+  const results = store.search(query);
+  if (results.length === 0) {
+    await ctx.reply("未找到匹配的群聊");
+    return;
+  }
+  const lines = results.map((g) => {
+    const fav = g.favorite ? "⭐" : " ";
+    const displayName = g.name || g.groupName || "未知";
+    return `  ${fav} ${g.groupCode} — ${displayName}${g.tag ? ` [${g.tag}]` : ""}`;
+  });
+  await ctx.reply(`📋 已保存群聊搜索结果:\n${lines.join("\n")}`);
 }
 
 // ─── helpers ───

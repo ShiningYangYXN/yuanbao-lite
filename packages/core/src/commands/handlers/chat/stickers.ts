@@ -24,8 +24,7 @@ export function register(cmdSys: CommandSystem): void {
     name: "stickers",
     aliases: ["贴纸列表", "stickerlist"],
     description: "浏览贴纸列表（搜索请用 /search stickers <关键词>）",
-    usage:
-      "/stickers [--all] [emojis|load <目录>]   (--all/-a 显示全部)",
+    usage: "/stickers [--all] [emojis|load <目录>]   (--all/-a 显示全部)",
     category: "chat" as CommandCategory,
     handler: async (ctx) => {
       const subCmd = ctx.args[0]?.toLowerCase();

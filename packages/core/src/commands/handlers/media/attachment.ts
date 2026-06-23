@@ -56,17 +56,28 @@ function extractAttachments(
           type: "image",
           url,
           uuid,
-          width: typeof selected?.width === "number" ? selected.width : undefined,
-          height: typeof selected?.height === "number" ? selected.height : undefined,
+          width:
+            typeof selected?.width === "number" ? selected.width : undefined,
+          height:
+            typeof selected?.height === "number" ? selected.height : undefined,
         });
       }
     } else if (el.msg_type === "TIMFileElem") {
       const url = typeof c.url === "string" ? c.url : undefined;
       const uuid = typeof c.uuid === "string" ? c.uuid : undefined;
-      const fileName = typeof c.file_name === "string" ? c.file_name : undefined;
-      const fileSize = typeof c.file_size === "number" ? c.file_size : undefined;
+      const fileName =
+        typeof c.file_name === "string" ? c.file_name : undefined;
+      const fileSize =
+        typeof c.file_size === "number" ? c.file_size : undefined;
       if (url || uuid) {
-        attachments.push({ index: idx++, type: "file", url, uuid, fileName, fileSize });
+        attachments.push({
+          index: idx++,
+          type: "file",
+          url,
+          uuid,
+          fileName,
+          fileSize,
+        });
       }
     } else if (el.msg_type === "TIMVideoFileElem") {
       const url = typeof c.video_url === "string" ? c.video_url : undefined;

@@ -120,21 +120,10 @@ export function register(cmdSys: CommandSystem): void {
         }
         case "search":
         case "find": {
-          if (ctx.args.length < 2) {
-            await ctx.reply("用法: /contacts search <关键词>");
-            return;
-          }
-          const results = store.search(ctx.args.slice(1).join(" "));
-          if (results.length === 0) {
-            await ctx.reply("未找到匹配的联系人");
-          } else {
-            const lines = results.map((c) => {
-              const fav = c.favorite ? "⭐" : " ";
-              return `  ${fav} ${c.name} -> ${c.id.substring(0, 30)}${c.tag ? ` [${c.tag}]` : ""}`;
-            });
-            await ctx.reply(`📇 搜索结果:\n${lines.join("\n")}`);
-          }
-          break;
+          await ctx.reply(
+            "💡 联系人搜索已合并到 /search\n请使用: /search contacts <关键词>",
+          );
+          return;
         }
         case "save": {
           const ok = store.save();

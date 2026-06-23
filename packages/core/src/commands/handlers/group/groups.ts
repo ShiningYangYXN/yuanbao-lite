@@ -132,22 +132,10 @@ export function register(cmdSys: CommandSystem): void {
         }
         case "search":
         case "find": {
-          if (ctx.args.length < 2) {
-            await ctx.reply("用法: /groups search <关键词>");
-            return;
-          }
-          const results = store.search(ctx.args.slice(1).join(" "));
-          if (results.length === 0) {
-            await ctx.reply("未找到匹配的群聊");
-          } else {
-            const lines = results.map((g) => {
-              const fav = g.favorite ? "⭐" : " ";
-              const displayName = g.name || g.groupName || "未知";
-              return `  ${fav} ${g.groupCode} — ${displayName}${g.tag ? ` [${g.tag}]` : ""}`;
-            });
-            await ctx.reply(`📋 群聊搜索结果:\n${lines.join("\n")}`);
-          }
-          break;
+          await ctx.reply(
+            "💡 群聊搜索已合并到 /search\n请使用: /search savedgroups <关键词>",
+          );
+          return;
         }
         case "save": {
           const ok = store.save();

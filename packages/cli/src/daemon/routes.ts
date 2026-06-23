@@ -426,11 +426,8 @@ async function wizardInput(
   const userId = typeof body.userId === "string" ? body.userId : "cli";
   const text = typeof body.text === "string" ? body.text : "";
 
-<<<<<<< HEAD
   // Build the session key the same way init.ts / llm.ts do:
-=======
   // Build the session key the same way init.ts / llm.ts / term.ts do:
->>>>>>> b1b50d2 (refactor: v12.10.0 — merge sticker search into /search, unify search logic, fix wizard sessionKey, promote generic helpers)
   //   DM:    "<userId>:dm"
   //   Group: "<userId>:group:<groupCode>"
   // For CLI (userId="cli"), it's always "cli:dm".
@@ -467,16 +464,12 @@ async function wizardInput(
 
   // Check /init wizard
   if (cs._initWizardSessions?.has(sessionKey) && cs._handleInitWizardInput) {
-<<<<<<< HEAD
     const handled = await cs._handleInitWizardInput(
       bot,
       sessionKey,
       text,
       replyFn,
     );
-=======
-    const handled = await cs._handleInitWizardInput(bot, sessionKey, text, replyFn);
->>>>>>> b1b50d2 (refactor: v12.10.0 — merge sticker search into /search, unify search logic, fix wizard sessionKey, promote generic helpers)
     return {
       status: 200,
       body: { ok: true, handled, replies, wizard: "init" },
@@ -485,16 +478,12 @@ async function wizardInput(
 
   // Check /llm config wizard
   if (cs._llmWizardSessions?.has(sessionKey) && cs._handleLlmWizardInput) {
-<<<<<<< HEAD
     const handled = await cs._handleLlmWizardInput(
       bot,
       sessionKey,
       text,
       replyFn,
     );
-=======
-    const handled = await cs._handleLlmWizardInput(bot, sessionKey, text, replyFn);
->>>>>>> b1b50d2 (refactor: v12.10.0 — merge sticker search into /search, unify search logic, fix wizard sessionKey, promote generic helpers)
     return { status: 200, body: { ok: true, handled, replies, wizard: "llm" } };
   }
 
@@ -538,10 +527,7 @@ function wizardStatus(ctx: RouteContext): RouteResult {
 
   const hasInit = cs._initWizardSessions?.has(sessionKey) ?? false;
   const hasLlm = cs._llmWizardSessions?.has(sessionKey) ?? false;
-<<<<<<< HEAD
-=======
   const hasTerm = cs._termSessions?.has(sessionKey) ?? false;
->>>>>>> b1b50d2 (refactor: v12.10.0 — merge sticker search into /search, unify search logic, fix wizard sessionKey, promote generic helpers)
 
   return {
     status: 200,

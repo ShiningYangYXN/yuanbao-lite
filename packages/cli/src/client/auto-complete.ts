@@ -175,7 +175,6 @@ const SUB_COMMANDS: Record<string, string[]> = {
     "user",
     "group",
   ],
-<<<<<<< HEAD
   "/search": [
     "groups",
     "群",
@@ -186,10 +185,16 @@ const SUB_COMMANDS: Record<string, string[]> = {
     "history",
     "hist",
     "历史",
+    "stickers",
+    "sticker",
+    "贴纸",
+    "contacts",
+    "contact",
+    "联系人",
+    "savedgroups",
+    "savedgroup",
+    "已存群",
   ],
-=======
-  "/search": ["groups", "群", "群组", "members", "member", "成员", "history", "hist", "历史", "stickers", "sticker", "贴纸"],
->>>>>>> b1b50d2 (refactor: v12.10.0 — merge sticker search into /search, unify search logic, fix wizard sessionKey, promote generic helpers)
   "/batch": ["text", "sticker", "image", "file", "stop", "status", "list"],
   "/account": ["add", "remove", "rm", "list", "ls", "switch", "start", "stop"],
   "/llm": [
