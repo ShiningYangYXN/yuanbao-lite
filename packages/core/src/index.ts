@@ -897,27 +897,51 @@ export class YuanbaoBot {
    * display path for both inbound and outbound messages. The `fromUserId`
    * is set to the bot's ID, `fromNickname` to "bot", and the direction is
    * indicated by the event name ("outboundMessage").
+   *
+   * The sender is shown as "当前实例" (current instance) instead of the raw
+   * bot ID. The target name is resolved from the group/contact stores when
+   * available so the CLI can display a friendly name instead of a raw ID.
    */
   private emitOutboundMessage(
     text: string,
     to: string,
     isGroup: boolean,
   ): void {
+    // Resolve target name for display
+    let groupName: string | undefined;
+    let targetNickname: string | undefined;
+    if (isGroup) {
+      try {
+        const g = this.groupStore?.get(to);
+        groupName = g?.name ?? g?.groupName;
+      } catch {
+        // store not initialized
+      }
+    } else {
+      try {
+        const c = this.contactStore?.get(to);
+        targetNickname = c?.name;
+      } catch {
+        // store not initialized
+      }
+    }
+
     const msg: ChatMessage = {
       id: `bot-outbound-${Date.now()}`,
       fromUserId: this.account.botId || "bot",
-      fromNickname: "bot",
+      fromNickname: "当前实例",
       chatType: isGroup ? "group" : "direct",
-      ...(isGroup ? { groupCode: to } : {}),
+      ...(isGroup
+        ? { groupCode: to, groupName: groupName ?? to }
+        : {}),
       text,
       timestamp: Date.now(),
     };
     // Log outbound message (unified with inbound logging)
-    const scope = isGroup ? `GR:${to}` : "DM";
+    const scope = isGroup ? `GR:${groupName ?? to}` : `DM:${targetNickname ?? to}`;
     this.log.info(
-      `[outbound] ${this.account.botId || "bot"} @${scope}: ${text.substring(0, 100)}`,
+      `[outbound] 当前实例 @${scope}: ${text.substring(0, 100)}`,
     );
-    // Emit both the unified event and the legacy shape for backward compat
     this.emit("outboundMessage", msg);
   }
 
@@ -2227,33 +2251,42 @@ export class YuanbaoBot {
 
     if (isSlashCommand && this.commandSystem) {
       // Execute each slash command line sequentially.
-      // Any plain text lines in the same multi-line message are silently skipped
-      // (per dispatch rule 3 — DM would skip them anyway, group only auto-replies
-      // Emit the inbound slash command message so CLI/SSE subscribers can
-      // see it (with the ⚡ 命令 tag). Previously this returned early without
-      // emitting, so inbound commands were invisible in the CLI.
+      // Plain text lines in the same multi-line message are ALSO processed:
+      //   - In DM: each plain text line triggers LLM auto-reply independently.
+      //   - In group: plain text lines are sent to LLM only if the bot was
+      //     @mentioned (the mention flag applies to the whole message).
+      //
+      // Previously plain text lines were silently skipped — this broke
+      // multi-line messages where the user mixed commands and chat text.
       this.emitMessageEvents(chatMessage, chatType);
-      // on @mention so multi-line plain text is also skipped here).
       const executeCommands = async () => {
-        for (const cmdLine of commandLines) {
-          const dispatchMsg = { ...chatMessage, text: cmdLine };
-          try {
-            const result = await this.commandSystem!.dispatch(
-              this,
-              dispatchMsg,
-            );
-            if (result.handled) {
-              this.log.debug(`command handled: ${cmdLine.substring(0, 80)}`);
-            } else {
-              // Not a recognized slash command — skip silently
-              this.log.debug(
-                `skipped unrecognized line: ${cmdLine.substring(0, 80)}`,
+        for (const ln of lines) {
+          if (ln.startsWith("/")) {
+            // Slash command — dispatch via CommandSystem
+            const dispatchMsg = { ...chatMessage, text: ln };
+            try {
+              const result = await this.commandSystem!.dispatch(
+                this,
+                dispatchMsg,
+              );
+              if (result.handled) {
+                this.log.debug(`command handled: ${ln.substring(0, 80)}`);
+              } else {
+                this.log.debug(
+                  `skipped unrecognized line: ${ln.substring(0, 80)}`,
+                );
+              }
+            } catch (err) {
+              this.log.error(
+                `command dispatch error for "${ln.substring(0, 80)}": ${(err as Error).message}`,
               );
             }
-          } catch (err) {
-            this.log.error(
-              `command dispatch error for "${cmdLine.substring(0, 80)}": ${(err as Error).message}`,
-            );
+          } else {
+            // Plain text line — process as a separate message
+            // (LLM auto-reply or group mention check)
+            const textMsg = { ...chatMessage, text: ln };
+            this.emitMessageEvents(textMsg, chatType);
+            await this.tryLlmAutoReply(textMsg);
           }
         }
         // Trigger data persistence after all commands

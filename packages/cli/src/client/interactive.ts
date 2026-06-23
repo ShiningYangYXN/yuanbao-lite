@@ -342,9 +342,12 @@ class LineEditor {
       return;
     }
     const prompt = this.renderPrompt();
-    const highlighted = this.buffer.startsWith("/")
-      ? highlightLine(this.buffer)
-      : this.buffer;
+    // Highlight slash commands AND @mentions (and @-prefixed commands like
+    // "@bot /help" where the command starts after the @mention)
+    const highlighted =
+      this.buffer.startsWith("/") || this.buffer.startsWith("@")
+        ? highlightLine(this.buffer)
+        : this.buffer;
     process.stdout.write(prompt + highlighted);
 
     // Move cursor to the correct position.
@@ -1042,6 +1045,9 @@ async function dispatchCommand(
 
 // ─── Pager ───
 
+/** When true, the pager is active and inbound/outbound messages are suppressed. */
+let pagerActive = false;
+
 /**
  * Display text through a simple built-in pager.
  *
@@ -1054,13 +1060,21 @@ async function dispatchCommand(
  *   - ↑: scroll up one line
  *   - g: go to start
  *   - G: go to end
+ *   - ←/→: scroll left/right (horizontal, for wide lines)
+ *
+ * While the pager is active, inbound/outbound message echo is suppressed
+ * (messages are buffered or simply dropped — the user is reading command
+ * output and doesn't want interruptions).
+ *
+ * Lines are NOT wrapped — they are displayed at their natural width and
+ * the user can scroll horizontally with ←/→. This preserves table layout
+ * and code block formatting.
  *
  * The pager runs in the alt screen buffer's raw mode (stdin is already raw).
  */
 async function paginate(text: string): Promise<void> {
   const lines = text.split("\n");
   const termHeight = process.stdout.rows || 24;
-  const termWidth = process.stdout.columns || 80;
 
   // If output fits on screen (leaving 1 line for prompt), print directly
   if (lines.length <= termHeight - 1) {
@@ -1068,63 +1082,43 @@ async function paginate(text: string): Promise<void> {
     return;
   }
 
-  // Wrap long lines to terminal width
-  const wrappedLines: string[] = [];
-  for (const line of lines) {
-    if (line.length === 0) {
-      wrappedLines.push("");
-      continue;
-    }
-    // Strip ANSI codes for width calculation
-    const visibleLen = line.replace(/\x1b\[[0-9;]*m/g, "").length;
-    if (visibleLen <= termWidth) {
-      wrappedLines.push(line);
-    } else {
-      // Simple char-by-char wrap (preserving ANSI)
-      let current = "";
-      let currentLen = 0;
-      let i = 0;
-      while (i < line.length) {
-        const ch = line[i];
-        // Skip ANSI escape sequences (don't count toward width)
-        if (ch === "\x1b") {
-          const seqEnd = line.indexOf("m", i);
-          if (seqEnd >= 0) {
-            current += line.slice(i, seqEnd + 1);
-            i = seqEnd + 1;
-            continue;
-          }
-        }
-        if (currentLen >= termWidth) {
-          wrappedLines.push(current);
-          current = "";
-          currentLen = 0;
-        }
-        current += ch;
-        currentLen++;
-        i++;
-      }
-      if (current) wrappedLines.push(current);
-    }
-  }
+  // No wrapping — use lines as-is. Horizontal scroll handles wide lines.
+  const displayLines = lines;
 
   // Pager state
+  pagerActive = true;
   let topLine = 0;
+  let leftCol = 0; // horizontal scroll offset
   const visibleRows = termHeight - 2; // leave 2 lines for status bar
-  const totalLines = wrappedLines.length;
+  const totalLines = displayLines.length;
+  const termWidth = process.stdout.columns || 80;
+
+  /** Strip ANSI codes for length calculation. */
+  const visibleLen = (s: string): number =>
+    s.replace(/\x1b\[[0-9;]*m/g, "").length;
+
+  /** Find the max visible line width (for horizontal scroll bounds). */
+  const maxLineWidth = Math.max(...displayLines.map(visibleLen), termWidth);
 
   const renderPage = () => {
     // Clear screen and move cursor home
     process.stdout.write("\x1b[2J\x1b[H");
     const endLine = Math.min(topLine + visibleRows, totalLines);
     for (let i = topLine; i < endLine; i++) {
-      process.stdout.write(wrappedLines[i] + "\n");
+      const line = displayLines[i];
+      // Horizontal scroll: slice the line based on leftCol.
+      // We need to slice on VISIBLE columns, not raw string indices,
+      // because ANSI escape codes don't count toward width.
+      const sliced = sliceVisible(line, leftCol, leftCol + termWidth);
+      process.stdout.write(sliced + "\n");
     }
     // Status bar at the bottom
     const pct = Math.round((endLine / totalLines) * 100);
+    const hScroll =
+      leftCol > 0 ? `  ←${leftCol}` : leftCol + termWidth < maxLineWidth ? "  →" : "";
     process.stdout.write(
       chalk.dim(
-        `行 ${endLine}/${totalLines} (${pct}%)  q退出  Space下页  b上页  ↑↓滚动  g/G首尾`,
+        `行 ${endLine}/${totalLines} (${pct}%)  q退出  Space下页  b上页  ↑↓滚动  ←/→水平  g/G首尾${hScroll}`,
       ) + "\n",
     );
   };
@@ -1140,6 +1134,7 @@ async function paginate(text: string): Promise<void> {
         if (key === "q" || key === "\x1b") {
           // Quit pager
           process.stdout.write("\x1b[2J\x1b[H");
+          pagerActive = false;
           process.stdin.removeListener("data", onData);
           resolve();
           return;
@@ -1173,6 +1168,22 @@ async function paginate(text: string): Promise<void> {
           }
           continue;
         }
+        if (key === "\x1b[C") {
+          // Scroll right (Right arrow)
+          if (leftCol + termWidth < maxLineWidth) {
+            leftCol = Math.min(leftCol + 10, maxLineWidth - termWidth);
+            renderPage();
+          }
+          continue;
+        }
+        if (key === "\x1b[D") {
+          // Scroll left (Left arrow)
+          if (leftCol > 0) {
+            leftCol = Math.max(leftCol - 10, 0);
+            renderPage();
+          }
+          continue;
+        }
         if (key === "g") {
           // Go to start
           topLine = 0;
@@ -1191,9 +1202,53 @@ async function paginate(text: string): Promise<void> {
   });
 }
 
+/**
+ * Slice a string by VISIBLE column range, preserving ANSI escape codes.
+ * This is used by the pager for horizontal scrolling — we need to show
+ * columns [start, end) but ANSI codes (which don't take up visible space)
+ * must be preserved so colors aren't broken.
+ */
+function sliceVisible(str: string, start: number, end: number): string {
+  let visiblePos = 0;
+  let result = "";
+  let i = 0;
+  while (i < str.length) {
+    const ch = str[i];
+    // Check for ANSI escape sequence
+    if (ch === "\x1b") {
+      const seqEnd = str.indexOf("m", i);
+      if (seqEnd >= 0) {
+        // Include the full ANSI sequence in the output (it's invisible)
+        result += str.slice(i, seqEnd + 1);
+        i = seqEnd + 1;
+        continue;
+      }
+    }
+    // Regular character — check if it's in the visible range
+    if (visiblePos >= start && visiblePos < end) {
+      result += ch;
+    }
+    visiblePos++;
+    i++;
+    if (visiblePos >= end) {
+      // We've reached the end of the visible range.
+      // But we still need to check for a closing ANSI reset code at the end.
+      // For simplicity, just break — colors may be slightly off at the edge.
+      break;
+    }
+  }
+  // Append a reset code to avoid color bleeding
+  result += "\x1b[0m";
+  return result;
+}
+
 // ─── SSE handling ───
 
 function handleSseEvent(event: string, data: unknown): void {
+  // Suppress all message echo while the pager is active — the user is
+  // reading command output and doesn't want interruptions.
+  if (pagerActive) return;
+
   switch (event) {
     case "ready":
       break;

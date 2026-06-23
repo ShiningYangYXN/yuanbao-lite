@@ -204,8 +204,19 @@ export function formatMessage(
 
   // Detect inbound slash commands — show with a ⚡ 命令 tag (yellow),
   // placed AFTER the @mention tag so the order is: type · @我 · ⚡ 命令
-  const isCommand =
-    direction === "inbound" && msg.text && msg.text.trim().startsWith("/");
+  //
+  // IMPORTANT: strip trigger tags (<<command>>...<<command>>, <<sticker>>...,
+  // <<quote>>..., <<break>>) before checking for /. These tags are LLM
+  // output markers, not commands — a message like "<<sticker>>狗头<<sticker>>"
+  // should NOT be tagged as a command. The rule mirrors the dispatch logic
+  // in llm-takeover.ts which strips these tags before processing.
+  const cleanText = (msg.text ?? "")
+    .replace(/<<command>>.*?<<command>>\.\.\.?/g, "")
+    .replace(/<<sticker>>.*?<<sticker>>/g, "")
+    .replace(/<<quote>>.*?<<quote>>/g, "")
+    .replace(/<<break>>/g, "")
+    .trim();
+  const isCommand = direction === "inbound" && cleanText.startsWith("/");
   const commandMark = isCommand ? chalk.yellow(" ⚡ 命令") : "";
 
   let header: string;
