@@ -342,6 +342,19 @@ export class DaemonClient {
     let stopped = false;
     let controller: AbortController | null = null;
     let reconnectDelay = 2000; // exponential backoff for SSE reconnection
+    let readTimeoutTimer: ReturnType<typeof setTimeout> | null = null;
+
+    // Timeout for SSE read — if no data arrives within this period,
+    // the connection is considered dead and we reconnect.
+    // The daemon sends keepalive every 15s, so 45s = 3 missed keepalives.
+    const READ_TIMEOUT_MS = 45_000;
+
+    const clearReadTimeout = () => {
+      if (readTimeoutTimer) {
+        clearTimeout(readTimeoutTimer);
+        readTimeoutTimer = null;
+      }
+    };
 
     const connect = async (): Promise<void> => {
       if (stopped) return;
@@ -360,9 +373,22 @@ export class DaemonClient {
         const decoder = new TextDecoder();
         let buffer = "";
 
+        // Set initial read timeout
+        clearReadTimeout();
+        readTimeoutTimer = setTimeout(() => {
+          reader.cancel().catch(() => {});
+        }, READ_TIMEOUT_MS);
+
         while (!stopped) {
           const { value, done } = await reader.read();
           if (done) break;
+
+          // Reset read timeout on each data arrival (keepalive counts)
+          clearReadTimeout();
+          readTimeoutTimer = setTimeout(() => {
+            reader.cancel().catch(() => {});
+          }, READ_TIMEOUT_MS);
+
           buffer += decoder.decode(value, { stream: true });
 
           // Parse SSE frames: blank line separates events
@@ -393,22 +419,28 @@ export class DaemonClient {
             }
           }
         }
+        // Stream ended normally — reconnect
+        clearReadTimeout();
       } catch {
-        if (stopped) return;
-        // Reconnect after a short delay with exponential backoff
-        // (2s → 4s → 8s → ... max 30s) to avoid hammering the daemon
-        // when it's down for an extended period.
-        const delay = Math.min(reconnectDelay, 30_000);
-        reconnectDelay = Math.min(reconnectDelay * 2, 30_000);
-        await sleep(delay);
-        if (!stopped) void connect();
+        // Error or timeout — reconnect
       }
+
+      // Cleanup and reconnect
+      clearReadTimeout();
+      if (stopped) return;
+
+      // Reconnect after a short delay with exponential backoff
+      const delay = Math.min(reconnectDelay, 30_000);
+      reconnectDelay = Math.min(reconnectDelay * 2, 30_000);
+      await sleep(delay);
+      if (!stopped) void connect();
     };
 
     void connect();
 
     return () => {
       stopped = true;
+      clearReadTimeout();
       controller?.abort();
     };
   }

@@ -672,9 +672,15 @@ export async function runInteractive(): Promise<void> {
   const history = new RichHistory();
 
   // 4. SSE subscription for live messages
-  const unsubscribe = client.subscribeSse((event, data) => {
-    handleSseEvent(event, data);
-  });
+  // The unsubscribe function is stored so we can re-subscribe after daemon reconnect.
+  let unsubscribeSse: (() => void) | null = null;
+  const subscribeToSse = () => {
+    if (unsubscribeSse) unsubscribeSse();
+    unsubscribeSse = client.subscribeSse((event, data) => {
+      handleSseEvent(event, data);
+    });
+  };
+  subscribeToSse();
 
   // 4b. Daemon health monitor — detect disconnects, log, and auto-reconnect
   // Uses exponential backoff (2s → 4s → 8s → ... max 60s) to avoid hammering
@@ -693,6 +699,10 @@ export async function runInteractive(): Promise<void> {
         reconnecting = false;
         reconnectDelayMs = 2000;
         printResult("daemon 已重连 ✓");
+        // Force SSE re-subscription — the old SSE connection is likely dead
+        // (the read timeout takes up to 45s to detect, but we know the
+        // daemon was down, so we proactively reconnect now).
+        subscribeToSse();
         editor?.forceRender();
       }
     } catch {
@@ -837,7 +847,7 @@ export async function runInteractive(): Promise<void> {
     clearInterval(wizardTimer);
     clearInterval(healthTimer);
     process.removeListener("SIGWINCH", onResize);
-    unsubscribe();
+    if (unsubscribeSse) unsubscribeSse();
     if (process.stdin.isTTY) {
       process.stdin.setRawMode(false);
     }
