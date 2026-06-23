@@ -13,7 +13,15 @@
  * when their real-time highlighter is unavailable.
  *
  * Highlighting rules:
- *   1. @mentions (@[nick](id), @nick, @all) → pink, highlighted everywhere
+ *   1. @mentions: ONLY @[nick](id) syntax is valid (brackets and parens
+ *      required, contents optional). Bare @nick is NOT highlighted.
+ *      Color depends on user type:
+ *        - Master (bot owner): magenta
+ *        - Yuanbao (platform bot): green
+ *        - Lobster (bot_ prefix): red
+ *        - Trusted: yellow
+ *        - Human: cyan
+ *      If user type can't be determined (unknown ID), default pink.
  *   2. Slash commands (/cmd) → cyan bold, highlighted everywhere
  *      - If the line starts with @, command highlighting starts from the
  *        first / after the @mention(s)
@@ -24,17 +32,42 @@
 
 import chalk from "chalk";
 
-/** Mention regex: @[nick](id), @[](id), @nick (bare), @all */
-const MENTION_RE = /(@\[[^\]]*\]\([^)]*\)|@[][A-Za-z\u4e00-\u9fff]+)/g;
+/** Yuanbao platform bot's user ID */
+const YUANBAO_ID = "szUvRH8s4ekettawNjDREmAG4W7h+Lhb8Sy9tq/otZU=";
 
-/** Command regex: /word */
-const COMMAND_RE = /(\/\S+)/g;
+/**
+ * Valid mention regex: @[nick](id)
+ * - Brackets [] and parens () are REQUIRED
+ * - Contents (nick and id) are OPTIONAL (can be empty)
+ * - Examples: @[小明](12345), @[](12345), @[小明](), @[]()
+ */
+const MENTION_RE = /@\[[^\]]*\]\([^)]*\)/g;
+
+/**
+ * Get the highlight color for a mention based on the user ID.
+ * Mirrors the color logic in cli-format.ts's coloredName().
+ *
+ * @param userId - The user ID extracted from @[nick](id)
+ * @returns A chalk color function, or null if default should be used
+ */
+function getMentionColor(userId: string): ((s: string) => string) | null {
+  if (!userId) return null;
+  if (userId === YUANBAO_ID) return chalk.green.bold;
+  if (userId.startsWith("bot_")) return chalk.red;
+  // Master and Trusted require the trust store, which isn't available
+  // client-side. We can't determine those types here, so we fall back
+  // to the default pink for unknown IDs. The CLI display path
+  // (formatInboundMessage) does have access to the trust store and
+  // will apply the correct colors there.
+  return null; // default pink
+}
 
 /**
  * Highlight a committed input line.
  *
  * Rules:
- * - @mentions are always highlighted (pink) wherever they appear.
+ * - Only @[nick](id) mentions are highlighted (bare @nick is NOT).
+ * - Mention color depends on user type (see getMentionColor).
  * - /commands are always highlighted (cyan bold) wherever they appear.
  * - Within command args, flags/strings/numbers are also colored.
  * - If the line starts with @, the command portion (starting from the
@@ -43,24 +76,22 @@ const COMMAND_RE = /(\/\S+)/g;
 export function highlightLine(line: string): string {
   if (!line) return line;
 
-  // Check if the line contains any @mentions
+  // Check if the line contains any valid @mentions
   const hasMentions = MENTION_RE.test(line);
-  // Reset lastIndex (regex is global)
   MENTION_RE.lastIndex = 0;
 
-  // Check if the line contains any /commands
-  const hasCommands = COMMAND_RE.test(line);
-  COMMAND_RE.lastIndex = 0;
+  // Check if the line starts with / (command)
+  const startsWithCommand = line.startsWith("/");
 
-  // If no mentions and no commands, return as-is
-  if (!hasMentions && !hasCommands && !line.startsWith("/")) {
+  // If no mentions and not a command, return as-is
+  if (!hasMentions && !startsWithCommand) {
     return line;
   }
 
   // Tokenize the line into segments, highlighting each token type.
   // We process the line in one pass, checking each space-separated token.
   const parts = line.split(/(\s+)/); // keep whitespace as tokens
-  let inCommand = line.startsWith("/"); // are we in the command portion?
+  let inCommand = startsWithCommand; // are we in the command portion?
 
   const result = parts.map((part) => {
     // Whitespace — return as-is
@@ -68,11 +99,16 @@ export function highlightLine(line: string): string {
       return part;
     }
 
-    // Mention: @[nick](id) or @nick or @all
-    if (
-      /^@\[.*\]\(.*\)$/.test(part) ||
-      /^@[][A-Za-z\u4e00-\u9fff]+$/.test(part)
-    ) {
+    // Valid mention: @[nick](id) — brackets and parens required
+    const mentionMatch = part.match(/^@\[([^\]]*)\]\(([^)]*)\)$/);
+    if (mentionMatch) {
+      const nick = mentionMatch[1];
+      const id = mentionMatch[2];
+      const colorFn = getMentionColor(id);
+      if (colorFn) {
+        return colorFn(part);
+      }
+      // Default: pink for unknown user types
       return chalk.rgb(255, 140, 200)(part);
     }
 
@@ -92,7 +128,7 @@ export function highlightLine(line: string): string {
     }
 
     // If this token starts with / and we're NOT yet in command mode,
-    // switch to command mode (e.g. "@bot /help" → /help starts command)
+    // switch to command mode (e.g. "@[bot](id) /help" → /help starts command)
     if (!inCommand && part.startsWith("/")) {
       inCommand = true;
       if (/^\/\S+$/.test(part)) {
@@ -129,8 +165,14 @@ function highlightArgs(arg: string): string {
   ) {
     return chalk.magenta(arg);
   }
-  // Mention syntax @[nick](id)
-  if (/^@\[.*\]\(.*\)$/.test(arg)) {
+  // Valid mention syntax @[nick](id)
+  const mentionMatch = arg.match(/^@\[([^\]]*)\]\(([^)]*)\)$/);
+  if (mentionMatch) {
+    const id = mentionMatch[2];
+    const colorFn = getMentionColor(id);
+    if (colorFn) {
+      return colorFn(arg);
+    }
     return chalk.rgb(255, 140, 200)(arg);
   }
   // Quoted strings

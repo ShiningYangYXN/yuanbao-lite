@@ -342,12 +342,15 @@ class LineEditor {
       return;
     }
     const prompt = this.renderPrompt();
-    // Highlight slash commands AND @mentions (and @-prefixed commands like
-    // "@bot /help" where the command starts after the @mention)
-    const highlighted =
-      this.buffer.startsWith("/") || this.buffer.startsWith("@")
-        ? highlightLine(this.buffer)
-        : this.buffer;
+    // Highlight slash commands AND @mentions (valid syntax: @[nick](id))
+    // Also highlight lines starting with @ that may contain a command after
+    // the mention (e.g. "@[bot](id) /help")
+    const hasMentionOrCommand =
+      this.buffer.startsWith("/") ||
+      /@\[[^\]]*\]\([^)]*\)/.test(this.buffer);
+    const highlighted = hasMentionOrCommand
+      ? highlightLine(this.buffer)
+      : this.buffer;
     process.stdout.write(prompt + highlighted);
 
     // Move cursor to the correct position.
@@ -1289,17 +1292,24 @@ async function printInboundMessage(
     if (isGroup || msg.fromUserId !== state.chatTarget) return;
   }
 
-  const { formatInboundMessage } = await import("../utils/cli-format.js");
+  const { formatInboundMessage, renderMarkdownAnsi } = await import("../utils/cli-format.js");
   // Clear current line, print message, re-render prompt below
   process.stdout.write("\r\x1b[K");
-  console.log(formatInboundMessage(msg, isGroup));
+  // Render the message body through the Markdown→ANSI renderer so that
+  // Markdown in inbound messages (bold, code, tables, lists) is properly
+  // formatted in the CLI — not dumped as raw Markdown syntax.
+  const formatted = formatInboundMessage(msg, isGroup);
+  const rendered = await renderMarkdownAnsi(formatted);
+  console.log(rendered);
   editor?.forceRender();
 }
 
 async function printOutboundMessage(msg: ChatMessage): Promise<void> {
-  const { formatOutboundMessage } = await import("../utils/cli-format.js");
+  const { formatOutboundMessage, renderMarkdownAnsi } = await import("../utils/cli-format.js");
   process.stdout.write("\r\x1b[K");
-  console.log(formatOutboundMessage(msg));
+  const formatted = formatOutboundMessage(msg);
+  const rendered = await renderMarkdownAnsi(formatted);
+  console.log(rendered);
   editor?.forceRender();
 }
 
