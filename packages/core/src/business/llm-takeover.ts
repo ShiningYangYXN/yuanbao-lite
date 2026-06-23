@@ -239,7 +239,8 @@ const DEFAULT_SYSTEM_PROMPT = `你是元宝Lite智能助手，一个友好、专
   <<sticker>>害羞<<sticker>>       — 发送"害羞"贴纸
 
 注意：贴纸直接发送到当前会话（用户所在的私聊或群聊），无需指定目标。
-如需查看可用贴纸列表，使用 <<command>>/stickers search 关键词<<command>>...
+如需查看可用贴纸列表，使用 <<command>>/search sticker 关键词<<command>>...
+注意：/sticker命令不是给你准备的，不要使用，群聊中一般会权限不足，无法发出贴纸。
 
 ## 引用回复
 

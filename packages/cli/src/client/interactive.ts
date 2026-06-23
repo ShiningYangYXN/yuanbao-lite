@@ -372,8 +372,7 @@ class LineEditor {
     // Also highlight lines starting with @ that may contain a command after
     // the mention (e.g. "@[bot](id) /help")
     const hasMentionOrCommand =
-      this.buffer.startsWith("/") ||
-      /@\[[^\]]*\]\([^)]*\)/.test(this.buffer);
+      this.buffer.startsWith("/") || /@\[[^\]]*\]\([^)]*\)/.test(this.buffer);
     const highlighted = hasMentionOrCommand
       ? highlightLine(this.buffer)
       : this.buffer;
@@ -1235,7 +1234,7 @@ async function paginate(text: string): Promise<void> {
         (code >= 0xf900 && code <= 0xfaff) || // CJK Compatibility Ideographs
         (code >= 0xfe30 && code <= 0xfe6f) || // CJK Compatibility Forms
         (code >= 0xff00 && code <= 0xff60) || // Fullwidth Forms
-        (code >= 0xffe0 && code <= 0xffe6)    // Fullwidth Signs
+        (code >= 0xffe0 && code <= 0xffe6) // Fullwidth Signs
       ) {
         width += 2;
       } else {
@@ -1274,9 +1273,10 @@ async function paginate(text: string): Promise<void> {
 
     // Status bar (second-to-last line) with colors
     const pct = Math.round((endLine / totalLines) * 100);
-    const maxLineWidth = displayLines.length > 0
-      ? Math.max(...displayLines.map(visibleWidth), cols)
-      : cols;
+    const maxLineWidth =
+      displayLines.length > 0
+        ? Math.max(...displayLines.map(visibleWidth), cols)
+        : cols;
 
     const posStr = chalk.cyan(`${endLine}/${totalLines}`);
     const pctStr = chalk.yellow(`(${pct}%)`);
@@ -1485,9 +1485,10 @@ async function paginate(text: string): Promise<void> {
         }
         if (key === "l" || key === "\x1b[C") {
           const cols = process.stdout.columns || 80;
-          const maxLineWidth = displayLines.length > 0
-            ? Math.max(...displayLines.map(visibleWidth), cols)
-            : cols;
+          const maxLineWidth =
+            displayLines.length > 0
+              ? Math.max(...displayLines.map(visibleWidth), cols)
+              : cols;
           if (leftCol + cols < maxLineWidth) {
             leftCol = Math.min(leftCol + 10, maxLineWidth - cols);
             renderPage();
@@ -1586,7 +1587,11 @@ async function paginate(text: string): Promise<void> {
  * Wide chars (CJK) count as 2 columns. Used by the pager for horizontal
  * scrolling that correctly handles double-width characters.
  */
-function sliceVisibleByWidth(str: string, startCol: number, maxCols: number): string {
+function sliceVisibleByWidth(
+  str: string,
+  startCol: number,
+  maxCols: number,
+): string {
   let visibleCol = 0;
   let result = "";
   let i = 0;
@@ -1685,7 +1690,8 @@ async function printInboundMessage(
     if (isGroup || msg.fromUserId !== state.chatTarget) return;
   }
 
-  const { formatInboundMessage, renderMarkdownAnsi } = await import("../utils/cli-format.js");
+  const { formatInboundMessage, renderMarkdownAnsi } =
+    await import("../utils/cli-format.js");
   // Clear current line, print message, re-render prompt below
   process.stdout.write("\r\x1b[K");
   // The formatted message is "header\n      body". We must NOT run the
@@ -1706,7 +1712,8 @@ async function printInboundMessage(
 }
 
 async function printOutboundMessage(msg: ChatMessage): Promise<void> {
-  const { formatOutboundMessage, renderMarkdownAnsi } = await import("../utils/cli-format.js");
+  const { formatOutboundMessage, renderMarkdownAnsi } =
+    await import("../utils/cli-format.js");
   process.stdout.write("\r\x1b[K");
   // Same split-render approach: header is printed as-is (contains ANSI),
   // body is Markdown-rendered.

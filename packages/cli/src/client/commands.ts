@@ -154,26 +154,43 @@ export function buildProgram(): Command {
     );
 
   // ─── config (static — must work without daemon) ───
-  const CONFIG_KEYS: Array<{ key: string; desc: string; sensitive: boolean }> = [
-    { key: "appKey", desc: "应用 Key", sensitive: true },
-    { key: "appSecret", desc: "应用 Secret", sensitive: true },
-    { key: "token", desc: "预签名 Token", sensitive: true },
-    { key: "apiDomain", desc: "API 域名", sensitive: false },
-    { key: "wsUrl", desc: "WebSocket 地址", sensitive: false },
-    { key: "logLevel", desc: "日志级别 (debug/info/warn/error)", sensitive: false },
-    { key: "stickerDir", desc: "贴纸目录", sensitive: false },
-    { key: "downloadDir", desc: "下载目录", sensitive: false },
-    { key: "prompt", desc: "自定义提示符", sensitive: false },
-    { key: "llmProvider", desc: "LLM 供应商", sensitive: false },
-    { key: "llmApiKey", desc: "LLM API Key", sensitive: true },
-    { key: "llmBaseUrl", desc: "LLM Base URL", sensitive: false },
-    { key: "llmModel", desc: "LLM 模型名", sensitive: false },
-    { key: "llmSystemPrompt", desc: "LLM 系统提示词", sensitive: false },
-    { key: "llmEnabled", desc: "LLM 是否启用 (true/false)", sensitive: false },
-    { key: "defaultTarget", desc: "默认聊天目标", sensitive: false },
-    { key: "defaultChatMode", desc: "默认聊天模式 (dm/group)", sensitive: false },
-    { key: "atAllExcludeYuanbao", desc: "@所有人时跳过元宝 (true/false)", sensitive: false },
-  ];
+  const CONFIG_KEYS: Array<{ key: string; desc: string; sensitive: boolean }> =
+    [
+      { key: "appKey", desc: "应用 Key", sensitive: true },
+      { key: "appSecret", desc: "应用 Secret", sensitive: true },
+      { key: "token", desc: "预签名 Token", sensitive: true },
+      { key: "apiDomain", desc: "API 域名", sensitive: false },
+      { key: "wsUrl", desc: "WebSocket 地址", sensitive: false },
+      {
+        key: "logLevel",
+        desc: "日志级别 (debug/info/warn/error)",
+        sensitive: false,
+      },
+      { key: "stickerDir", desc: "贴纸目录", sensitive: false },
+      { key: "downloadDir", desc: "下载目录", sensitive: false },
+      { key: "prompt", desc: "自定义提示符", sensitive: false },
+      { key: "llmProvider", desc: "LLM 供应商", sensitive: false },
+      { key: "llmApiKey", desc: "LLM API Key", sensitive: true },
+      { key: "llmBaseUrl", desc: "LLM Base URL", sensitive: false },
+      { key: "llmModel", desc: "LLM 模型名", sensitive: false },
+      { key: "llmSystemPrompt", desc: "LLM 系统提示词", sensitive: false },
+      {
+        key: "llmEnabled",
+        desc: "LLM 是否启用 (true/false)",
+        sensitive: false,
+      },
+      { key: "defaultTarget", desc: "默认聊天目标", sensitive: false },
+      {
+        key: "defaultChatMode",
+        desc: "默认聊天模式 (dm/group)",
+        sensitive: false,
+      },
+      {
+        key: "atAllExcludeYuanbao",
+        desc: "@所有人时跳过元宝 (true/false)",
+        sensitive: false,
+      },
+    ];
 
   program
     .command("config")
@@ -199,7 +216,9 @@ export function buildProgram(): Command {
             for (const { key, sensitive } of CONFIG_KEYS) {
               const val = (pr as Record<string, unknown>)[key];
               if (val !== undefined && val !== null && val !== "") {
-                safe[key] = sensitive ? `***${String(val).slice(-4)}` : String(val);
+                safe[key] = sensitive
+                  ? `***${String(val).slice(-4)}`
+                  : String(val);
               }
             }
             safe["_profile"] = active;
@@ -208,11 +227,7 @@ export function buildProgram(): Command {
             return;
           }
 
-          const lines: string[] = [
-            "📋 当前配置:",
-            `  档案: ${active}`,
-            "",
-          ];
+          const lines: string[] = ["📋 当前配置:", `  档案: ${active}`, ""];
           for (const { key, desc, sensitive } of CONFIG_KEYS) {
             const val = (pr as Record<string, unknown>)[key];
             let display: string;
@@ -223,7 +238,9 @@ export function buildProgram(): Command {
             } else {
               display = String(val);
             }
-            lines.push(`  ${key.padEnd(20)} ${display}  ${COLORS.dim(`# ${desc}`)}`);
+            lines.push(
+              `  ${key.padEnd(20)} ${display}  ${COLORS.dim(`# ${desc}`)}`,
+            );
           }
           lines.push("");
           lines.push(`  配置路径: ${store.getConfigDir()}`);

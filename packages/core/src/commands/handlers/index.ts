@@ -11,7 +11,7 @@ import { register as registerStickers } from "./chat/stickers.js";
 import { register as registerGroupinfo } from "./group/groupinfo.js";
 import { register as registerGroups } from "./group/groups.js";
 import { register as registerMembers } from "./group/members.js";
-import { register as registerSearch } from "./group/search.js";
+import { register as registerSearch } from "./utility/search.js";
 import { register as registerHistory } from "./history/history.js";
 import { register as registerInspect } from "./history/inspect.js";
 import { register as registerCalc } from "./utility/calc.js";

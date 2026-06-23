@@ -1,14 +1,11 @@
 /**
  * /search command handler — unified search dispatcher.
- * Category: group
+ * Category: utility
  *
  * Sub-commands:
  *   - /search groups   <关键词> [群号1,群号2,...]  — 模糊搜索群组
- *   - /search members  <关键词> [群号]              — 模糊搜索群成员
- *   - /search history  <关键词>                     — 搜索消息历史（原 /hsearch）
- *
- * Back-compat aliases:
- *   /hsearch, /搜索历史, /histsearch → 等价于 /search history
+ *   - /search members  <关键词> [群号]             — 模糊搜索群成员
+ *   - /search history  <关键词>                   — 搜索消息历史
  *
  * The history sub-command does not require an active connection (it reads
  * from the local MessageHistoryStore), so `requireConnected` is NOT set on
@@ -47,19 +44,7 @@ export function register(cmdSys: CommandSystem): void {
     handler: async (ctx) => {
       // Back-compat: when invoked via /hsearch alias (or its Chinese aliases),
       // there is no sub-command — the entire arg list is the keyword.
-      const invokedAs = ctx.command.toLowerCase();
-      const isHistoryAlias =
-        invokedAs === "hsearch" ||
-        invokedAs === "搜索历史" ||
-        invokedAs === "histsearch";
-
       const subCmd = ctx.args[0]?.toLowerCase();
-
-      if (isHistoryAlias) {
-        await runHistorySearch(ctx, ctx.args);
-        return;
-      }
-
       switch (subCmd) {
         case "groups":
         case "群":

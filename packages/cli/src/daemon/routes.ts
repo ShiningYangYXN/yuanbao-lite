@@ -463,7 +463,12 @@ async function wizardInput(
 
   // Check /init wizard
   if (cs._initWizardSessions?.has(sessionKey) && cs._handleInitWizardInput) {
-    const handled = await cs._handleInitWizardInput(bot, sessionKey, text, replyFn);
+    const handled = await cs._handleInitWizardInput(
+      bot,
+      sessionKey,
+      text,
+      replyFn,
+    );
     return {
       status: 200,
       body: { ok: true, handled, replies, wizard: "init" },
@@ -472,7 +477,12 @@ async function wizardInput(
 
   // Check /llm config wizard
   if (cs._llmWizardSessions?.has(sessionKey) && cs._handleLlmWizardInput) {
-    const handled = await cs._handleLlmWizardInput(bot, sessionKey, text, replyFn);
+    const handled = await cs._handleLlmWizardInput(
+      bot,
+      sessionKey,
+      text,
+      replyFn,
+    );
     return { status: 200, body: { ok: true, handled, replies, wizard: "llm" } };
   }
 
