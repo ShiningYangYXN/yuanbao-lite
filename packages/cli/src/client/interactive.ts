@@ -1010,6 +1010,10 @@ async function dispatchCommand(
 
   if (shouldExitAfter) {
     console.log(chalk.dim("CLI 将退出（daemon 已停止）"));
+    // Restore the original terminal (exit alt screen buffer) before exiting.
+    // Without this, the user's terminal stays in the alt buffer after the
+    // CLI process dies, hiding their previous shell output.
+    exitAltScreen();
     process.exit(0);
   }
 }
