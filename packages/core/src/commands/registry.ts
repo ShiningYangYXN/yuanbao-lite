@@ -154,7 +154,9 @@ export class CommandSystem {
     cmdName: string,
     durationMs = 5 * 60 * 1000,
   ): { ok: boolean; reason?: string } {
-    const normalized = cmdName.toLowerCase().replace(/^\//, "");
+    // Resolve alias to canonical name before checking/storing
+    const resolved = this.resolveCommandName(cmdName);
+    const normalized = resolved ?? this.normalizeName(cmdName.replace(/^\//, ""));
     if (CommandSystem.UNAUTHORIZABLE_COMMANDS.has(normalized)) {
       return { ok: false, reason: `命令 /${normalized} 不支持被授权` };
     }
@@ -193,7 +195,9 @@ export class CommandSystem {
    * Returns { ok, reason? } for clear feedback.
    */
   disallowCommand(cmdName: string): { ok: boolean; reason?: string } {
-    const normalized = cmdName.toLowerCase().replace(/^\//, "");
+    // Resolve alias to canonical name
+    const resolved = this.resolveCommandName(cmdName);
+    const normalized = resolved ?? this.normalizeName(cmdName.replace(/^\//, ""));
     const def = this.get(normalized);
     if (!def) {
       return { ok: false, reason: `未知命令: /${normalized}` };
@@ -234,16 +238,21 @@ export class CommandSystem {
 
   /**
    * Check if a specific command is authorized for group use.
+   * Accepts both canonical names and aliases — aliases are resolved to
+   * their canonical form before checking the allowed list.
    */
   isCommandAllowed(cmdName: string): boolean {
-    const normalized = cmdName.toLowerCase();
-    const entry = this._allowedCommands.get(normalized);
+    // Resolve alias to canonical name
+    const normalName = this.normalizeName(cmdName.replace(/^\//, ""));
+    const canonical =
+      this.aliasMap.get(normalName) ?? normalName;
+    const entry = this._allowedCommands.get(canonical);
     if (!entry) return false;
     if (entry.expiresAt === 0) return true; // forever
     if (entry.expiresAt <= Date.now()) {
       // Expired — clean up
       if (entry.timer) clearTimeout(entry.timer);
-      this._allowedCommands.delete(normalized);
+      this._allowedCommands.delete(canonical);
       return false;
     }
     return true;
@@ -427,6 +436,12 @@ export class CommandSystem {
       return { handled: true };
     }
 
+    // Use the CANONICAL command name (def.name) for all permission checks.
+    // This ensures that aliases (e.g. "sh" → "shell") are correctly resolved
+    // before checking block/trust/grant/allow lists. Without this, a user
+    // blocked from "shell" could bypass the block by using "sh".
+    const canonicalName = def.name;
+
     // ─── Block check (HIGHEST priority — overrides unsafe + trust) ───
     // Blocked users cannot execute commands. The block module supports
     // per-user, per-command, and wildcard ("*") blocks. This check runs
@@ -439,14 +454,15 @@ export class CommandSystem {
     // owner would be unable to use /block remove to clear the wildcard).
     // Same for /unsafe (needed to toggle unsafe mode to bypass other checks).
     const MANAGEMENT_COMMANDS = new Set(["block", "trust", "unsafe"]);
-    if (source !== "cli" && !MANAGEMENT_COMMANDS.has(commandName)) {
+    if (source !== "cli" && !MANAGEMENT_COMMANDS.has(canonicalName)) {
       try {
         const { isBlockedFromCommand, isBlockedFrom } =
           await import("../business/block.js");
         // Check if the user is blocked from this specific command, OR from
         // all commands, OR from everything ("all" scope).
+        // Use canonicalName so aliases can't bypass blocks.
         if (
-          isBlockedFromCommand(message.fromUserId, commandName) ||
+          isBlockedFromCommand(message.fromUserId, canonicalName) ||
           isBlockedFrom(message.fromUserId, "all")
         ) {
           const ctx = this.makeContext(
@@ -464,7 +480,7 @@ export class CommandSystem {
         }
         // Also check wildcard "*" blocks (apply to all users)
         if (
-          isBlockedFromCommand("*", commandName) ||
+          isBlockedFromCommand("*", canonicalName) ||
           isBlockedFrom("*", "all")
         ) {
           const ctx = this.makeContext(
@@ -486,7 +502,7 @@ export class CommandSystem {
     // Check for --help/-h/-? flag BEFORE executing the command
     // For /shell and /sh: only check if the flag is the FIRST argument
     // (flags after the actual command are passed through to the shell)
-    const isShellCmd = commandName === "shell" || commandName === "sh";
+    const isShellCmd = canonicalName === "shell" || commandName === "sh";
     let helpRequested = false;
     if (isShellCmd) {
       // For shell, only --help/-h/-? as the FIRST arg counts
@@ -536,13 +552,14 @@ export class CommandSystem {
       message.chatType === "group" &&
       !this._unsafeMode &&
       source !== "cli" &&
-      !this.isCommandAllowed(commandName)
+      !this.isCommandAllowed(canonicalName)
     ) {
       // Check if the user has a per-user command grant (from /trust grant)
+      // Use canonicalName so grants work regardless of which alias was used.
       let hasUserGrant = false;
       try {
         const { hasCommandGrant } = await import("../business/trust.js");
-        hasUserGrant = hasCommandGrant(message.fromUserId, commandName);
+        hasUserGrant = hasCommandGrant(message.fromUserId, canonicalName);
       } catch {
         // trust module optional
       }
@@ -566,7 +583,7 @@ export class CommandSystem {
             onReply,
             source,
           ).reply(
-            `⚠️ 此命令仅限私聊使用。\n受信用户可：\n  /unsafe on [分钟] — 开启全局危险模式（默认5分钟）\n  /unsafe on forever — 永久开启\n  /unsafe allow ${commandName} [分钟|forever] — 全局授权此命令（默认5分钟）\n  /trust grant <你的ID> ${commandName} [分钟|forever] — 仅授权给你（需主人执行）\n命令名可加/也可不加，支持别名\n查看状态: /unsafe status`,
+            `⚠️ 此命令仅限私聊使用。\n受信用户可：\n  /unsafe on [分钟] — 开启全局危险模式（默认5分钟）\n  /unsafe on forever — 永久开启\n  /unsafe allow ${canonicalName} [分钟|forever] — 全局授权此命令（默认5分钟）\n  /trust grant <你的ID> ${canonicalName} [分钟|forever] — 仅授权给你（需主人执行）\n命令名可加/也可不加，支持别名\n查看状态: /unsafe status`,
           );
         } else {
           // Auto-include the user's own ID so they can forward it to the master
@@ -578,7 +595,7 @@ export class CommandSystem {
             onReply,
             source,
           ).reply(
-            `⚠️ 此命令仅限私聊使用。\n你的用户ID: ${message.fromUserId}\n如需在群聊中执行：\n  1. 联系主人发送: /trust add ${message.fromUserId}\n  2. 加入信任列表后，发送: /unsafe allow ${commandName}\n  或: /unsafe on 开启全局危险模式\n  或请主人执行: /trust grant ${message.fromUserId} ${commandName}\n命令名可加/也可不加，支持别名`,
+            `⚠️ 此命令仅限私聊使用。\n你的用户ID: ${message.fromUserId}\n如需在群聊中执行：\n  1. 联系主人发送: /trust add ${message.fromUserId}\n  2. 加入信任列表后，发送: /unsafe allow ${canonicalName}\n  或: /unsafe on 开启全局危险模式\n  或请主人执行: /trust grant ${message.fromUserId} ${canonicalName}\n命令名可加/也可不加，支持别名`,
           );
         }
         return { handled: true };
