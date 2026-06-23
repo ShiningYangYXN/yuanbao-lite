@@ -714,9 +714,15 @@ export async function runInteractive(): Promise<void> {
 
   // Handle terminal resize (SIGWINCH) — re-render the prompt so it stays
   // correctly positioned in the alt screen buffer after window resize.
+  // IMPORTANT: do NOT clear the screen (\x1b[2J) — that would erase
+  // previous output. Just move to the bottom of the terminal and
+  // re-render the prompt line.
   const onResize = () => {
-    // Clear screen and re-render from scratch
-    process.stdout.write("\x1b[2J\x1b[H"); // clear screen + move cursor home
+    // Move cursor to the last line of the terminal and clear it,
+    // then re-render the prompt. This preserves all scrollback above.
+    const rows = process.stdout.rows || 24;
+    process.stdout.write(`\x1b[${rows};1H`); // move to last line
+    process.stdout.write("\x1b[K"); // clear that line
     editor?.forceRender();
   };
   process.on("SIGWINCH", onResize);
@@ -1077,28 +1083,20 @@ async function dispatchCommand(
 let pagerActive = false;
 
 /**
- * Display text through a simple built-in pager.
+ * Display text through a built-in pager with vim-style navigation.
  *
- * If the text fits within the terminal height (minus 1 line for the prompt),
- * it's printed directly. Otherwise, a less-style pager is activated:
- *   - Space/PageDown: next page
- *   - b/PageUp: previous page
- *   - q: quit
- *   - Enter/↓: scroll down one line
- *   - ↑: scroll up one line
- *   - g: go to start
- *   - G: go to end
- *   - ←/→: scroll left/right (horizontal, for wide lines)
+ * Features:
+ *   - Vim-style navigation: j/k (scroll line), h/l (scroll horizontal),
+ *     gg/G (top/bottom), Ctrl-d/Ctrl-u (half-page), / (search), n/N (next/prev match)
+ *   - Arrow keys also work (↑↓←→)
+ *   - Space/PageDown: next page, b/PageUp: prev page
+ *   - q or ESC: quit
+ *   - Colored status bar with position indicator
+ *   - Last line shows ":" prefix (vim-style command line)
+ *   - Horizontal scroll is wide-char aware (CJK chars count as 2 columns)
+ *   - Lines are NOT wrapped — preserves table/code formatting
  *
- * While the pager is active, inbound/outbound message echo is suppressed
- * (messages are buffered or simply dropped — the user is reading command
- * output and doesn't want interruptions).
- *
- * Lines are NOT wrapped — they are displayed at their natural width and
- * the user can scroll horizontally with ←/→. This preserves table layout
- * and code block formatting.
- *
- * The pager runs in the alt screen buffer's raw mode (stdin is already raw).
+ * While the pager is active, inbound/outbound message echo is suppressed.
  */
 async function paginate(text: string): Promise<void> {
   const lines = text.split("\n");
@@ -1110,122 +1108,297 @@ async function paginate(text: string): Promise<void> {
     return;
   }
 
-  // No wrapping — use lines as-is. Horizontal scroll handles wide lines.
   const displayLines = lines;
 
   // Pager state
   pagerActive = true;
   let topLine = 0;
-  let leftCol = 0; // horizontal scroll offset
-  const visibleRows = termHeight - 2; // leave 2 lines for status bar
+  let leftCol = 0;
+  let searchQuery = "";
+  let searchMode = false;
+  let matchLine = -1; // line of last search match (-1 = no match)
   const totalLines = displayLines.length;
-  const termWidth = process.stdout.columns || 80;
 
-  /** Strip ANSI codes for length calculation. */
-  const visibleLen = (s: string): number =>
-    s.replace(/\x1b\[[0-9;]*m/g, "").length;
-
-  /** Find the max visible line width (for horizontal scroll bounds). */
-  const maxLineWidth = Math.max(...displayLines.map(visibleLen), termWidth);
+  /** Compute visible width of a string, counting CJK chars as 2 columns. */
+  const visibleWidth = (s: string): number => {
+    const stripped = s.replace(/\x1b\[[0-9;]*m/g, "");
+    let width = 0;
+    for (const ch of stripped) {
+      const code = ch.codePointAt(0) ?? 0;
+      // CJK Unified Ideographs, CJK Compatibility, Hiragana, Katakana,
+      // Hangul Syllables, Fullwidth Forms → width 2
+      if (
+        (code >= 0x1100 && code <= 0x115f) || // Hangul Jamo
+        (code >= 0x2e80 && code <= 0x303e) || // CJK Radicals
+        (code >= 0x3040 && code <= 0x33bf) || // Hiragana, Katakana, CJK
+        (code >= 0x3400 && code <= 0x4dbf) || // CJK Ext A
+        (code >= 0x4e00 && code <= 0xa4cf) || // CJK Unified
+        (code >= 0xac00 && code <= 0xd7af) || // Hangul Syllables
+        (code >= 0xf900 && code <= 0xfaff) || // CJK Compatibility Ideographs
+        (code >= 0xfe30 && code <= 0xfe6f) || // CJK Compatibility Forms
+        (code >= 0xff00 && code <= 0xff60) || // Fullwidth Forms
+        (code >= 0xffe0 && code <= 0xffe6)    // Fullwidth Signs
+      ) {
+        width += 2;
+      } else {
+        width += 1;
+      }
+    }
+    return width;
+  };
 
   const renderPage = () => {
+    const rows = process.stdout.rows || termHeight;
+    const cols = process.stdout.columns || 80;
+    const visibleRows = rows - 2; // leave 2 lines for status bar + command line
+
     // Clear screen and move cursor home
     process.stdout.write("\x1b[2J\x1b[H");
     const endLine = Math.min(topLine + visibleRows, totalLines);
     for (let i = topLine; i < endLine; i++) {
-      const line = displayLines[i];
-      // Horizontal scroll: slice the line based on leftCol.
-      // We need to slice on VISIBLE columns, not raw string indices,
-      // because ANSI escape codes don't count toward width.
-      const sliced = sliceVisible(line, leftCol, leftCol + termWidth);
+      let line = displayLines[i];
+      // Highlight search match line
+      if (i === matchLine && searchQuery) {
+        line = "\x1b[33m" + line + "\x1b[0m"; // yellow highlight
+      }
+      const sliced = sliceVisibleByWidth(line, leftCol, cols);
       process.stdout.write(sliced + "\n");
     }
-    // Status bar at the bottom
+
+    // Fill remaining lines if content is shorter than visible area
+    for (let i = endLine - topLine; i < visibleRows; i++) {
+      process.stdout.write("\n");
+    }
+
+    // Status bar (second-to-last line) with colors
     const pct = Math.round((endLine / totalLines) * 100);
-    const hScroll =
-      leftCol > 0
-        ? `  ←${leftCol}`
-        : leftCol + termWidth < maxLineWidth
-          ? "  →"
-          : "";
+    const maxLineWidth = Math.max(...displayLines.map(visibleWidth), cols);
+
+    const posStr = chalk.cyan(`${endLine}/${totalLines}`);
+    const pctStr = chalk.yellow(`(${pct}%)`);
+    const scrollInfo = [];
+    if (leftCol > 0) scrollInfo.push(chalk.green(`←${leftCol}`));
+    if (leftCol + cols < maxLineWidth) scrollInfo.push(chalk.green("→"));
+    const scrollStr = scrollInfo.length > 0 ? "  " + scrollInfo.join(" ") : "";
+
+    // Command line (last line) with ":" prefix
+    const cmdLine = searchMode
+      ? chalk.yellow("/") + chalk.cyan(searchQuery)
+      : chalk.dim(":");
+
     process.stdout.write(
-      chalk.dim(
-        `行 ${endLine}/${totalLines} (${pct}%)  q退出  Space下页  b上页  ↑↓滚动  ←/→水平  g/G首尾${hScroll}`,
-      ) + "\n",
+      `${posStr} ${pctStr}${scrollStr} ${chalk.dim("q退出 j/k↓↑ h/l←→ /搜索 n/N gg/G Ctrl-d/u")}\n`,
     );
+    process.stdout.write(cmdLine + "\n");
+  };
+
+  /** Search for next match starting from a given line. */
+  const searchNext = (fromLine: number, query: string): number => {
+    if (!query) return -1;
+    const lowerQuery = query.toLowerCase();
+    for (let i = fromLine; i < totalLines; i++) {
+      const stripped = displayLines[i].replace(/\x1b\[[0-9;]*m/g, "");
+      if (stripped.toLowerCase().includes(lowerQuery)) {
+        return i;
+      }
+    }
+    // Wrap around
+    for (let i = 0; i < fromLine; i++) {
+      const stripped = displayLines[i].replace(/\x1b\[[0-9;]*m/g, "");
+      if (stripped.toLowerCase().includes(lowerQuery)) {
+        return i;
+      }
+    }
+    return -1;
+  };
+
+  /** Search for previous match starting from a given line. */
+  const searchPrev = (fromLine: number, query: string): number => {
+    if (!query) return -1;
+    const lowerQuery = query.toLowerCase();
+    for (let i = fromLine; i >= 0; i--) {
+      const stripped = displayLines[i].replace(/\x1b\[[0-9;]*m/g, "");
+      if (stripped.toLowerCase().includes(lowerQuery)) {
+        return i;
+      }
+    }
+    // Wrap around
+    for (let i = totalLines - 1; i > fromLine; i--) {
+      const stripped = displayLines[i].replace(/\x1b\[[0-9;]*m/g, "");
+      if (stripped.toLowerCase().includes(lowerQuery)) {
+        return i;
+      }
+    }
+    return -1;
+  };
+
+  /** Ensure matchLine is visible (adjust topLine if needed). */
+  const scrollToMatch = () => {
+    if (matchLine < 0) return;
+    const rows = process.stdout.rows || termHeight;
+    const visibleRows = rows - 2;
+    if (matchLine < topLine) {
+      topLine = matchLine;
+    } else if (matchLine >= topLine + visibleRows) {
+      topLine = matchLine - visibleRows + 1;
+      if (topLine < 0) topLine = 0;
+    }
   };
 
   renderPage();
 
-  // Pager key loop — reads from stdin (already in raw mode)
+  // Pager key loop
   await new Promise<void>((resolve) => {
     const onData = (chunk: Buffer | string) => {
       const data = typeof chunk === "string" ? chunk : chunk.toString("utf-8");
       const keys = parseKeys(data);
       let shouldQuit = false;
-      for (const { key } of keys) {
+      for (const { key, isCtrl } of keys) {
+        // --- Search mode ---
+        if (searchMode) {
+          if (key === "\r" || key === "\n") {
+            // Execute search
+            searchMode = false;
+            if (searchQuery) {
+              matchLine = searchNext(topLine, searchQuery);
+              scrollToMatch();
+            }
+            renderPage();
+            continue;
+          }
+          if (key === "\x1b") {
+            // Cancel search
+            searchMode = false;
+            searchQuery = "";
+            renderPage();
+            continue;
+          }
+          if (key === "\x7f" || key === "\b") {
+            // Backspace
+            if (searchQuery.length > 0) {
+              searchQuery = searchQuery.slice(0, -1);
+              renderPage();
+            }
+            continue;
+          }
+          if (key.length === 1 && !isCtrl) {
+            searchQuery += key;
+            renderPage();
+            continue;
+          }
+          continue; // ignore other keys in search mode
+        }
+
+        // --- Normal mode ---
         if (key === "q" || key === "\x1b") {
-          // Quit pager — set flag and break out of the loop.
-          // We do NOT process any remaining keys in this chunk — they
-          // would leak to the editor's buffer. By breaking here, any
-          // keys after 'q' in the same chunk are silently dropped.
           shouldQuit = true;
           break;
         }
-        if (key === " " || key === "\x1b[6~") {
-          // Page down
-          topLine = Math.min(topLine + visibleRows, totalLines - visibleRows);
-          if (topLine < 0) topLine = 0;
-          renderPage();
-          continue;
-        }
-        if (key === "b" || key === "\x1b[5~") {
-          // Page up
-          topLine = Math.max(topLine - visibleRows, 0);
-          renderPage();
-          continue;
-        }
-        if (key === "\r" || key === "\x1b[B") {
-          // Scroll down one line (Enter or Down arrow)
+
+        // Vim-style: j = down, k = up, h = left, l = right
+        if (key === "j" || key === "\r" || key === "\x1b[B") {
+          const rows = process.stdout.rows || termHeight;
+          const visibleRows = rows - 2;
           if (topLine < totalLines - visibleRows) {
             topLine++;
             renderPage();
           }
           continue;
         }
-        if (key === "\x1b[A") {
-          // Scroll up one line (Up arrow)
+        if (key === "k" || key === "\x1b[A") {
           if (topLine > 0) {
             topLine--;
             renderPage();
           }
           continue;
         }
-        if (key === "\x1b[C") {
-          // Scroll right (Right arrow)
-          if (leftCol + termWidth < maxLineWidth) {
-            leftCol = Math.min(leftCol + 10, maxLineWidth - termWidth);
-            renderPage();
-          }
-          continue;
-        }
-        if (key === "\x1b[D") {
-          // Scroll left (Left arrow)
+        if (key === "h" || key === "\x1b[D") {
           if (leftCol > 0) {
             leftCol = Math.max(leftCol - 10, 0);
             renderPage();
           }
           continue;
         }
+        if (key === "l" || key === "\x1b[C") {
+          const cols = process.stdout.columns || 80;
+          const maxLineWidth = Math.max(...displayLines.map(visibleWidth), cols);
+          if (leftCol + cols < maxLineWidth) {
+            leftCol = Math.min(leftCol + 10, maxLineWidth - cols);
+            renderPage();
+          }
+          continue;
+        }
+
+        // Page navigation
+        if (key === " " || key === "\x1b[6~" || key === "f") {
+          const rows = process.stdout.rows || termHeight;
+          const visibleRows = rows - 2;
+          topLine = Math.min(topLine + visibleRows, totalLines - visibleRows);
+          if (topLine < 0) topLine = 0;
+          renderPage();
+          continue;
+        }
+        if (key === "b" || key === "\x1b[5~") {
+          const rows = process.stdout.rows || termHeight;
+          const visibleRows = rows - 2;
+          topLine = Math.max(topLine - visibleRows, 0);
+          renderPage();
+          continue;
+        }
+
+        // Ctrl-d: half page down
+        if (isCtrl && key === "d") {
+          const rows = process.stdout.rows || termHeight;
+          const half = Math.floor((rows - 2) / 2);
+          topLine = Math.min(topLine + half, totalLines - (rows - 2));
+          if (topLine < 0) topLine = 0;
+          renderPage();
+          continue;
+        }
+        // Ctrl-u: half page up
+        if (isCtrl && key === "u") {
+          const rows = process.stdout.rows || termHeight;
+          const half = Math.floor((rows - 2) / 2);
+          topLine = Math.max(topLine - half, 0);
+          renderPage();
+          continue;
+        }
+
+        // g: go to start (vim: gg)
         if (key === "g") {
-          // Go to start
           topLine = 0;
           renderPage();
           continue;
         }
+        // G: go to end
         if (key === "G") {
-          // Go to end
-          topLine = Math.max(totalLines - visibleRows, 0);
+          const rows = process.stdout.rows || termHeight;
+          topLine = Math.max(totalLines - (rows - 2), 0);
+          renderPage();
+          continue;
+        }
+
+        // /: enter search mode
+        if (key === "/") {
+          searchMode = true;
+          searchQuery = "";
+          renderPage();
+          continue;
+        }
+
+        // n: next search match
+        if (key === "n" && searchQuery) {
+          const startLine = matchLine >= 0 ? matchLine + 1 : topLine;
+          matchLine = searchNext(startLine, searchQuery);
+          scrollToMatch();
+          renderPage();
+          continue;
+        }
+        // N: previous search match
+        if (key === "N" && searchQuery) {
+          const startLine = matchLine >= 0 ? matchLine - 1 : topLine;
+          matchLine = searchPrev(startLine, searchQuery);
+          scrollToMatch();
           renderPage();
           continue;
         }
@@ -1234,57 +1407,72 @@ async function paginate(text: string): Promise<void> {
         process.stdout.write("\x1b[2J\x1b[H");
         pagerActive = false;
         process.stdin.removeListener("data", onData);
-        // Drain any pending stdin data that arrived during the pager's
-        // last render cycle — this prevents leftover keystrokes from
-        // leaking into the editor's buffer.
         resolve();
       }
     };
     process.stdin.on("data", onData);
   });
-  // Small delay to let any in-flight stdin events settle before the
-  // editor resumes processing. This prevents the 'q' key's release event
-  // or any trailing bytes from leaking to the editor.
   await new Promise((r) => setTimeout(r, 10));
 }
 
 /**
- * Slice a string by VISIBLE column range, preserving ANSI escape codes.
- * This is used by the pager for horizontal scrolling — we need to show
- * columns [start, end) but ANSI codes (which don't take up visible space)
- * must be preserved so colors aren't broken.
+ * Slice a string by VISIBLE WIDTH range, preserving ANSI escape codes.
+ * Wide chars (CJK) count as 2 columns. Used by the pager for horizontal
+ * scrolling that correctly handles double-width characters.
  */
-function sliceVisible(str: string, start: number, end: number): string {
-  let visiblePos = 0;
+function sliceVisibleByWidth(str: string, startCol: number, maxCols: number): string {
+  let visibleCol = 0;
   let result = "";
   let i = 0;
+  let started = false;
+  let colCount = 0;
+
   while (i < str.length) {
     const ch = str[i];
-    // Check for ANSI escape sequence
+
+    // Check for ANSI escape sequence — always include, doesn't count toward width
     if (ch === "\x1b") {
       const seqEnd = str.indexOf("m", i);
       if (seqEnd >= 0) {
-        // Include the full ANSI sequence in the output (it's invisible)
         result += str.slice(i, seqEnd + 1);
         i = seqEnd + 1;
         continue;
       }
     }
-    // Regular character — check if it's in the visible range
-    if (visiblePos >= start && visiblePos < end) {
+
+    // Determine the display width of this character
+    const code = ch.codePointAt(0) ?? 0;
+    let charWidth = 1;
+    if (
+      (code >= 0x1100 && code <= 0x115f) ||
+      (code >= 0x2e80 && code <= 0x303e) ||
+      (code >= 0x3040 && code <= 0x33bf) ||
+      (code >= 0x3400 && code <= 0x4dbf) ||
+      (code >= 0x4e00 && code <= 0xa4cf) ||
+      (code >= 0xac00 && code <= 0xd7af) ||
+      (code >= 0xf900 && code <= 0xfaff) ||
+      (code >= 0xfe30 && code <= 0xfe6f) ||
+      (code >= 0xff00 && code <= 0xff60) ||
+      (code >= 0xffe0 && code <= 0xffe6)
+    ) {
+      charWidth = 2;
+    }
+
+    // Check if this char is in the visible range
+    if (visibleCol >= startCol && colCount < maxCols) {
       result += ch;
+      started = true;
+      colCount += charWidth;
     }
-    visiblePos++;
+    visibleCol += charWidth;
     i++;
-    if (visiblePos >= end) {
-      // We've reached the end of the visible range.
-      // But we still need to check for a closing ANSI reset code at the end.
-      // For simplicity, just break — colors may be slightly off at the edge.
-      break;
-    }
+
+    // Handle surrogate pairs
+    if (code >= 0x10000) i++;
+
+    if (colCount >= maxCols) break;
   }
-  // Append a reset code to avoid color bleeding
-  result += "\x1b[0m";
+  result += "\x1b[0m"; // reset to avoid color bleeding
   return result;
 }
 

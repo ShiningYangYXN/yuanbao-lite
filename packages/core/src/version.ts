@@ -19,7 +19,7 @@
 
 // Hardcoded fallback — keep in sync with package.json `version` on release.
 // This is the value browser/edge callers will see.
-const FALLBACK_VERSION = "12.8.3";
+const FALLBACK_VERSION = "12.8.4";
 
 // Cache the version after first read
 let cachedVersion: string | null = null;
