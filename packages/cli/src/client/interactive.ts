@@ -205,8 +205,10 @@ class LineEditor {
     if (key === "\x1b[1;2A") {
       const rows = process.stdout.rows || 24;
       const maxOffset = Math.max(0, scrollBuffer.length - (rows - 1));
+      // Scroll up by half a page for better usability
+      const step = Math.max(1, Math.floor((rows - 1) / 2));
       if (scrollOffset < maxOffset) {
-        scrollOffset = Math.min(scrollOffset + 1, maxOffset);
+        scrollOffset = Math.min(scrollOffset + step, maxOffset);
         renderScrollView();
       }
       return;
@@ -214,8 +216,10 @@ class LineEditor {
 
     // Shift+Down — scroll view down (show newer output)
     if (key === "\x1b[1;2B") {
+      const rows = process.stdout.rows || 24;
+      const step = Math.max(1, Math.floor((rows - 1) / 2));
       if (scrollOffset > 0) {
-        scrollOffset = Math.max(scrollOffset - 1, 0);
+        scrollOffset = Math.max(scrollOffset - step, 0);
         renderScrollView();
       }
       return;
@@ -802,9 +806,12 @@ export async function runInteractive(): Promise<void> {
 
   // Read keystrokes
   process.stdin.on("data", (chunk: Buffer | string) => {
+    // Skip processing when pager is active — the pager has its own
+    // stdin listener. Without this check, keys would be processed by
+    // BOTH the pager AND the editor, causing input leakage.
+    if (pagerActive) return;
+
     const data = typeof chunk === "string" ? chunk : chunk.toString("utf-8");
-    // Process each key — escape sequences are multi-char but arrive together
-    // We split on escape sequences and single chars
     const keys = parseKeys(data);
     for (const { key, isCtrl } of keys) {
       editor?.handleKey(key, isCtrl);
@@ -1219,10 +1226,14 @@ async function paginate(text: string): Promise<void> {
     return width;
   };
 
+  /** Command line input (for ':' mode) */
+  let cmdMode = false; // true when user typed ':' and is entering a command
+  let cmdBuffer = "";
+
   const renderPage = () => {
     const rows = process.stdout.rows || termHeight;
     const cols = process.stdout.columns || 80;
-    const visibleRows = rows - 2; // leave 2 lines for status bar + command line
+    const visibleRows = rows - 2; // leave 2 lines: status bar + command line
 
     // Clear screen and move cursor home
     process.stdout.write("\x1b[2J\x1b[H");
@@ -1244,24 +1255,33 @@ async function paginate(text: string): Promise<void> {
 
     // Status bar (second-to-last line) with colors
     const pct = Math.round((endLine / totalLines) * 100);
-    const maxLineWidth = Math.max(...displayLines.map(visibleWidth), cols);
+    const maxLineWidth = displayLines.length > 0
+      ? Math.max(...displayLines.map(visibleWidth), cols)
+      : cols;
 
     const posStr = chalk.cyan(`${endLine}/${totalLines}`);
     const pctStr = chalk.yellow(`(${pct}%)`);
-    const scrollInfo = [];
+    const scrollInfo: string[] = [];
     if (leftCol > 0) scrollInfo.push(chalk.green(`←${leftCol}`));
     if (leftCol + cols < maxLineWidth) scrollInfo.push(chalk.green("→"));
     const scrollStr = scrollInfo.length > 0 ? "  " + scrollInfo.join(" ") : "";
 
-    // Command line (last line) with ":" prefix
-    const cmdLine = searchMode
-      ? chalk.yellow("/") + chalk.cyan(searchQuery)
-      : chalk.dim(":");
+    // Determine command line content
+    let cmdLine: string;
+    if (searchMode) {
+      cmdLine = chalk.yellow("/") + chalk.cyan(searchQuery);
+    } else if (cmdMode) {
+      cmdLine = chalk.yellow(":") + chalk.cyan(cmdBuffer);
+    } else {
+      cmdLine = chalk.dim(":");
+    }
 
+    // Write status bar then command line — NO trailing \n on command line
+    // so the cursor stays on the last line (where input is captured).
     process.stdout.write(
-      `${posStr} ${pctStr}${scrollStr} ${chalk.dim("q退出 j/k↓↑ h/l←→ /搜索 n/N gg/G Ctrl-d/u")}\n`,
+      `${posStr} ${pctStr}${scrollStr} ${chalk.dim("q退出 j/k h/l /搜索 n/N :命令")}\n`,
     );
-    process.stdout.write(cmdLine + "\n");
+    process.stdout.write(cmdLine);
   };
 
   /** Search for next match starting from a given line. */
@@ -1326,10 +1346,57 @@ async function paginate(text: string): Promise<void> {
       const keys = parseKeys(data);
       let shouldQuit = false;
       for (const { key, isCtrl } of keys) {
+        // --- Command mode (':' input) ---
+        if (cmdMode) {
+          if (key === "\r" || key === "\n") {
+            // Execute command
+            cmdMode = false;
+            const cmd = cmdBuffer.trim();
+            cmdBuffer = "";
+            // Vim-style commands: q=quit, <number>=go to line, $=end
+            if (cmd === "q" || cmd === "quit") {
+              shouldQuit = true;
+              break;
+            } else if (/^\d+$/.test(cmd)) {
+              // Go to line number
+              const lineNum = parseInt(cmd, 10) - 1; // 1-indexed to 0-indexed
+              if (lineNum >= 0 && lineNum < totalLines) {
+                const rows = process.stdout.rows || termHeight;
+                topLine = Math.min(lineNum, totalLines - (rows - 2));
+                if (topLine < 0) topLine = 0;
+              }
+            } else if (cmd === "$") {
+              const rows = process.stdout.rows || termHeight;
+              topLine = Math.max(totalLines - (rows - 2), 0);
+            }
+            renderPage();
+            continue;
+          }
+          if (key === "\x1b") {
+            // Cancel command mode
+            cmdMode = false;
+            cmdBuffer = "";
+            renderPage();
+            continue;
+          }
+          if (key === "\x7f" || key === "\b") {
+            if (cmdBuffer.length > 0) {
+              cmdBuffer = cmdBuffer.slice(0, -1);
+              renderPage();
+            }
+            continue;
+          }
+          if (key.length === 1 && !isCtrl) {
+            cmdBuffer += key;
+            renderPage();
+            continue;
+          }
+          continue;
+        }
+
         // --- Search mode ---
         if (searchMode) {
           if (key === "\r" || key === "\n") {
-            // Execute search
             searchMode = false;
             if (searchQuery) {
               matchLine = searchNext(topLine, searchQuery);
@@ -1339,14 +1406,12 @@ async function paginate(text: string): Promise<void> {
             continue;
           }
           if (key === "\x1b") {
-            // Cancel search
             searchMode = false;
             searchQuery = "";
             renderPage();
             continue;
           }
           if (key === "\x7f" || key === "\b") {
-            // Backspace
             if (searchQuery.length > 0) {
               searchQuery = searchQuery.slice(0, -1);
               renderPage();
@@ -1358,13 +1423,21 @@ async function paginate(text: string): Promise<void> {
             renderPage();
             continue;
           }
-          continue; // ignore other keys in search mode
+          continue;
         }
 
         // --- Normal mode ---
         if (key === "q" || key === "\x1b") {
           shouldQuit = true;
           break;
+        }
+
+        // ':' enters command mode
+        if (key === ":") {
+          cmdMode = true;
+          cmdBuffer = "";
+          renderPage();
+          continue;
         }
 
         // Vim-style: j = down, k = up, h = left, l = right
@@ -1393,7 +1466,9 @@ async function paginate(text: string): Promise<void> {
         }
         if (key === "l" || key === "\x1b[C") {
           const cols = process.stdout.columns || 80;
-          const maxLineWidth = Math.max(...displayLines.map(visibleWidth), cols);
+          const maxLineWidth = displayLines.length > 0
+            ? Math.max(...displayLines.map(visibleWidth), cols)
+            : cols;
           if (leftCol + cols < maxLineWidth) {
             leftCol = Math.min(leftCol + 10, maxLineWidth - cols);
             renderPage();
