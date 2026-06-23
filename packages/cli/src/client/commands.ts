@@ -154,10 +154,27 @@ export function buildProgram(): Command {
     );
 
   // ─── config (static — must work without daemon) ───
-  // Registered statically because `yb-cli config init` must work BEFORE the
-  // daemon can start (the daemon requires credentials). All other config
-  // subcommands (show/set/get/profile) also operate directly on the shared
-  // ConfigStore file, so they don't need the daemon either.
+  const CONFIG_KEYS: Array<{ key: string; desc: string; sensitive: boolean }> = [
+    { key: "appKey", desc: "应用 Key", sensitive: true },
+    { key: "appSecret", desc: "应用 Secret", sensitive: true },
+    { key: "token", desc: "预签名 Token", sensitive: true },
+    { key: "apiDomain", desc: "API 域名", sensitive: false },
+    { key: "wsUrl", desc: "WebSocket 地址", sensitive: false },
+    { key: "logLevel", desc: "日志级别 (debug/info/warn/error)", sensitive: false },
+    { key: "stickerDir", desc: "贴纸目录", sensitive: false },
+    { key: "downloadDir", desc: "下载目录", sensitive: false },
+    { key: "prompt", desc: "自定义提示符", sensitive: false },
+    { key: "llmProvider", desc: "LLM 供应商", sensitive: false },
+    { key: "llmApiKey", desc: "LLM API Key", sensitive: true },
+    { key: "llmBaseUrl", desc: "LLM Base URL", sensitive: false },
+    { key: "llmModel", desc: "LLM 模型名", sensitive: false },
+    { key: "llmSystemPrompt", desc: "LLM 系统提示词", sensitive: false },
+    { key: "llmEnabled", desc: "LLM 是否启用 (true/false)", sensitive: false },
+    { key: "defaultTarget", desc: "默认聊天目标", sensitive: false },
+    { key: "defaultChatMode", desc: "默认聊天模式 (dm/group)", sensitive: false },
+    { key: "atAllExcludeYuanbao", desc: "@所有人时跳过元宝 (true/false)", sensitive: false },
+  ];
+
   program
     .command("config")
     .description("配置管理 (查看/设置/初始化/档案)")
@@ -169,34 +186,63 @@ export function buildProgram(): Command {
         }),
     )
     .addCommand(
-      new Command("show").description("显示当前配置").action(async () => {
-        const store = getGlobalConfigStore({ autoSave: true });
-        const active = store.getActiveProfileName();
-        const pr = store.getActiveProfile();
-        const lines = [
-          "📋 当前配置:",
-          `  档案: ${active}`,
-          `  App Key: ${pr.appKey ? `***${pr.appKey.slice(-4)}` : "(未设置)"}`,
-          `  App Secret: ${pr.appSecret ? "***" + pr.appSecret.slice(-4) : "(未设置)"}`,
-          `  Token: ${pr.token ? "***" + pr.token.slice(-4) : "(未设置)"}`,
-          `  API域名: ${pr.apiDomain || "(默认)"}`,
-          `  WS地址: ${pr.wsUrl || "(默认)"}`,
-          `  日志级别: ${pr.logLevel || "(默认)"}`,
-          `  贴纸目录: ${pr.stickerDir || "(未设置)"}`,
-          `  下载目录: ${pr.downloadDir || store.getGlobal("downloadDir") || "(默认)"}`,
-          `  LLM供应商: ${pr.llmProvider || "(未设置)"}`,
-          `  LLM模型: ${pr.llmModel || "(未设置)"}`,
-          `  配置路径: ${store.getConfigDir()}`,
-        ];
-        console.log(lines.join("\n"));
-      }),
+      new Command("show")
+        .description("显示当前配置")
+        .option("--json", "输出 JSON 格式")
+        .action(async (opts: Record<string, unknown>) => {
+          const store = getGlobalConfigStore({ autoSave: true });
+          const active = store.getActiveProfileName();
+          const pr = store.getActiveProfile();
+
+          if (opts.json) {
+            const safe: Record<string, string> = {};
+            for (const { key, sensitive } of CONFIG_KEYS) {
+              const val = (pr as Record<string, unknown>)[key];
+              if (val !== undefined && val !== null && val !== "") {
+                safe[key] = sensitive ? `***${String(val).slice(-4)}` : String(val);
+              }
+            }
+            safe["_profile"] = active;
+            safe["_configDir"] = store.getConfigDir();
+            console.log(JSON.stringify(safe, null, 2));
+            return;
+          }
+
+          const lines: string[] = [
+            "📋 当前配置:",
+            `  档案: ${active}`,
+            "",
+          ];
+          for (const { key, desc, sensitive } of CONFIG_KEYS) {
+            const val = (pr as Record<string, unknown>)[key];
+            let display: string;
+            if (val === undefined || val === null || val === "") {
+              display = "(未设置)";
+            } else if (sensitive) {
+              display = `***${String(val).slice(-4)}`;
+            } else {
+              display = String(val);
+            }
+            lines.push(`  ${key.padEnd(20)} ${display}  ${COLORS.dim(`# ${desc}`)}`);
+          }
+          lines.push("");
+          lines.push(`  配置路径: ${store.getConfigDir()}`);
+          console.log(lines.join("\n"));
+        }),
     )
     .addCommand(
       new Command("get")
-        .description("获取配置项")
-        .argument("<key>", "配置键名")
-        .action(async (key: string) => {
+        .description("获取配置项 (config get --list 查看所有可用键)")
+        .argument("[key]", "配置键名 (省略则列出所有可用键)")
+        .action(async (key?: string) => {
           const store = getGlobalConfigStore({ autoSave: true });
+          if (!key) {
+            console.log("可用配置键:");
+            for (const { key, desc } of CONFIG_KEYS) {
+              console.log(`  ${key.padEnd(20)} ${COLORS.dim(`# ${desc}`)}`);
+            }
+            return;
+          }
           const value = store.get(
             key as keyof import("@yuanbao-lite/core/shared/config").CliProfile,
           );
@@ -204,13 +250,8 @@ export function buildProgram(): Command {
             printWarn(`配置项 ${key} 未设置`);
             return;
           }
-          if (
-            typeof value === "string" &&
-            (key === "appKey" ||
-              key === "appSecret" ||
-              key === "token" ||
-              key === "llmApiKey")
-          ) {
+          const isSensitive = CONFIG_KEYS.find((k) => k.key === key)?.sensitive;
+          if (isSensitive && typeof value === "string") {
             console.log(`${key} = ***${value.slice(-4)}`);
           } else {
             console.log(`${key} = ${String(value)}`);
@@ -219,43 +260,37 @@ export function buildProgram(): Command {
     )
     .addCommand(
       new Command("set")
-        .description("设置配置项")
-        .argument("<key>", "配置键名")
-        .argument("<value>", "配置值")
-        .action(async (key: string, value: string) => {
+        .description("设置配置项 (config set --list 查看所有可用键)")
+        .argument("[key]", "配置键名 (省略则列出所有可用键)")
+        .argument("[value]", "配置值")
+        .action(async (key?: string, value?: string) => {
           const store = getGlobalConfigStore({ autoSave: true });
-          const validKeys = [
-            "appKey",
-            "appSecret",
-            "token",
-            "apiDomain",
-            "wsUrl",
-            "logLevel",
-            "stickerDir",
-            "downloadDir",
-            "prompt",
-            "llmProvider",
-            "llmApiKey",
-            "llmBaseUrl",
-            "llmModel",
-            "llmSystemPrompt",
-            "llmEnabled",
-            "defaultTarget",
-            "defaultChatMode",
-            "atAllExcludeYuanbao",
-          ];
-          if (!validKeys.includes(key)) {
-            printError(`无效配置键: ${key}\n可选: ${validKeys.join(", ")}`);
+          if (!key) {
+            console.log("可用配置键:");
+            for (const { key, desc } of CONFIG_KEYS) {
+              console.log(`  ${key.padEnd(20)} ${COLORS.dim(`# ${desc}`)}`);
+            }
+            return;
+          }
+          const validKey = CONFIG_KEYS.find((k) => k.key === key);
+          if (!validKey) {
+            printError(
+              `无效配置键: ${key}\n可用键: ${CONFIG_KEYS.map((k) => k.key).join(", ")}`,
+            );
             process.exit(1);
           }
-          store.set(key as never, value as never);
-          const masked =
-            key === "appKey" ||
-            key === "appSecret" ||
-            key === "token" ||
-            key === "llmApiKey"
-              ? "***"
-              : value;
+          if (value === undefined) {
+            printError(`请提供配置值: yb-cli config set ${key} <value>`);
+            process.exit(1);
+          }
+          // Convert boolean strings
+          let finalValue: string | boolean = value;
+          if (value === "true") finalValue = true;
+          else if (value === "false") finalValue = false;
+
+          store.set(key as never, finalValue as never);
+          const isSensitive = validKey.sensitive;
+          const masked = isSensitive ? "***" : value;
           printResult(`已设置 ${key} = ${masked}`);
           printWarn(
             "提示: 如需让新配置生效，请重启 daemon (yb-cli daemon restart)",

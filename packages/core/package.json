@@ -1,6 +1,6 @@
 {
   "name": "@yuanbao-lite/core",
-  "version": "12.8.6",
+  "version": "12.9.0",
   "type": "module",
   "description": "Yuanbao Lite 核心库 — 同构腾讯元宝机器人客户端（Node.js + 浏览器）",
   "license": "MIT",

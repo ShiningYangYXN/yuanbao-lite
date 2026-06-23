@@ -199,10 +199,10 @@ class LineEditor {
       return;
     }
 
-    // Shift+Up — scroll view up (show older output)
+    // Ctrl+Up — scroll view up (show older output)
     // In the alt screen buffer there's no native scrollback, so we
     // maintain our own scroll buffer and re-render on scroll.
-    if (key === "\x1b[1;2A") {
+    if (key === "\x1b[1;5A") {
       const rows = process.stdout.rows || 24;
       const maxOffset = Math.max(0, scrollBuffer.length - (rows - 1));
       // Scroll up by half a page for better usability
@@ -214,8 +214,8 @@ class LineEditor {
       return;
     }
 
-    // Shift+Down — scroll view down (show newer output)
-    if (key === "\x1b[1;2B") {
+    // Ctrl+Down — scroll view down (show newer output)
+    if (key === "\x1b[1;5B") {
       const rows = process.stdout.rows || 24;
       const step = Math.max(1, Math.floor((rows - 1) / 2));
       if (scrollOffset > 0) {
@@ -883,10 +883,19 @@ function parseKeys(data: string): Array<{ key: string; isCtrl: boolean }> {
 
       // Shift+Arrow keys: \x1b[1;2A (Shift+Up), \x1b[1;2B (Shift+Down), etc.
       // Format: ESC [ 1 ; 2 <letter>  (6 chars)
-      // Used for CLI scrolling (Shift+Up/Down scrolls the terminal buffer)
       const shiftArrowMatch = remaining.match(/^\x1b\[1;2([ABCD])/);
       if (shiftArrowMatch) {
         keys.push({ key: `\x1b[1;2${shiftArrowMatch[1]}`, isCtrl: false });
+        i += 6;
+        continue;
+      }
+
+      // Ctrl+Arrow keys: \x1b[1;5A (Ctrl+Up), \x1b[1;5B (Ctrl+Down), etc.
+      // Format: ESC [ 1 ; 5 <letter>  (6 chars)
+      // Used for CLI scrolling (Ctrl+Up/Down scrolls the terminal buffer)
+      const ctrlArrowMatch = remaining.match(/^\x1b\[1;5([ABCD])/);
+      if (ctrlArrowMatch) {
+        keys.push({ key: `\x1b[1;5${ctrlArrowMatch[1]}`, isCtrl: false });
         i += 6;
         continue;
       }
@@ -1735,7 +1744,7 @@ function printWelcome(version: string, pid: number, port: number): void {
   );
   console.log(`  ${COLORS.dim(`daemon pid=${pid} port=${port}`)}`);
   console.log(
-    `  ${COLORS.dim("/help 查看命令  ·  ↑↓ 历史  ·  Shift+↑↓ 滚动  ·  Ctrl+R 搜索  ·  Tab 补全  ·  \\ 换行  ·  Ctrl+C 退出")}`,
+    `  ${COLORS.dim("/help 查看命令  ·  ↑↓ 历史  ·  Ctrl+↑↓ 滚动  ·  Ctrl+R 搜索  ·  Tab 补全  ·  \\ 换行  ·  Ctrl+C 退出")}`,
   );
   console.log(
     `  ${COLORS.dim("/chat <目标> 切换会话  ·  /chat 退出会话  ·  /chat <目标> <消息> 仅发送不切换  (9位数字=群)")}`,

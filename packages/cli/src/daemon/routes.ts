@@ -426,6 +426,12 @@ async function wizardInput(
   const userId = typeof body.userId === "string" ? body.userId : "cli";
   const text = typeof body.text === "string" ? body.text : "";
 
+  // Build the session key the same way init.ts / llm.ts do:
+  //   DM:    "<userId>:dm"
+  //   Group: "<userId>:group:<groupCode>"
+  // For CLI (userId="cli"), it's always "cli:dm".
+  const sessionKey = `${userId}:dm`;
+
   const cs = cmdSys as unknown as {
     _initWizardSessions?: Map<string, unknown>;
     _handleInitWizardInput?: (
@@ -456,8 +462,8 @@ async function wizardInput(
   };
 
   // Check /init wizard
-  if (cs._initWizardSessions?.has(userId) && cs._handleInitWizardInput) {
-    const handled = await cs._handleInitWizardInput(bot, userId, text, replyFn);
+  if (cs._initWizardSessions?.has(sessionKey) && cs._handleInitWizardInput) {
+    const handled = await cs._handleInitWizardInput(bot, sessionKey, text, replyFn);
     return {
       status: 200,
       body: { ok: true, handled, replies, wizard: "init" },
@@ -465,14 +471,14 @@ async function wizardInput(
   }
 
   // Check /llm config wizard
-  if (cs._llmWizardSessions?.has(userId) && cs._handleLlmWizardInput) {
-    const handled = await cs._handleLlmWizardInput(bot, userId, text, replyFn);
+  if (cs._llmWizardSessions?.has(sessionKey) && cs._handleLlmWizardInput) {
+    const handled = await cs._handleLlmWizardInput(bot, sessionKey, text, replyFn);
     return { status: 200, body: { ok: true, handled, replies, wizard: "llm" } };
   }
 
   // Check /term interactive terminal
-  if (cs._termSessions?.has(userId) && cs._handleTermInput) {
-    const handled = await cs._handleTermInput(bot, userId, text, replyFn);
+  if (cs._termSessions?.has(sessionKey) && cs._handleTermInput) {
+    const handled = await cs._handleTermInput(bot, sessionKey, text, replyFn);
     return {
       status: 200,
       body: { ok: true, handled, replies, wizard: "term" },
@@ -499,13 +505,16 @@ function wizardStatus(ctx: RouteContext): RouteResult {
   }
   const userId = ctx.query.userId ?? "cli";
 
+  // Build session key same as wizardInput does
+  const sessionKey = `${userId}:dm`;
+
   const cs = cmdSys as unknown as {
     _initWizardSessions?: Map<string, unknown>;
     _llmWizardSessions?: Map<string, unknown>;
   };
 
-  const hasInit = cs._initWizardSessions?.has(userId) ?? false;
-  const hasLlm = cs._llmWizardSessions?.has(userId) ?? false;
+  const hasInit = cs._initWizardSessions?.has(sessionKey) ?? false;
+  const hasLlm = cs._llmWizardSessions?.has(sessionKey) ?? false;
 
   return {
     status: 200,

@@ -341,6 +341,7 @@ export class DaemonClient {
   subscribeSse(onEvent: (event: string, data: unknown) => void): () => void {
     let stopped = false;
     let controller: AbortController | null = null;
+    let reconnectDelay = 2000; // exponential backoff for SSE reconnection
 
     const connect = async (): Promise<void> => {
       if (stopped) return;
@@ -353,6 +354,8 @@ export class DaemonClient {
         if (!res.ok || !res.body) {
           throw new Error(`SSE failed: HTTP ${res.status}`);
         }
+        // Connection succeeded — reset backoff for next time
+        reconnectDelay = 2000;
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
         let buffer = "";
@@ -392,8 +395,12 @@ export class DaemonClient {
         }
       } catch {
         if (stopped) return;
-        // Reconnect after a short delay (single retry — caller can subscribe again for more)
-        await sleep(2000);
+        // Reconnect after a short delay with exponential backoff
+        // (2s → 4s → 8s → ... max 30s) to avoid hammering the daemon
+        // when it's down for an extended period.
+        const delay = Math.min(reconnectDelay, 30_000);
+        reconnectDelay = Math.min(reconnectDelay * 2, 30_000);
+        await sleep(delay);
         if (!stopped) void connect();
       }
     };

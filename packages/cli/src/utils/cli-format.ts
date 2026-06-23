@@ -36,14 +36,17 @@ cliMarked.use(markedTerminal());
 
 /**
  * Render Markdown text as ANSI for CLI display.
- * Pre-colors @[nick](id) mentions so they survive Markdown parsing.
+ *
+ * NOTE: @mention coloring is intentionally REMOVED — it injected ANSI color
+ * codes inside the Markdown text, which confused the Markdown parser and
+ * broke rendering of code spans, links, and other inline formatting.
+ * Mentions are now rendered as plain text by the Markdown renderer.
  */
 export async function renderMarkdownAnsi(text: string): Promise<string> {
-  const colored = colorizeMentions(text);
   try {
-    return cliMarked.parse(colored, { async: false }) as string;
+    return cliMarked.parse(text, { async: false }) as string;
   } catch {
-    return colored;
+    return text;
   }
 }
 
