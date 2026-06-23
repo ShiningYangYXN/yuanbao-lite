@@ -678,75 +678,116 @@ export async function runInteractive(): Promise<void> {
  * Parse a raw stdin data chunk into individual key presses.
  * Handles UTF-8 multibyte chars, escape sequences (arrows, Delete, Home/End),
  * and Ctrl+letter combinations.
+ *
+ * Terminal escape sequences:
+ *   Up:    \x1b[A    (3 chars: ESC [ A)
+ *   Down:  \x1b[B    (3 chars)
+ *   Right: \x1b[C    (3 chars)
+ *   Left:  \x1b[D    (3 chars)
+ *   Home:  \x1b[H    (3 chars) or \x1b[1~  (4 chars)
+ *   End:   \x1b[F    (3 chars) or \x1b[4~  (4 chars)
+ *   Delete:\x1b[3~   (4 chars: ESC [ 3 ~)
+ *   Ins:   \x1b[2~   (4 chars)
+ *   PgUp:  \x1b[5~   (4 chars)
+ *   PgDn:  \x1b[6~   (4 chars)
  */
 function parseKeys(data: string): Array<{ key: string; isCtrl: boolean }> {
   const keys: Array<{ key: string; isCtrl: boolean }> = [];
   let i = 0;
   while (i < data.length) {
     const ch = data[i];
-    // Escape sequence
+    // Escape sequence — starts with ESC (\x1b)
     if (ch === "\x1b") {
-      // Try to match a known escape sequence
       const remaining = data.slice(i);
-      const arrowMatch = remaining.match(/^\x1b([ABCD])/);
+
+      // Arrow keys: \x1b[A \x1b[B \x1b[C \x1b[D (3 chars each)
+      const arrowMatch = remaining.match(/^\x1b\[([ABCD])/);
       if (arrowMatch) {
-        keys.push({ key: `\x1b${arrowMatch[1]}`, isCtrl: false });
-        i += 2;
-        continue;
-      }
-      const delMatch = remaining.match(/^\x1b\[3~/);
-      if (delMatch) {
-        keys.push({ key: "\x1b[3~", isCtrl: false });
+        keys.push({ key: `\x1b[${arrowMatch[1]}`, isCtrl: false });
         i += 3;
         continue;
       }
+
+      // Delete: \x1b[3~ (4 chars)
+      if (/^\x1b\[3~/.test(remaining)) {
+        keys.push({ key: "\x1b[3~", isCtrl: false });
+        i += 4;
+        continue;
+      }
+
+      // Home/End: \x1b[H \x1b[F (3 chars each)
       const homeEndMatch = remaining.match(/^\x1b\[([HF])/);
       if (homeEndMatch) {
         keys.push({ key: `\x1b[${homeEndMatch[1]}`, isCtrl: false });
         i += 3;
         continue;
       }
-      // Plain Escape
+
+      // Home/End alt: \x1b[1~ (Home) \x1b[4~ (End) — 4 chars each
+      const homeEndAltMatch = remaining.match(/^\x1b\[([14])~/);
+      if (homeEndAltMatch) {
+        const code = homeEndAltMatch[1];
+        keys.push({
+          key: code === "1" ? "\x1b[H" : "\x1b[F",
+          isCtrl: false,
+        });
+        i += 4;
+        continue;
+      }
+
+      // Insert/PageUp/PageDown: \x1b[2~ \x1b[5~ \x1b[6~ — skip for now (4 chars)
+      if (/^\x1b\[[256]~/.test(remaining)) {
+        i += 4;
+        continue;
+      }
+
+      // Plain Escape (single ESC with no following sequence)
+      // Only treat as plain ESC if the next char is NOT a known sequence start.
+      // In practice, a lone ESC arrives as a single \x1b byte.
       keys.push({ key: "\x1b", isCtrl: false });
       i += 1;
       continue;
     }
+
     // Ctrl+letter (0x01-0x1a maps to Ctrl+a..Ctrl+z)
+    // BUT exclude \r (0x0d=13=Ctrl+M) and \n (0x0a=10=Ctrl+J) and \t (0x09=9=Ctrl+I)
+    // because those are Enter/Tab, not Ctrl combinations.
     const code = ch.charCodeAt(0);
-    if (code >= 1 && code <= 26) {
+    if (code >= 1 && code <= 26 && code !== 9 && code !== 10 && code !== 13) {
       const letter = String.fromCharCode(code + 96); // 1→a, 2→b, ...
       keys.push({ key: letter, isCtrl: true });
       i += 1;
       continue;
     }
-    // Backspace (0x7f) or \b (0x08)
+
+    // Backspace (0x7f = DEL key on most terminals, 0x08 = Ctrl+H)
     if (ch === "\x7f" || ch === "\b") {
       keys.push({ key: ch, isCtrl: false });
       i += 1;
       continue;
     }
-    // Enter
+
+    // Enter (\r = 0x0d, \n = 0x0a)
     if (ch === "\r" || ch === "\n") {
       keys.push({ key: ch, isCtrl: false });
       i += 1;
       continue;
     }
-    // Tab
+
+    // Tab (0x09)
     if (ch === "\t") {
       keys.push({ key: "\t", isCtrl: false });
       i += 1;
       continue;
     }
-    // UTF-8 multibyte — collect the full codepoint
-    // (simplified: just take the char, which JS handles as a single string element
-    //  for BMP chars; surrogate pairs take 2 string elements)
+
+    // UTF-8 multibyte — collect the full codepoint.
+    // JS strings are UTF-16; BMP chars are 1 element, surrogate pairs are 2.
     if (code >= 0x80) {
-      // Could be start of multibyte — grab enough chars
-      // For simplicity, take 1 char (BMP) or 2 (surrogate pair)
+      // Check for surrogate pair (code points U+10000 and above)
       const next = data[i + 1];
-      const combined = next ? ch + next : ch;
-      if (combined.length === 2 && next) {
-        keys.push({ key: combined, isCtrl: false });
+      if (next && next.charCodeAt(0) >= 0xdc00 && next.charCodeAt(0) <= 0xdfff) {
+        keys.push({ key: ch + next, isCtrl: false });
         i += 2;
       } else {
         keys.push({ key: ch, isCtrl: false });
@@ -754,7 +795,8 @@ function parseKeys(data: string): Array<{ key: string; isCtrl: boolean }> {
       }
       continue;
     }
-    // Regular printable
+
+    // Regular printable ASCII
     keys.push({ key: ch, isCtrl: false });
     i += 1;
   }
