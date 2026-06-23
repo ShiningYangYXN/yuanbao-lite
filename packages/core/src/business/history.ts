@@ -83,6 +83,15 @@ export type HistoryStoreConfig = {
    *   - Browser: throws — caller MUST pass an explicit adapter.
    */
   persistenceAdapter?: PersistenceAdapter;
+  /**
+   * Max history file size in bytes before rotation (default: 10 MB).
+   * When the file exceeds this size, it is rotated:
+   *   history.jsonl → history.jsonl.1 → history.jsonl.2 → ... → history.jsonl.5 (deleted)
+   * Only applies to NodeFsAdapter (file-based). Browser adapters skip rotation.
+   */
+  maxFileSize?: number;
+  /** Max number of rotated history files to keep (default: 5). */
+  maxRotatedFiles?: number;
 };
 
 // ─── HistoryStore ───
@@ -95,9 +104,15 @@ export class MessageHistoryStore {
     persistencePath?: string;
     autoLoad: boolean;
     persistenceAdapter?: PersistenceAdapter;
+    maxFileSize: number;
+    maxRotatedFiles: number;
   };
   private log: ModuleLog;
   private persistenceAdapter: PersistenceAdapter | null = null;
+  /** Approximate current file size (tracked for rotation checks). */
+  private currentFileSize = 0;
+  /** Message counter since last size check (avoids stat on every append). */
+  private messagesSinceLastCheck = 0;
 
   constructor(config?: HistoryStoreConfig) {
     this.config = {
@@ -106,6 +121,8 @@ export class MessageHistoryStore {
       autoPersist: config?.autoPersist ?? false,
       autoLoad: config?.autoLoad ?? Boolean(config?.persistencePath),
       persistenceAdapter: config?.persistenceAdapter,
+      maxFileSize: config?.maxFileSize ?? 10 * 1024 * 1024, // 10 MB
+      maxRotatedFiles: config?.maxRotatedFiles ?? 5,
     };
     this.log = createLog("history");
 
@@ -116,6 +133,8 @@ export class MessageHistoryStore {
       if (!fileExisted) {
         this.save();
       }
+      // Track initial file size
+      this.refreshFileSize();
     }
   }
 
@@ -346,6 +365,9 @@ export class MessageHistoryStore {
    * full `save()` (read-modify-write). This is correct but inefficient for
    * append-heavy workloads — browser adapters based on localStorage will
    * take this path.
+   *
+   * Includes automatic file rotation: when the file exceeds maxFileSize,
+   * it is rotated to history.jsonl.1 (and .1→.2, etc., up to maxRotatedFiles).
    */
   append(msg: ChatMessage): boolean {
     if (!this.config.persistencePath) return false;
@@ -353,7 +375,20 @@ export class MessageHistoryStore {
     try {
       const adapter = this.getAdapter();
       if (adapter.append) {
-        adapter.append(this.config.persistencePath, JSON.stringify(msg) + "\n");
+        const line = JSON.stringify(msg) + "\n";
+        adapter.append(this.config.persistencePath, line);
+        // Track approximate size growth
+        this.currentFileSize += Buffer.byteLength(line, "utf-8");
+        this.messagesSinceLastCheck++;
+        // Check rotation every 100 messages or if size might exceed limit
+        if (
+          this.messagesSinceLastCheck >= 100 ||
+          this.currentFileSize >= this.config.maxFileSize
+        ) {
+          this.refreshFileSize();
+          this.rotateIfNeeded();
+          this.messagesSinceLastCheck = 0;
+        }
       } else {
         // Fallback: full save (read-modify-write semantics).
         return this.save();
@@ -362,6 +397,92 @@ export class MessageHistoryStore {
     } catch (err) {
       this.log.error(`failed to append history: ${(err as Error).message}`);
       return false;
+    }
+  }
+
+  /**
+   * Refresh the tracked file size from the actual file on disk.
+   * Falls back gracefully if the adapter doesn't support stat.
+   */
+  private refreshFileSize(): void {
+    if (!this.config.persistencePath) return;
+    try {
+      const adapter = this.getAdapter();
+      // NodeFsAdapter has a stat method; browser adapters don't
+      const statAdapter = adapter as PersistenceAdapter & {
+        stat?: (path: string) => { size: number } | null;
+      };
+      if (statAdapter.stat) {
+        const stat = statAdapter.stat(this.config.persistencePath);
+        if (stat) {
+          this.currentFileSize = stat.size;
+        }
+      }
+    } catch {
+      // ignore — size tracking is best-effort
+    }
+  }
+
+  /**
+   * Rotate the history file if it exceeds maxFileSize.
+   *   history.jsonl → history.jsonl.1 → history.jsonl.2 → ... → history.jsonl.5 (deleted)
+   *
+   * Only works with file-based adapters (NodeFsAdapter). Browser adapters
+   * skip rotation (localStorage has its own size limits).
+   */
+  private rotateIfNeeded(): void {
+    if (!this.config.persistencePath) return;
+    if (this.currentFileSize < this.config.maxFileSize) return;
+
+    try {
+      const adapter = this.getAdapter();
+      // Check if adapter supports file operations (NodeFsAdapter)
+      const fsAdapter = adapter as PersistenceAdapter & {
+        rename?: (from: string, to: string) => void;
+        remove?: (path: string) => boolean;
+        exists?: (path: string) => boolean;
+      };
+      if (!fsAdapter.rename || !fsAdapter.exists) {
+        // Browser adapter — can't rotate files, just rewrite (trim oldest)
+        this.log.info(
+          "history file large, rewriting (browser adapter, no file rotation)",
+        );
+        this.save();
+        this.refreshFileSize();
+        return;
+      }
+
+      const basePath = this.config.persistencePath;
+      const dir = basePath.includes("/")
+        ? basePath.slice(0, basePath.lastIndexOf("/"))
+        : ".";
+      const filename = basePath.includes("/")
+        ? basePath.slice(basePath.lastIndexOf("/") + 1)
+        : basePath;
+
+      // Shift rotated files: .4→.5 (delete .5), .3→.4, .2→.3, .1→.2
+      for (let i = this.config.maxRotatedFiles - 1; i >= 1; i--) {
+        const from = `${dir}/${filename}.${i}`;
+        const to = `${dir}/${filename}.${i + 1}`;
+        if (fsAdapter.exists(from)) {
+          if (i + 1 > this.config.maxRotatedFiles) {
+            fsAdapter.remove?.(from);
+          } else {
+            fsAdapter.rename(from, to);
+          }
+        }
+      }
+      // Rotate current file to .1
+      fsAdapter.rename(basePath, `${dir}/${filename}.1`);
+
+      // Rewrite current in-memory messages to fresh file
+      this.save();
+      this.refreshFileSize();
+      this.log.info(
+        `history rotated: ${filename} → ${filename}.1 (was ${this.currentFileSize} bytes)`,
+      );
+    } catch (err) {
+      this.log.warn(`history rotation failed: ${(err as Error).message}`);
     }
   }
 

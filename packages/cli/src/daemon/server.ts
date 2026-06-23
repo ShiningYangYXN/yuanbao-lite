@@ -33,7 +33,7 @@ import { YuanbaoBot } from "@yuanbao-lite/core";
 import type { BotState } from "@yuanbao-lite/core/types";
 import type { ChatMessage } from "@yuanbao-lite/core/types";
 import { getGlobalConfigStore } from "@yuanbao-lite/core/shared/config";
-import { createLog, setLogLevel, initFileSink } from "@yuanbao-lite/core/logger";
+import { createLog, setLogLevel, initFileSink, closeFileSink } from "@yuanbao-lite/core/logger";
 import { getVersion } from "@yuanbao-lite/core/version";
 import { acquirePidFile, releasePidFile, getPidFilePath } from "./pid-file.js";
 import { handleRoute } from "./routes.js";
@@ -182,6 +182,7 @@ export class Daemon {
       this.bot.stop();
       this.bot = null;
     }
+    closeFileSink();
     releasePidFile();
     process.exit(0);
   }

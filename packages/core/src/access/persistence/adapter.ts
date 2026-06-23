@@ -103,6 +103,26 @@ export interface PersistenceAdapter {
    * Callers should check `if (adapter.listDir)` before calling.
    */
   listDir?(path: string): Array<{ name: string; isDirectory: boolean }>;
+
+  /**
+   * Optional: rename/move a path to a new path.
+   *
+   * For filesystem adapters: `renameSync(from, to)`.
+   * Used by log/history file rotation.
+   *
+   * Callers should check `if (adapter.rename)` before calling.
+   */
+  rename?(from: string, to: string): void;
+
+  /**
+   * Optional: get file size in bytes.
+   *
+   * For filesystem adapters: `statSync(path).size`.
+   * Used by log/history file rotation to check if rotation is needed.
+   *
+   * Callers should check `if (adapter.stat)` before calling.
+   */
+  stat?(path: string): { size: number } | null;
 }
 
 // ─── Node module loader (ESM dynamic import, browser-safe) ───
@@ -268,6 +288,19 @@ export class NodeFsAdapter implements PersistenceAdapter {
       name: e.name,
       isDirectory: e.isDirectory(),
     }));
+  }
+
+  rename(from: string, to: string): void {
+    this.fs.renameSync(from, to);
+  }
+
+  stat(path: string): { size: number } | null {
+    try {
+      const s = this.fs.statSync(path);
+      return { size: s.size };
+    } catch {
+      return null;
+    }
   }
 }
 

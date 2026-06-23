@@ -14,8 +14,9 @@
 
 /**
  * Compute the session key for a given user + conversation context.
+ * (Internal helper — not exported.)
  */
-export function sessionKey(
+function sessionKey(
   userId: string,
   chatType: "group" | "direct",
   groupCode?: string,
@@ -40,11 +41,3 @@ export function sessionKeyFromMessage(msg: {
  * All blocking sessions auto-expire after this many milliseconds of inactivity.
  */
 export const BLOCKING_SESSION_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
-
-/**
- * Check if a blocking session has expired based on lastActivity timestamp.
- * Returns true if expired (caller should clean up).
- */
-export function isExpired(lastActivity: number): boolean {
-  return Date.now() - lastActivity > BLOCKING_SESSION_TIMEOUT_MS;
-}
