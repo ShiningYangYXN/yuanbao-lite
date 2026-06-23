@@ -199,18 +199,25 @@ class LineEditor {
       return;
     }
 
-    // Shift+Up — scroll terminal up (show older output)
-    // Uses the terminal's scrollback buffer — sends the scroll command
-    // directly to the terminal without affecting the input buffer.
+    // Shift+Up — scroll view up (show older output)
+    // In the alt screen buffer there's no native scrollback, so we
+    // maintain our own scroll buffer and re-render on scroll.
     if (key === "\x1b[1;2A") {
-      // Scroll up by 1 line using terminal escape sequence
-      process.stdout.write("\x1b[1S"); // scroll up 1 line
+      const rows = process.stdout.rows || 24;
+      const maxOffset = Math.max(0, scrollBuffer.length - (rows - 1));
+      if (scrollOffset < maxOffset) {
+        scrollOffset = Math.min(scrollOffset + 1, maxOffset);
+        renderScrollView();
+      }
       return;
     }
 
-    // Shift+Down — scroll terminal down (show newer output)
+    // Shift+Down — scroll view down (show newer output)
     if (key === "\x1b[1;2B") {
-      process.stdout.write("\x1b[1T"); // scroll down 1 line
+      if (scrollOffset > 0) {
+        scrollOffset = Math.max(scrollOffset - 1, 0);
+        renderScrollView();
+      }
       return;
     }
 
@@ -530,6 +537,51 @@ let editor: LineEditor | null = null;
  * for outbound message name resolution. Populated by refreshCompletions(). */
 let sharedCompletionCtx: CompletionContext = {};
 
+/**
+ * Scroll buffer — stores all output lines printed to the terminal so that
+ * Shift+Up/Down can scroll through history. In the alt screen buffer there
+ * is no native scrollback, so we maintain our own ring buffer and re-render
+ * on scroll.
+ */
+const scrollBuffer: string[] = [];
+const SCROLL_BUFFER_MAX = 1000; // max lines to keep in scroll history
+let scrollOffset = 0; // how many lines from the bottom we've scrolled up (0 = bottom/latest)
+
+/** Add a line to the scroll buffer (called by console.log replacement). */
+function pushToScrollBuffer(line: string): void {
+  scrollBuffer.push(line);
+  if (scrollBuffer.length > SCROLL_BUFFER_MAX) {
+    scrollBuffer.shift();
+  }
+  // Reset scroll offset when new content arrives
+  scrollOffset = 0;
+}
+
+/**
+ * Re-render the terminal from the scroll buffer.
+ * Shows the last N lines (where N = terminal height - 1, leaving 1 line
+ * for the prompt), offset by scrollOffset lines from the bottom.
+ */
+function renderScrollView(): void {
+  const rows = process.stdout.rows || 24;
+  const visibleRows = rows - 1; // leave 1 line for prompt
+  const totalLines = scrollBuffer.length;
+  const startIdx = Math.max(0, totalLines - visibleRows - scrollOffset);
+  const endIdx = Math.min(totalLines, startIdx + visibleRows);
+
+  // Clear screen and move cursor home
+  process.stdout.write("\x1b[2J\x1b[H");
+  for (let i = startIdx; i < endIdx; i++) {
+    process.stdout.write(scrollBuffer[i] + "\n");
+  }
+  // Fill remaining lines if content is shorter than visible area
+  for (let i = endIdx - startIdx; i < visibleRows; i++) {
+    process.stdout.write("\n");
+  }
+  // Re-render the prompt on the last line
+  editor?.forceRender();
+}
+
 /** Exit the alternate screen buffer (restores original terminal). */
 function exitAltScreen(): void {
   if (process.stdout.isTTY) {
@@ -568,6 +620,23 @@ export async function runInteractive(): Promise<void> {
   if (process.stdout.isTTY) {
     process.stdout.write("\x1b[?1049h"); // enter alt screen
   }
+
+  // Intercept console.log to capture output into the scroll buffer.
+  // This allows Shift+Up/Down to scroll through previous output in the
+  // alt screen buffer (which has no native scrollback).
+  // NOTE: We only intercept console.log — process.stdout.write is NOT
+  // intercepted because the editor and pager use it directly for ANSI
+  // escape sequences and raw rendering. Capturing those would corrupt
+  // the scroll buffer with control codes.
+  const origConsoleLog = console.log;
+  console.log = (...args: unknown[]) => {
+    const line = args.map(String).join(" ");
+    // Split on newlines — each line goes into the scroll buffer separately
+    for (const l of line.split("\n")) {
+      pushToScrollBuffer(l);
+    }
+    origConsoleLog(...args);
+  };
   // Ensure alt screen is restored on any exit path (SIGTERM, SIGHUP, crash)
   const restoreOnSignal = (sig: string) => {
     exitAltScreen();
@@ -712,18 +781,19 @@ export async function runInteractive(): Promise<void> {
   process.stdin.setEncoding("utf-8");
   process.stdin.resume();
 
-  // Handle terminal resize (SIGWINCH) — re-render the prompt so it stays
-  // correctly positioned in the alt screen buffer after window resize.
-  // IMPORTANT: do NOT clear the screen (\x1b[2J) — that would erase
-  // previous output. Just move to the bottom of the terminal and
-  // re-render the prompt line.
+  // Handle terminal resize (SIGWINCH) — re-render the current view.
+  // If scrolled (scrollOffset > 0), re-render the scroll view; otherwise
+  // just re-render the prompt on the last line.
   const onResize = () => {
-    // Move cursor to the last line of the terminal and clear it,
-    // then re-render the prompt. This preserves all scrollback above.
-    const rows = process.stdout.rows || 24;
-    process.stdout.write(`\x1b[${rows};1H`); // move to last line
-    process.stdout.write("\x1b[K"); // clear that line
-    editor?.forceRender();
+    if (scrollOffset > 0) {
+      renderScrollView();
+    } else {
+      // Not scrolled — just re-render the prompt on the last line
+      const rows = process.stdout.rows || 24;
+      process.stdout.write(`\x1b[${rows};1H`); // move to last line
+      process.stdout.write("\x1b[K"); // clear that line
+      editor?.forceRender();
+    }
   };
   process.on("SIGWINCH", onResize);
 
@@ -766,6 +836,8 @@ export async function runInteractive(): Promise<void> {
     }
     process.stdin.pause();
     editor = null;
+    // Restore console.log before printing goodbye message
+    console.log = origConsoleLog;
     printStatus("再见 👋");
     exitAltScreen();
   }
